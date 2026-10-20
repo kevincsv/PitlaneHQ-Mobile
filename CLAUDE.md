@@ -33,6 +33,11 @@
   and the line. The track map's road is the reference's path when both laps have one (`c.bx`/`c.by`: B dashed along
   the middle, A beside it by `c.lat`), else the lap's own, else the track's layout drawn by the community
   (`trackLayout`, `layout` in `LapAnalysis`), like the web: a lap without a path still has its map.
+- Track notes (`notes.json` in the account, the same the PC and the web keep): the track page shows the general note
+  and the corner notes and writes the general one (`TrackNotesPanel`, `setTrackNote`: the bundle is read, only
+  notes.json changes, sealed with the account's key, like driver notes); Account → Track notes lists them all. A
+  driver's profile shows their leaderboards, records (P1) and top 3 places, and a recent record opens its driver's
+  profile when they have one (`prof`).
 - One version for Pitlane HQ everywhere: `version.txt` (the same number as PitlaneHQ.exe and the
   web), shown with "beta" until 1.0.0. Raise it slowly (PATCH for fixes, MINOR for a set of
   features) and add the version to CHANGELOG.md: its section becomes the release notes.

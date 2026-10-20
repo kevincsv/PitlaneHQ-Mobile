@@ -257,6 +257,7 @@ class AccountRepository(context: Context) {
             }
             save("ratings", all.optString("ratings.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
             save("drivers", all.optString("drivers.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
+            save("notes", all.optString("notes.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
         }
         prefs.edit()
             .putInt("syncedFiles", files)
@@ -315,6 +316,59 @@ class AccountRepository(context: Context) {
                 val r = JSONObject(call("PUT", "/account/sync", JSONObject().put("blob", sealed).put("base", j.optLong("version", 0))))
                 prefs.edit().putLong("syncVersion", r.optLong("version", 0)).apply()
                 save("drivers", dv.toString())
+                return
+            } catch (e: AppError) {
+                // another device wrote the account meanwhile: read it again and redo the change on top
+                if (attempt == 2 || e.message?.contains("conflict", true) != true) throw e
+            }
+        }
+    }
+
+    /** Your notes on each track, by its id. */
+    fun trackNotes(): Map<Long, TrackNote> {
+        val o = (if (demo) prefs.getString("demoNotes", null) else saved("notes"))?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return emptyMap()
+        return o.keys().asSequence().mapNotNull { k ->
+            val v = o.optJSONObject(k) ?: return@mapNotNull null
+            val id = v.optLong("trackId").takeIf { it != 0L } ?: k.toLongOrNull() ?: return@mapNotNull null
+            val ca = v.optJSONArray("corners") ?: JSONArray()
+            val cs = (0 until ca.length()).mapNotNull { ca.optJSONObject(it) }
+                .map { CornerNote(it.optInt("n"), it.optDouble("dist", 0.0), it.optString("name"), it.optString("note")) }
+                .filter { it.note.isNotEmpty() }.sortedBy { it.dist }
+            id to TrackNote(id, v.optString("track"), v.optString("general"), cs, v.optString("updated"))
+        }.toMap()
+    }
+
+    /**
+     * Saves your general note on a track in the account's bundle (its corner notes stay as they are; no note and no
+     * corner removes it), like the PC and the web: only notes.json changes, and it goes back sealed with your key.
+     */
+    fun setTrackNote(trackId: Long, track: String, general: String) {
+        if (trackId == 0L) return
+        val g = general.trim().take(2000)
+        val k = trackId.toString()
+        fun change(nv: JSONObject) {
+            val cur = nv.optJSONObject(k) ?: JSONObject().put("trackId", trackId).put("track", track.take(120))
+            if (g.isEmpty()) cur.remove("general") else cur.put("general", g)
+            if (cur.optString("track").isEmpty()) cur.put("track", track.take(120))
+            cur.put("updated", java.time.Instant.now().toString())
+            if (g.isEmpty() && (cur.optJSONArray("corners")?.length() ?: 0) == 0) nv.remove(k) else nv.put(k, cur)
+        }
+        if (demo) {
+            val nv = prefs.getString("demoNotes", null)?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
+            change(nv); prefs.edit().putString("demoNotes", nv.toString()).apply(); return
+        }
+        for (attempt in 0..2) {
+            val j = JSONObject(call("GET", "/account/sync"))
+            val blob = j.optString("blob", "")
+            val all = if (blob.isEmpty()) JSONObject() else JSONObject(String(Crypto.gunzip(Crypto.open(dataKey(), blob, Crypto.ACCOUNT_AAD))))
+            val nv = all.optString("notes.json").takeIf { it.isNotEmpty() }?.let { runCatching { JSONObject(String(Base64.decode(it, Base64.DEFAULT))) }.getOrNull() } ?: JSONObject()
+            change(nv)
+            all.put("notes.json", Base64.encodeToString(nv.toString().toByteArray(), Base64.NO_WRAP))
+            val sealed = Crypto.seal(dataKey(), Crypto.gzip(all.toString().toByteArray()), Crypto.ACCOUNT_AAD)
+            try {
+                val r = JSONObject(call("PUT", "/account/sync", JSONObject().put("blob", sealed).put("base", j.optLong("version", 0))))
+                prefs.edit().putLong("syncVersion", r.optLong("version", 0)).apply()
+                save("notes", nv.toString())
                 return
             } catch (e: AppError) {
                 // another device wrote the account meanwhile: read it again and redo the change on top

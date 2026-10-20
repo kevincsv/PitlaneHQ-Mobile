@@ -433,6 +433,7 @@ enum Route: Hashable {
     case combo(Combo)
     case track(TrackRef)
     case profile(String?)
+    case notes
 }
 
 extension View {
@@ -445,6 +446,7 @@ extension View {
             case let .combo(c): ComboView(combo: c)
             case let .track(r): TrackPageView(ref: r)
             case let .profile(id): ProfileView(lapId: id)
+            case .notes: TrackNotesList()
             }
         }
     }
@@ -2836,6 +2838,9 @@ struct RecentRecords: View {
                     HStack {
                         Text((x.prevTime.map { t("record_beat", name(x.prevAlias), String(format: "%.3f", $0 - x.time)) } ?? t("record_first")) + " · " + day(x.created)).font(.caption2).foregroundColor(Theme.muted).lineLimit(1)
                         Spacer()
+                        if x.prof {
+                            NavigationLink(value: Route.profile(x.id)) { Text(t("profile")).font(.caption.bold()).foregroundColor(Theme.accent) }.buttonStyle(.plain)
+                        }
                         NavigationLink(value: Route.track(TrackRef(id: x.trackId, name: x.track))) { Text(t("track_page_short")).font(.caption.bold()).foregroundColor(Theme.accent) }.buttonStyle(.plain)
                     }
                 }
@@ -2869,6 +2874,7 @@ struct TrackPageView: View {
                             Text(t("track_no_map")).font(.caption).foregroundColor(Theme.muted)
                         }
                     }
+                    TrackNotesPanel(trackId: ref.id, track: d.track.isEmpty ? ref.name : d.track)
                     SectionLabel(text: t("records_per_car"))
                     if d.cars.isEmpty { EmptyNote(text: t("no_records")) }
                     ForEach(d.cars) { x in
@@ -3066,6 +3072,14 @@ struct ProfileView: View {
                     if p.mine && p.supporter {
                         Button(t(p.supporterHidden ? "show_badge" : "hide_badge")) { Task { try? await account.setBadgeHidden(!p.supporterHidden); await load() } }
                             .font(.caption.bold()).foregroundColor(Theme.accent).padding(.top, 6)
+                    }
+                }
+                let recs = p.laps.filter { $0.pos == 1 }.count, pods = p.laps.filter { $0.pos > 0 && $0.pos <= 3 }.count
+                if !p.laps.isEmpty {
+                    HStack(spacing: 8) {
+                        StatTile(value: "\(p.laps.count)", label: t("boards_n"))
+                        StatTile(value: "\(recs)", label: t("records_held"), tint: recs > 0 ? Theme.purple : Theme.fg)
+                        StatTile(value: "\(pods)", label: t("podiums_top3"))
                     }
                 }
                 SectionLabel(text: t("days_driven").uppercased() + " · " + t("days_in_6m", p.days.count))
@@ -3580,6 +3594,8 @@ struct SettingsView: View {
             TwoFactorPanel()
             NavigationLink(value: Route.profile(nil)) { ActionRow(title: t("my_profile").uppercased(), sub: t("my_profile_sub"), icon: "person.crop.circle") }
                 .buttonStyle(.plain)
+            NavigationLink(value: Route.notes) { ActionRow(title: t("track_notes").uppercased(), sub: t("track_notes_sub"), icon: "note.text") }
+                .buttonStyle(.plain)
             Link(destination: webApp) { ActionRow(title: t("web").uppercased(), sub: t("web_sub"), icon: "safari") }
             if let u = URL(string: patreonURL), !patreonURL.isEmpty {
                 Link(destination: u) { ActionRow(title: t("support").uppercased(), sub: t("support_sub"), icon: "heart") }
@@ -3653,5 +3669,96 @@ struct SettingsView: View {
             do { try await account.revoke(id) } catch { devices.error = (error as? AppError)?.key ?? error.localizedDescription }
             await devices.load { try await account.devices() }
         }
+    }
+}
+
+/// One number with its label, for a row of three (the profile's leaderboards, records and podiums).
+struct StatTile: View {
+    let value: String
+    let label: String
+    var tint: Color = Theme.fg
+    var body: some View {
+        Panel {
+            VStack(spacing: 2) {
+                Text(value).font(.system(.title3, design: .monospaced).weight(.black)).foregroundColor(tint)
+                Text(label).font(.caption2).foregroundColor(Theme.muted).multilineTextAlignment(.center).lineLimit(2)
+            }.frame(maxWidth: .infinity)
+        }
+    }
+}
+
+/// Your notes on a track (the same the PC and the web keep): the general note, which you can write here, and the
+/// corner notes made on the PC or the web.
+struct TrackNotesPanel: View {
+    @EnvironmentObject var account: Account
+    let trackId: Int64
+    let track: String
+    @State private var editing = false
+    @State private var text = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    var body: some View {
+        let n = account.trackNotes[trackId]
+        SectionLabel(text: t("my_notes"))
+        Panel {
+            if let n, !n.general.isEmpty { Text(n.general).font(.subheadline).fixedSize(horizontal: false, vertical: true) }
+            else if n == nil || n!.corners.isEmpty { Text(t("no_track_notes")).font(.caption).foregroundColor(Theme.muted) }
+            ForEach(n?.corners ?? [], id: \.self) { c in
+                HStack(alignment: .top, spacing: 8) {
+                    Text(c.name.isEmpty ? t("corner_n", c.n) : c.name).font(.caption.bold()).foregroundColor(Theme.accent).frame(minWidth: 64, alignment: .leading)
+                    Text(c.note).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }.padding(.top, 4)
+            }
+            Button(t(n?.general.isEmpty ?? true ? "write_note" : "edit_note")) { text = n?.general ?? ""; error = nil; editing = true }
+                .font(.caption.bold()).foregroundColor(Theme.accent).padding(.top, 6)
+        }
+        .onAppear { account.loadTrackNotes() }
+        .sheet(isPresented: $editing) {
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(track).font(.headline)
+                    TextEditor(text: $text).scrollContentBackground(.hidden).frame(minHeight: 180).padding(6).background(Theme.surface).cornerRadius(10)
+                    if let error { Text(error).font(.caption).foregroundColor(Theme.bad) }
+                    Spacer()
+                }
+                .padding()
+                .background(Theme.bg.ignoresSafeArea())
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { editing = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(t("save")) {
+                            saving = true
+                            Task {
+                                do { try await account.setTrackNote(trackId: trackId, track: track, general: text); editing = false }
+                                catch { self.error = (error as? AppError)?.key ?? error.localizedDescription }
+                                saving = false
+                            }
+                        }.disabled(saving)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Every track you wrote notes on, the newest first; each opens its track page (with the notes).
+struct TrackNotesList: View {
+    @EnvironmentObject var account: Account
+    var body: some View {
+        let all = account.trackNotes.values.sorted { $0.updated > $1.updated }
+        Screen(title: t("track_notes"), sub: t("track_notes_sub")) {
+            if all.isEmpty { EmptyNote(text: t("no_notes_any")) }
+            ForEach(all) { n in
+                NavigationLink(value: Route.track(TrackRef(id: n.trackId, name: n.track))) {
+                    Panel {
+                        Text(n.track.isEmpty ? "#\(n.trackId)" : n.track).font(.subheadline.bold()).foregroundColor(Theme.fg).lineLimit(1)
+                        Text(n.general.isEmpty ? t("corner_notes_n", n.corners.count) : n.general).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                    }
+                }.buttonStyle(.plain)
+            }
+        }
+        .onAppear { account.loadTrackNotes() }
     }
 }

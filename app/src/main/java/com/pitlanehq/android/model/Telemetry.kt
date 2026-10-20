@@ -190,6 +190,11 @@ data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Dou
 /** Your note on another driver (drivers.json in the account): one tag (danger, careful, clean, friend) and a note. */
 data class DriverNote(val name: String, val tag: String, val note: String)
 
+/** Your notes on a track (notes.json in the account, the same the PC and the web write): a general note and one per
+ *  corner (its number, where its braking zone starts and what you wrote). */
+data class TrackNote(val trackId: Long, val track: String, val general: String, val corners: List<CornerNote>, val updated: String)
+data class CornerNote(val n: Int, val dist: Double, val name: String, val note: String)
+
 /** What a screen shows: [stale] is saved data shown while the server cannot be reached. */
 data class Loadable<T>(val loading: Boolean = false, val data: T? = null, val error: String? = null, val stale: Boolean = false)
 

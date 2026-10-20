@@ -274,6 +274,14 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         loadDriverNotes()
         withContext(Dispatchers.Main) { done(err?.message) }
     }
+    /** Your notes on each track (the track page shows them and lets you write the general one). */
+    val trackNotes = MutableStateFlow<Map<Long, TrackNote>>(emptyMap())
+    fun loadTrackNotes() { trackNotes.value = runCatching { repo.trackNotes() }.getOrDefault(emptyMap()) }
+    fun setTrackNote(trackId: Long, track: String, general: String, done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val err = runCatching { repo.setTrackNote(trackId, track, general) }.exceptionOrNull()
+        loadTrackNotes()
+        withContext(Dispatchers.Main) { done(err?.message) }
+    }
     fun loadSessions() = load(sessions) { repo.sessions() }
     fun loadBests() = load(bests) { repo.bests() }
     fun loadLaps(id: String) { laps.value = Loadable(); load(laps) { repo.laps(id) } }

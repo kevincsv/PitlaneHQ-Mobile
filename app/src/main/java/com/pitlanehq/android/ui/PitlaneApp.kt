@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.verticalScroll
@@ -208,6 +209,7 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("combo") { ComboDetail(vm, nav) }
                 composable("track") { TrackPageScreen(vm, nav) }
                 composable("profile") { ProfileScreen(vm, nav) }
+                composable("notes") { TrackNotesScreen(vm, nav) }
                 composable("live") { Live(vm) }
                 composable("settings") { Settings(vm, nav) }
                 composable("drinks") { DrinksScreen(vm, nav) }
@@ -1918,6 +1920,7 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val pt = x.prevTime
                     Text((if (pt != null) t("record_beat", name(x.prevAlias), "%.3f".format(pt - x.time)) else t("record_first")) + " · " + day(x.created), color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (x.prof) TextButton({ vm.loadProfile(x.id); nav.navigate("profile") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) { Text(t("profile"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                     TextButton({ vm.openTrack(x.trackId, x.track); nav.navigate("track") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) { Text(t("track_page_short"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
                 }
             }
@@ -1937,6 +1940,7 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
         val d = p.data ?: return@Screen
         item { Text(t("track_counts", d.drivers, d.laps, d.cars.size), color = Muted, fontSize = 12.sp) }
         item { Panel { TrackLayoutMap(d.layout, d.turns) } }
+        item { TrackNotesPanel(vm, ref.first, d.track.ifEmpty { ref.second }) }
         item { Section(t("records_per_car")) }
         if (d.cars.isEmpty()) item { Empty(t("no_records")) }
         items(d.cars, key = { it.carId }) { x ->
@@ -2083,6 +2087,15 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
                     ls.forEach { k -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) { LicBadge(p.lics[k]); Text(discName(k), fontSize = 12.sp) } }
                 }
                 if (p.mine && p.supporter) TextButton({ vm.setBadgeHidden(!p.supporterHidden) }) { Text(t(if (p.supporterHidden) "show_badge" else "hide_badge"), color = Accent) }
+            }
+        }
+        // their leaderboards, records and podiums at a glance
+        if (p.laps.isNotEmpty()) item {
+            val recs = p.laps.count { it.pos == 1 }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile(p.laps.size.toString(), t("boards_n"), Modifier.weight(1f))
+                StatTile(recs.toString(), t("records_held"), Modifier.weight(1f), if (recs > 0) Purple else Fg)
+                StatTile(p.laps.count { it.pos in 1..3 }.toString(), t("podiums_top3"), Modifier.weight(1f))
             }
         }
         item { Section(t("days_driven").uppercase() + " · " + t("days_in_6m", p.days.size)) }
@@ -2604,6 +2617,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
         }
         if (a.admin) item { Section(t("admin_tools")) }
         if (a.signedIn) item { Action(t("my_profile").uppercase(), t("my_profile_sub"), Icons.Default.Person) { vm.loadProfile(null); nav.navigate("profile") } }
+        if (a.signedIn) item { Action(t("track_notes").uppercase(), t("track_notes_sub"), Icons.Default.EditNote) { vm.loadTrackNotes(); nav.navigate("notes") } }
         if (a.admin) item { Action(t("admin_profile").uppercase(), t("admin_profile_sub"), Icons.Default.AdminPanelSettings) { nav.navigate("admin") } }
         if (a.admin) item { Action(t("drinks").uppercase(), t("drinks_sub"), Icons.Default.LocalBar) { nav.navigate("drinks") } }
         if (a.admin) item {
@@ -3293,5 +3307,76 @@ private fun TyreCard(s: LiveState, c: String, name: String, m: Modifier) {
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { wear.forEach { w -> Text(w?.let { "${(it * 100).roundToInt()}%" } ?: "–", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Muted) } }
         s.num(c + "coldPressure")?.let { Text(t("lt_cold", "%.0f kPa".format(it)), fontSize = 10.sp, color = Muted, modifier = Modifier.padding(top = 4.dp)) }
+    }
+}
+
+/** One number with its label, for a row of three (the profile's leaderboards, records and podiums). */
+@Composable
+private fun StatTile(value: String, label: String, modifier: Modifier = Modifier, tint: Color = Fg) {
+    Panel(modifier) {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, color = tint, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, fontSize = 20.sp)
+            Text(label, color = Muted, fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 2)
+        }
+    }
+}
+
+/** Your notes on a track (the same the PC and the web keep): the general note, which you can write here, and the
+ *  corner notes made on the PC or the web. */
+@Composable
+private fun TrackNotesPanel(vm: PitlaneViewModel, trackId: Long, track: String) {
+    val all by vm.trackNotes.collectAsState()
+    LaunchedEffect(trackId) { vm.loadTrackNotes() }
+    val n = all[trackId]
+    var editing by remember { mutableStateOf(false) }
+    var text by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    Column {
+        Section(t("my_notes"))
+        Panel {
+            if (n != null && n.general.isNotEmpty()) Text(n.general, fontSize = 14.sp)
+            else if (n == null || n.corners.isEmpty()) Text(t("no_track_notes"), color = Muted, fontSize = 12.sp)
+            n?.corners?.forEach { c ->
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(c.name.ifEmpty { t("corner_n", c.n) }, color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.widthIn(min = 64.dp))
+                    Text(c.note, fontSize = 12.sp)
+                }
+            }
+            TextButton({ text = n?.general ?: ""; error = null; editing = true }, contentPadding = PaddingValues(horizontal = 0.dp)) {
+                Text(t(if (n?.general.isNullOrEmpty()) "write_note" else "edit_note"), color = Accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            }
+        }
+    }
+    if (editing) AlertDialog(
+        onDismissRequest = { if (!busy) editing = false },
+        title = { Text(track, fontWeight = FontWeight.Black) },
+        text = {
+            Column {
+                OutlinedTextField(text, { text = it.take(2000) }, modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp))
+                error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            TextButton({ busy = true; vm.setTrackNote(trackId, track, text) { e -> busy = false; error = e; if (e == null) editing = false } }, enabled = !busy) { Text(t("save"), color = Accent) }
+        },
+        dismissButton = { TextButton({ editing = false }, enabled = !busy) { Text(t("cancel"), color = Muted) } }
+    )
+}
+
+/** Every track you wrote notes on, the newest first; each opens its track page (with the notes). */
+@Composable
+private fun TrackNotesScreen(vm: PitlaneViewModel, nav: NavHostController) {
+    val all by vm.trackNotes.collectAsState()
+    LaunchedEffect(Unit) { vm.loadTrackNotes() }
+    val list = all.values.sortedByDescending { it.updated }
+    Screen(t("track_notes"), t("track_notes_sub"), back = { nav.popBackStack() }) {
+        if (list.isEmpty()) item { Empty(t("no_notes_any")) }
+        items(list, key = { it.trackId }) { n ->
+            Panel(Modifier.clickable { vm.openTrack(n.trackId, n.track); nav.navigate("track") }) {
+                Text(n.track.ifEmpty { "#" + n.trackId }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(n.general.ifEmpty { t("corner_notes_n", n.corners.size) }, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
     }
 }

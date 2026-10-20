@@ -193,6 +193,67 @@ final class Account: ObservableObject {
         }
     }
 
+    // ---------- track notes: yours on each track (notes.json in the account) ----------
+
+    @Published var trackNotes: [Int64: TrackNote] = [:]
+
+    func loadTrackNotes() {
+        let raw = demo ? UserDefaults.standard.data(forKey: "demoNotes") : saved("notes")
+        let o = raw.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        trackNotes = o.reduce(into: [:]) { acc, kv in
+            guard let v = kv.value as? [String: Any] else { return }
+            let id = Int64(int(v["trackId"])) == 0 ? Int64(kv.key) ?? 0 : Int64(int(v["trackId"]))
+            guard id != 0 else { return }
+            let cs = (v["corners"] as? [[String: Any]] ?? []).map { CornerNote(n: int($0["n"]), dist: num($0["dist"]) ?? 0, name: str($0["name"]), note: str($0["note"])) }
+                .filter { !$0.note.isEmpty }.sorted { $0.dist < $1.dist }
+            acc[id] = TrackNote(trackId: id, track: str(v["track"]), general: str(v["general"]), corners: cs, updated: str(v["updated"]))
+        }
+    }
+
+    /// Saves your general note on a track in the account's bundle (its corner notes stay as they are; no note and no
+    /// corner removes it), like the PC and the web: only notes.json changes, and it goes back sealed with your key.
+    func setTrackNote(trackId: Int64, track: String, general: String) async throws {
+        guard trackId != 0 else { return }
+        let g = String(general.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000)), k = String(trackId)
+        func change(_ nv: inout [String: Any]) {
+            var cur = nv[k] as? [String: Any] ?? ["trackId": trackId, "track": String(track.prefix(120))]
+            if g.isEmpty { cur.removeValue(forKey: "general") } else { cur["general"] = g }
+            if str(cur["track"]).isEmpty { cur["track"] = String(track.prefix(120)) }
+            cur["updated"] = ISO8601DateFormatter().string(from: Date())
+            if g.isEmpty && (cur["corners"] as? [Any] ?? []).isEmpty { nv.removeValue(forKey: k) } else { nv[k] = cur }
+        }
+        if demo {
+            var nv = UserDefaults.standard.data(forKey: "demoNotes").flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            change(&nv)
+            UserDefaults.standard.set(try? JSONSerialization.data(withJSONObject: nv), forKey: "demoNotes")
+            loadTrackNotes()
+            return
+        }
+        guard let dk = dataKey else { throw AppError.signedOut }
+        for attempt in 0..<3 {
+            let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/sync")) as? [String: Any] ?? [:]
+            var all: [String: Any] = [:]
+            if let blob = j["blob"] as? String, !blob.isEmpty {
+                all = try JSONSerialization.jsonObject(with: PLCrypto.gunzip(PLCrypto.open(key: dk, sealed: blob, aad: PLCrypto.accountAAD))) as? [String: Any] ?? [:]
+            }
+            var nv = (all["notes.json"] as? String).flatMap { Data(base64Encoded: $0) }.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            change(&nv)
+            let nvData = try JSONSerialization.data(withJSONObject: nv)
+            all["notes.json"] = nvData.base64EncodedString()
+            let sealed = try PLCrypto.seal(key: dk, plain: PLCrypto.gzip(JSONSerialization.data(withJSONObject: all)), aad: PLCrypto.accountAAD)
+            do {
+                let r = try JSONSerialization.jsonObject(with: await call("PUT", "/account/sync", body: ["blob": sealed, "base": j["version"] ?? 0])) as? [String: Any] ?? [:]
+                syncVersion = int(r["version"])
+                defaults.set(syncVersion, forKey: "syncVersion")
+                save("notes", nvData)
+                loadTrackNotes()
+                return
+            } catch let e as AppError where e.key.lowercased().contains("conflict") && attempt < 2 {
+                continue // another device wrote the account meanwhile: read it again and redo the change on top
+            }
+        }
+    }
+
     // ---------- saved copies (sealed with the account's data key) ----------
 
     private func file(_ name: String) -> URL { dir.appendingPathComponent(String(name.map { $0.isLetter || $0.isNumber || "_.-".contains($0) ? $0 : "_" }.prefix(120))) }
@@ -384,6 +445,7 @@ final class Account: ObservableObject {
                     if let d = try? JSONSerialization.data(withJSONObject: slim) { save("races", d) }
                 }
                 save("drivers", (all["drivers.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
+                save("notes", (all["notes.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
                 save("ratings", (all["ratings.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
             }
             syncedFiles = files

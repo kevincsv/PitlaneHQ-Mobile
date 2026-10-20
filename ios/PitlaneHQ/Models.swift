@@ -367,6 +367,23 @@ struct DriverNote: Hashable {
     let note: String
 }
 
+/// Your notes on a track (notes.json in the account, the same the PC and the web write): a general note and one per
+/// corner (the corner's number, where its braking zone starts and what you wrote).
+struct TrackNote: Identifiable, Hashable {
+    let trackId: Int64
+    let track: String
+    let general: String
+    let corners: [CornerNote]
+    let updated: String
+    var id: Int64 { trackId }
+}
+struct CornerNote: Hashable {
+    let n: Int
+    let dist: Double
+    let name: String
+    let note: String
+}
+
 /// The facts of one lap, as the server reads them: its hardest braking (m/s², the top 5 % of its braking), the
 /// speed it shifted up at in every gear (the highest point it took the gear to), its top speed.
 /// Rows [speed, throttle, brake, gear, steering, time].
