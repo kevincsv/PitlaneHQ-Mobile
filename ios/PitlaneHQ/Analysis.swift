@@ -201,9 +201,8 @@ struct CoachBody: View {
     var body: some View {
         let refName = an.refLabel.isEmpty ? t("ref") : an.refLabel
         let d = an.refTime.map { an.lap.time - $0 }
-        let c0 = an.trace.map { compare($0, an.ref) }
-        let cs0: [Corner] = (c0 != nil && an.ref != nil) ? corners(c0!, turns: an.turns) : []
-        let lose0 = cs0.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
+        let cs0: [Corner] = gapCorners()
+        let lose0: [Corner] = cs0.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
         VStack(alignment: .leading, spacing: 10) {
             if !cs0.isEmpty { CoachGap(an: an, refName: refName, first: lose0.first) }
             else { HStack(spacing: 8) {
@@ -217,6 +216,11 @@ struct CoachBody: View {
         }
     }
 
+    private func gapCorners() -> [Corner] {
+        guard let tr = an.trace, an.ref != nil else { return [] }
+        return corners(compare(tr, an.ref), turns: an.turns)
+    }
+
     @ViewBuilder private func summary(_ cs: [Corner], _ lose: [Corner], _ c: Compared) -> some View {
         let lost = cs.reduce(0.0) { $0 + max(0, $1.lost) }
         let gained = cs.reduce(0.0) { $0 + min(0, $1.lost) }
@@ -225,8 +229,7 @@ struct CoachBody: View {
         // every corner's cost: touch one to read its tip (and see it on the map)
         SectionLabel(text: t("corners_cost"))
         CornerStrip(cs: cs, lapLen: lapLen, pick: $pick, title: false)
-        let k = pick.flatMap { p in cs.min { abs(Double($0.atM) / max(lapLen, 1) - p) < abs(Double($1.atM) / max(lapLen, 1) - p) } }
-            .flatMap { abs(Double($0.atM) / max(lapLen, 1) - (pick ?? 0)) < 0.012 ? $0 : nil }
+        let k: Corner? = picked(cs, lapLen)
         Panel { if let k { CornerTipView(k: k) } else { Text(t("corner_pick")).font(.caption).foregroundColor(Theme.muted) } }
         if !lose.isEmpty {
             Panel {
@@ -235,6 +238,19 @@ struct CoachBody: View {
                 ForEach(Array(lose.prefix(4).enumerated()), id: \.offset) { i, k in PlanRow(i: i, k: k) }
             }
         }
+    }
+
+    /// the corner the finger picked on the strip or the map (its apex within about 1 % of the lap)
+    private func picked(_ cs: [Corner], _ lapLen: Double) -> Corner? {
+        guard let p = pick else { return nil }
+        let len = max(lapLen, 1)
+        var best: Corner?
+        var gap = 0.012
+        for c in cs {
+            let g = abs(Double(c.atM) / len - p)
+            if g < gap { gap = g; best = c }
+        }
+        return best
     }
 
     @ViewBuilder private func details(_ tr: Trace) -> some View {

@@ -134,7 +134,7 @@ struct LicCard: View {
     let k: String
     let r: (ir: Int, lic: String, at: Double)?
     let races: [Race]
-    @State private var sel: Int?
+    @State var sel: Int?
     var body: some View {
         let col = discColor(k)
         let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.ai }.prefix(5) // races against the AI give no iRating
@@ -160,12 +160,7 @@ struct LicCard: View {
             Spacer(minLength: 0)
         }
         // the iRating after each of its last races: the finger reads the race under it
-        if line.count >= 2 {
-            let x = sel.flatMap { $0 < line.count ? line[$0] : nil }
-            Text(x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)).font(.system(size: 10)).lineLimit(1)
-                .foregroundColor(x == nil ? Theme.muted : x!.irChange >= 0 ? Theme.good : Theme.bad)
-            IrLine(vals: line.map { $0.ir + $0.irChange }, col: col, height: 30, sel: $sel)
-        }
+        if line.count >= 2 { spark(line, col) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -173,6 +168,16 @@ struct LicCard: View {
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(col.opacity(0.4), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .opacity(r == nil ? 0.55 : 1)
+    }
+}
+
+extension LicCard {
+    @ViewBuilder func spark(_ line: [Race], _ col: Color) -> some View {
+        let x: Race? = sel.flatMap { $0 < line.count ? line[$0] : nil }
+        let label: String = x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)
+        let tint: Color = x.map { $0.irChange >= 0 ? Theme.good : Theme.bad } ?? Theme.muted
+        Text(label).font(.system(size: 10)).lineLimit(1).foregroundColor(tint)
+        IrLine(vals: line.map { $0.ir + $0.irChange }, col: col, height: 30, sel: $sel)
     }
 }
 
@@ -872,13 +877,12 @@ struct LastRaceCard: View {
                     HStack(spacing: 6) { DrinksBadge(race: race); AiBadge(race: race) }
                 }
                 Spacer()
-                Text(race.dnf ? t("dnf") : "P\(race.finish)").font(.system(size: 34, weight: .black))
-                    .foregroundColor(!race.dnf && (1...3).contains(race.finish) ? Theme.accent : Theme.fg)
+                Text(race.dnf ? t("dnf") : "P" + String(race.finish)).font(.system(size: 34, weight: .black)).foregroundColor(placeTint)
                 if !race.dnf { Text("/\(race.field)").font(.system(size: 14)).foregroundColor(Theme.muted).padding(.top, 12) }
             }
             HStack(spacing: 8) {
                 // a race against the AI has no iRating
-                stat(t("lr_ir"), race.ai ? "—" : signed(race.irChange), race.ai ? Theme.muted : race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.fg)
+                stat(t("lr_ir"), race.ai ? "—" : signed(race.irChange), irTint)
                 stat(t("lr_best"), lapTime(race.best), Theme.purple)
                 stat(t("lr_inc"), "\(race.inc)x", race.inc >= 8 ? Theme.bad : Theme.fg)
             }
@@ -891,6 +895,12 @@ struct LastRaceCard: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.accent.opacity(0.45), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
+
+    private var irTint: Color {
+        if race.ai { return Theme.muted }
+        return race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.fg
+    }
+    private var placeTint: Color { !race.dnf && (1...3).contains(race.finish) ? Theme.accent : Theme.fg }
 
     private func stat(_ l: String, _ v: String, _ c: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -915,31 +925,54 @@ struct IrLine: View {
     var height: CGFloat
     @Binding var sel: Int?
     var area = false
+
+    private func pt(_ i: Int, _ sz: CGSize) -> CGPoint {
+        let n = max(1, vals.count - 1)
+        let lo = Double(vals.min() ?? 0) - 10
+        let hi = Double(vals.max() ?? 0) + 10
+        let f = (Double(vals[i]) - lo) / max(1, hi - lo)
+        return CGPoint(x: sz.width * CGFloat(i) / CGFloat(n), y: 4 + (sz.height - 8) * CGFloat(1 - f))
+    }
+
+    private func line(_ sz: CGSize) -> Path {
+        var p = Path()
+        for i in vals.indices { if i == 0 { p.move(to: pt(i, sz)) } else { p.addLine(to: pt(i, sz)) } }
+        return p
+    }
+
+    private func fill(_ sz: CGSize) -> Path {
+        var p = line(sz)
+        p.addLine(to: CGPoint(x: sz.width, y: sz.height))
+        p.addLine(to: CGPoint(x: 0, y: sz.height))
+        p.closeSubpath()
+        return p
+    }
+
     var body: some View {
         GeometryReader { g in
-            let n = vals.count
-            let lo = Double(vals.min() ?? 0) - 10, hi = Double(vals.max() ?? 0) + 10
-            let x = { (i: Int) -> CGFloat in g.size.width * CGFloat(i) / CGFloat(max(1, n - 1)) }
-            let y = { (v: Int) -> CGFloat in 4 + (g.size.height - 8) * CGFloat(1 - (Double(v) - lo) / (hi - lo)) }
-            let line = Path { p in for (i, v) in vals.enumerated() { i == 0 ? p.move(to: CGPoint(x: x(i), y: y(v))) : p.addLine(to: CGPoint(x: x(i), y: y(v))) } }
             ZStack {
-                if area {
-                    Path { p in p.addPath(line); p.addLine(to: CGPoint(x: g.size.width, y: g.size.height)); p.addLine(to: CGPoint(x: 0, y: g.size.height)); p.closeSubpath() }
-                        .fill(col.opacity(0.10))
-                }
-                line.stroke(col, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                if let i = sel, i < n {
-                    Path { p in p.move(to: CGPoint(x: x(i), y: 0)); p.addLine(to: CGPoint(x: x(i), y: g.size.height)) }.stroke(Theme.fg.opacity(0.5), lineWidth: 1)
-                    Circle().fill(Theme.ink).overlay(Circle().stroke(col, lineWidth: 2)).frame(width: 10, height: 10).position(x: x(i), y: y(vals[i]))
-                }
+                if area { fill(g.size).fill(col.opacity(0.10)) }
+                line(g.size).stroke(col, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                if let i = sel, i < vals.count { marker(pt(i, g.size), g.size.height) }
             }
             .contentShape(Rectangle())
-            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { v in
-                guard n > 1 else { return }
-                sel = min(n - 1, max(0, Int((v.location.x / max(1, g.size.width) * CGFloat(n - 1)).rounded())))
-            })
+            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { v in pick(v.location.x, g.size.width) })
         }
         .frame(height: height)
+    }
+
+    private func marker(_ p: CGPoint, _ h: CGFloat) -> some View {
+        ZStack {
+            Path { q in q.move(to: CGPoint(x: p.x, y: 0)); q.addLine(to: CGPoint(x: p.x, y: h)) }.stroke(Theme.fg.opacity(0.5), lineWidth: 1)
+            Circle().fill(Theme.ink).overlay(Circle().stroke(col, lineWidth: 2)).frame(width: 10, height: 10).position(p)
+        }
+    }
+
+    private func pick(_ x: CGFloat, _ w: CGFloat) {
+        let n = vals.count
+        guard n > 1 else { return }
+        let f = Double(x / max(1, w)) * Double(n - 1)
+        sel = min(n - 1, max(0, Int(f.rounded())))
     }
 }
 
@@ -948,45 +981,67 @@ struct IrTrend: View {
     let races: [Race]
     @State private var k = ""
     @State private var sel: Int?
+
+    private var discs: [String] { DISCS.filter { irRaces(races, $0, 2).count >= 2 } }
+    private var disc: String {
+        let ds = discs
+        if ds.contains(k) { return k }
+        if let r = races.first(where: { !$0.ai && $0.ir > 0 }) {
+            let d = raceDisc(r.cat, r.car)
+            if ds.contains(d) { return d }
+        }
+        return ds.first ?? ""
+    }
+
     var body: some View {
-        let discs = DISCS.filter { irRaces(races, $0, 2).count >= 2 }
-        if !discs.isEmpty {
-            let first = races.first { !$0.ai && $0.ir > 0 }.map { raceDisc($0.cat, $0.car) }
-            let disc = discs.contains(k) ? k : (first.flatMap { discs.contains($0) ? $0 : nil } ?? discs[0])
-            let rs = irRaces(races, disc, 12)
-            let vals = rs.map { $0.ir + $0.irChange }
-            let i = min(sel ?? rs.count - 1, rs.count - 1)
-            let x = rs[i]
+        let ds: [String] = discs
+        let d: String = disc
+        let rs: [Race] = irRaces(races, d, 12)
+        if rs.count >= 2 {
             Panel {
-                if discs.count > 1 {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(discs, id: \.self) { d in
-                                Button { k = d; sel = nil } label: {
-                                    Text(discName(d)).font(.system(size: 11, weight: .bold)).padding(.horizontal, 10).padding(.vertical, 5)
-                                        .background(d == disc ? Theme.accent : Theme.surface2).foregroundColor(d == disc ? Theme.ink : Theme.muted).clipShape(Capsule())
-                                }
-                            }
-                        }
-                    }
-                    .padding(.bottom, 6)
-                }
-                HStack {
-                    SectionLabel(text: t("ir_trend", discName(disc).uppercased()))
-                    Spacer()
-                    Text("\(vals[i])").font(.system(size: 18, weight: .bold, design: .monospaced))
-                    Text(signed(x.irChange)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(x.irChange >= 0 ? Theme.good : Theme.bad)
-                }
-                if sel == nil {
-                    Text(t("spark_last", rs.count) + " · " + signed(rs.reduce(0) { $0 + $1.irChange })).font(.caption).foregroundColor(Theme.muted)
-                } else {
-                    NavigationLink(value: Route.race(x)) {
-                        Text(x.track + " · " + (x.dnf ? t("dnf") : "P\(x.finish)") + " · " + day(x.when) + "  ›").font(.caption).foregroundColor(Theme.accent).lineLimit(1)
-                    }.buttonStyle(.plain)
-                }
-                IrLine(vals: vals, col: Theme.accent, height: 110, sel: $sel, area: true).padding(.top, 6)
+                if ds.count > 1 { chips(ds, d) }
+                header(rs, d)
+                IrLine(vals: rs.map { $0.ir + $0.irChange }, col: Theme.accent, height: 110, sel: $sel, area: true).padding(.top, 6)
             }
         }
+    }
+
+    private func chips(_ ds: [String], _ d: String) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(ds, id: \.self) { x in
+                    Button { k = x; sel = nil } label: {
+                        Text(discName(x)).font(.system(size: 11, weight: .bold)).padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(x == d ? Theme.accent : Theme.surface2).foregroundColor(x == d ? Theme.ink : Theme.muted).clipShape(Capsule())
+                    }
+                }
+            }
+        }
+        .padding(.bottom, 6)
+    }
+
+    @ViewBuilder private func header(_ rs: [Race], _ d: String) -> some View {
+        let i: Int = min(sel ?? (rs.count - 1), rs.count - 1)
+        let x: Race = rs[i]
+        let total: Int = rs.reduce(0) { $0 + $1.irChange }
+        HStack {
+            SectionLabel(text: t("ir_trend", discName(d).uppercased()))
+            Spacer()
+            Text(String(x.ir + x.irChange)).font(.system(size: 18, weight: .bold, design: .monospaced))
+            Text(signed(x.irChange)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(x.irChange >= 0 ? Theme.good : Theme.bad)
+        }
+        if sel == nil {
+            Text(t("spark_last", rs.count) + " · " + signed(total)).font(.caption).foregroundColor(Theme.muted)
+        } else {
+            NavigationLink(value: Route.race(x)) {
+                Text(raceLine(x)).font(.caption).foregroundColor(Theme.accent).lineLimit(1)
+            }.buttonStyle(.plain)
+        }
+    }
+
+    private func raceLine(_ x: Race) -> String {
+        let place: String = x.dnf ? t("dnf") : "P" + String(x.finish)
+        return x.track + " · " + place + " · " + day(x.when) + "  ›"
     }
 }
 
