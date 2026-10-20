@@ -696,6 +696,8 @@ struct TwoFactorPanel: View {
 struct MainView: View {
     @State private var tab = 0
     var body: some View {
+        // the bar sits under the tabs, never over them: every screen ends above it and scrolls to its last row
+        VStack(spacing: 0) {
         TabView(selection: $tab) {
             NavigationStack { HomeView().routes() }.tag(0).toolbar(.hidden, for: .tabBar)
             NavigationStack { AnalysisView().routes() }.tag(1).toolbar(.hidden, for: .tabBar)
@@ -703,7 +705,9 @@ struct MainView: View {
             NavigationStack { CommunityView().routes() }.tag(2).toolbar(.hidden, for: .tabBar)
             NavigationStack { SettingsView() }.tag(4).toolbar(.hidden, for: .tabBar)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) { bar }
+            bar
+        }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
     }
 
