@@ -38,6 +38,10 @@
   notes.json changes, sealed with the account's key, like driver notes); Account → Track notes lists them all. A
   driver's profile shows their leaderboards, records (P1) and top 3 places, and a recent record opens its driver's
   profile when they have one (`prof`).
+- The look (the owner's choice, "Muro de boxes"): one dark theme, never switched, with the amber accent (#FFB02E):
+  background #0D1116, cards #161C24 with a #263140 edge and 12 rounded corners, a floating tab bar (#1E2631, the
+  chosen tab a #2E3846 pill with the amber icon; `BottomBar` on Android, `MainView.bar` on iOS) and the sub-tabs as
+  blocks (the chosen one amber, `Tabs`). Every chart follows the finger and says the values under it.
 - One version for Pitlane HQ everywhere: `version.txt` (the same number as PitlaneHQ.exe and the
   web), shown with "beta" until 1.0.0. Raise it slowly (PATCH for fixes, MINOR for a set of
   features) and add the version to CHANGELOG.md: its section becomes the release notes.

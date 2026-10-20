@@ -133,16 +133,21 @@ final class Inbox: ObservableObject {
 }
 
 enum Theme {
-    static let ink = Color(red: 0x11 / 255, green: 0x15 / 255, blue: 0x1B / 255)
-    static let surface = Color(red: 0x19 / 255, green: 0x20 / 255, blue: 0x2A / 255)
+    // the pit wall look: one dark theme with the amber accent, never switched
+    static let ink = Color(red: 0x0D / 255, green: 0x11 / 255, blue: 0x16 / 255)
+    static let surface = Color(red: 0x16 / 255, green: 0x1C / 255, blue: 0x24 / 255)
     static let surface2 = Color(red: 0x1E / 255, green: 0x26 / 255, blue: 0x31 / 255)
-    static let line = Color(red: 0x2B / 255, green: 0x35 / 255, blue: 0x42 / 255)
+    static let line = Color(red: 0x26 / 255, green: 0x31 / 255, blue: 0x40 / 255)
     static let fg = Color(red: 0xE7 / 255, green: 0xEB / 255, blue: 0xF1 / 255)
-    static let bg = Color(red: 0x11 / 255, green: 0x15 / 255, blue: 0x1B / 255)
-    static let muted = Color(red: 0x8A / 255, green: 0x97 / 255, blue: 0xA9 / 255)
+    static let bg = Color(red: 0x0D / 255, green: 0x11 / 255, blue: 0x16 / 255)
+    static let muted = Color(red: 0x9A / 255, green: 0xA6 / 255, blue: 0xB8 / 255)
     static let accent = Color(red: 1, green: 0xB0 / 255, blue: 0x2E / 255)
-    static let good = Color(red: 0x38 / 255, green: 0xC9 / 255, blue: 0x7C / 255)
-    static let bad = Color(red: 1, green: 0x63 / 255, blue: 0x63 / 255)
-    static let purple = Color(red: 0xB9 / 255, green: 0x8C / 255, blue: 1)
-    static let blue = Color(red: 0x5A / 255, green: 0xA9 / 255, blue: 1)
+    static let good = Color(red: 0x4F / 255, green: 0xE0 / 255, blue: 0x9A / 255)
+    static let bad = Color(red: 1, green: 0x7A / 255, blue: 0x7A / 255)
+    static let purple = Color(red: 0xC9 / 255, green: 0xA4 / 255, blue: 1)
+    static let blue = Color(red: 0x8C / 255, green: 0xC4 / 255, blue: 1)
+    /// the floating tab bar and its chosen tab
+    static let navBar = Color(red: 0x1E / 255, green: 0x26 / 255, blue: 0x31 / 255)
+    static let navEdge = Color(red: 0x2E / 255, green: 0x3A / 255, blue: 0x4A / 255)
+    static let navOn = Color(red: 0x2E / 255, green: 0x38 / 255, blue: 0x46 / 255)
 }

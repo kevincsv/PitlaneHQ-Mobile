@@ -76,18 +76,21 @@ import java.util.Date
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-private val Ink = Color(0xFF11151B)
-private val Surface = Color(0xFF19202A)
-private val Bg = Color(0xFF11151B)
+// the pit wall look: one dark theme with the amber accent, never switched
+private val Ink = Color(0xFF0D1116)
+private val Surface = Color(0xFF161C24)
+private val Bg = Color(0xFF0D1116)
 private val Surface2 = Color(0xFF1E2631)
-private val Line = Color(0xFF2B3542)
+private val Line = Color(0xFF263140)
 private val Fg = Color(0xFFE7EBF1)
-private val Muted = Color(0xFF8A97A9)
+private val Muted = Color(0xFF9AA6B8)
 private val Accent = Color(0xFFFFB02E)
-private val Good = Color(0xFF38C97C)
-private val Bad = Color(0xFFFF6363)
-private val Purple = Color(0xFFB98CFF)
-private val Blue = Color(0xFF5AA9FF)
+private val Good = Color(0xFF4FE09A)
+private val Bad = Color(0xFFFF7A7A)
+private val Purple = Color(0xFFC9A4FF)
+private val Blue = Color(0xFF8CC4FF)
+/** the floating tab bar's chosen tab */
+private val NavOn = Color(0xFF2E3846)
 
 private const val WEB_APP = "$SERVER/"
 
@@ -327,18 +330,21 @@ private fun BottomBar(nav: NavHostController) {
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
     val tab = when (current) { "race" -> if (nav.previousBackStackEntry?.destination?.route == "analysis") "analysis" else "home"; "session", "lap" -> "analysis"; "combo" -> "community"; "drinks", "admin" -> "settings"; else -> current }
-    NavigationBar(containerColor = Surface, tonalElevation = 0.dp, modifier = Modifier.height(64.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) {
+    // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
+    Row(
+        Modifier.fillMaxWidth().background(Ink).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
+            .clip(RoundedCornerShape(22.dp)).background(Surface2).border(1.dp, Color(0xFF2E3A4A), RoundedCornerShape(22.dp)).padding(6.dp)
+    ) {
         dests.forEach { d ->
-            NavigationBarItem(
-                tab == d.route,
-                { nav.navigate(d.route) { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } },
-                icon = { Icon(d.icon, null) },
-                label = { Text(d.label, fontSize = 10.sp, maxLines = 1) },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = Ink, selectedTextColor = Accent, indicatorColor = Accent,
-                    unselectedIconColor = Muted, unselectedTextColor = Muted
-                )
-            )
+            val on = tab == d.route
+            Column(
+                Modifier.weight(1f).heightIn(min = 52.dp).clip(RoundedCornerShape(16.dp)).background(if (on) NavOn else Color.Transparent)
+                    .clickable { nav.navigate(d.route) { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } },
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
+            ) {
+                Icon(d.icon, d.label, tint = if (on) Accent else Muted, modifier = Modifier.size(22.dp))
+                Text(d.label, fontSize = 10.sp, maxLines = 1, color = if (on) Accent else Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+            }
         }
     }
 }
@@ -354,7 +360,7 @@ private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, 
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (back != null) IconButton(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Fg) }
                 Column(Modifier.weight(1f)) {
-                    Text(title.uppercase(), color = Fg, fontSize = 20.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(title.uppercase(), color = Fg, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 InfoButton()
@@ -2943,10 +2949,12 @@ private fun WebNote(text: String) {
 @Composable
 private fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // the sub-tabs: the chosen one amber, the others quiet blocks
         labels.forEachIndexed { i, l ->
-            FilterChip(
-                selected == i, { onSelect(i) }, label = { Text(l, fontSize = 13.sp) },
-                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink)
+            val on = selected == i
+            Text(
+                l, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Ink else Muted, maxLines = 1,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) Accent else Surface).clickable { onSelect(i) }.padding(horizontal = 12.dp, vertical = 9.dp)
             )
         }
     }
@@ -2956,13 +2964,13 @@ private fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Surface),
-        border = BorderStroke(1.dp, Line), shape = MaterialTheme.shapes.small
+        border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(12.dp)
     ) { Column(Modifier.padding(12.dp), content = content) }
 }
 
 @Composable
 private fun Section(s: String) {
-    Text(s, color = Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+    Text(s, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp)
 }
 
 @Composable

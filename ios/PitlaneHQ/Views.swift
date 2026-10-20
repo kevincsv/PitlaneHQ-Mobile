@@ -9,15 +9,15 @@ struct Panel<Content: View>: View {
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 
 struct SectionLabel: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11, weight: .bold, design: .monospaced)).tracking(1.2).foregroundColor(Theme.muted)
+        Text(text).font(.system(size: 11, weight: .semibold)).tracking(1.3).foregroundColor(Theme.muted)
     }
 }
 
@@ -317,10 +317,11 @@ struct Tabs: View {
             HStack(spacing: 8) {
                 ForEach(Array(labels.enumerated()), id: \.offset) { i, l in
                     Button { selected = i } label: {
-                        Text(l).font(.subheadline.weight(.semibold)).padding(.horizontal, 14).padding(.vertical, 7)
-                            .background(selected == i ? Theme.accent : Theme.surface2)
-                            .foregroundColor(selected == i ? Theme.ink : Theme.fg)
-                            .clipShape(Capsule())
+                        // the sub-tabs: the chosen one amber, the others quiet blocks
+                        Text(l).font(.system(size: 13, weight: .semibold)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 9)
+                            .background(selected == i ? Theme.accent : Theme.surface)
+                            .foregroundColor(selected == i ? Theme.ink : Theme.muted)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                 }
             }
@@ -368,7 +369,7 @@ struct Screen<Content: View>: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(title.uppercased()).font(.system(size: 20, weight: .black)).foregroundColor(Theme.fg).lineLimit(2)
+                        Text(title.uppercased()).font(.system(size: 26, weight: .black)).tracking(1).foregroundColor(Theme.fg).lineLimit(2)
                         if !sub.isEmpty { Text(sub).font(.caption).foregroundColor(Theme.muted).lineLimit(2) }
                     }
                     .padding(.vertical, 4)
@@ -696,13 +697,47 @@ struct MainView: View {
     @State private var tab = 0
     var body: some View {
         TabView(selection: $tab) {
-            NavigationStack { HomeView().routes() }.tabItem { Label(t("home"), systemImage: "house") }.tag(0)
-            NavigationStack { AnalysisView().routes() }.tabItem { Label(t("analysis"), systemImage: "chart.xyaxis.line") }.tag(1)
-            NavigationStack { LiveView() }.tabItem { Label(t("live"), systemImage: "antenna.radiowaves.left.and.right") }.tag(3)
-            NavigationStack { CommunityView().routes() }.tabItem { Label(t("community"), systemImage: "person.3") }.tag(2)
-            NavigationStack { SettingsView() }.tabItem { Label(t("account_tab"), systemImage: "person") }.tag(4)
+            NavigationStack { HomeView().routes() }.tag(0).toolbar(.hidden, for: .tabBar)
+            NavigationStack { AnalysisView().routes() }.tag(1).toolbar(.hidden, for: .tabBar)
+            NavigationStack { LiveView() }.tag(3).toolbar(.hidden, for: .tabBar)
+            NavigationStack { CommunityView().routes() }.tag(2).toolbar(.hidden, for: .tabBar)
+            NavigationStack { SettingsView() }.tag(4).toolbar(.hidden, for: .tabBar)
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) { bar }
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
+    }
+
+    // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
+    private var bar: some View {
+        HStack(spacing: 0) {
+            item(0, t("home"), "house")
+            item(1, t("analysis"), "chart.xyaxis.line")
+            item(3, t("live"), "antenna.radiowaves.left.and.right")
+            item(2, t("community"), "person.3")
+            item(4, t("account_tab"), "person")
+        }
+        .padding(6)
+        .background(Theme.navBar)
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.navEdge, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 4)
+        .background(Theme.ink.ignoresSafeArea())
+    }
+
+    private func item(_ i: Int, _ label: String, _ icon: String) -> some View {
+        let on = tab == i
+        return Button { tab = i } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 18, weight: .medium))
+                Text(label).font(.system(size: 10, weight: on ? .semibold : .regular)).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .foregroundColor(on ? Theme.accent : Theme.muted)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(on ? Theme.navOn : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
     @EnvironmentObject private var inbox: Inbox
 }
