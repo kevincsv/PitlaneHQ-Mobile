@@ -393,7 +393,8 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
         if (a.admin || (a.supporter && !a.supporterHidden)) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { MyBadges(a) } }
         state(r) { vm.loadRaces() }
-        // the web's order: the days you drove, the licence summary, then your races
+        // the pit wall: your last race on top, then the days you drove, the licence summary and your races
+        races.firstOrNull()?.let { x -> item { LastRace(x) { vm.race = x; nav.navigate("race") } } }
         item { DaysDriven(vm, nav, races) }
         item { Licences(vm) }
         item { Section(t("race_summary")) }
@@ -493,6 +494,107 @@ private fun DaysDriven(vm: PitlaneViewModel, nav: NavHostController, races: List
                 }
             }
         )
+    }
+}
+
+/** Your last race on Home: where, the place, what it gave and the way to its summary. */
+@Composable
+private fun LastRace(x: Race, onClick: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = Surface),
+        border = BorderStroke(1.dp, Accent.copy(alpha = 0.45f)), shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(t("last_race"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.3.sp, modifier = Modifier.weight(1f))
+                Text(day(x.whenMs), color = Muted, fontSize = 11.sp)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(x.track, fontWeight = FontWeight.Black, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(listOf(x.car, discName(raceDisc(x.cat, x.car))).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { DrinksBadge(x); AiBadge(x) }
+                }
+                Text(if (x.dnf) t("dnf") else "P${x.finish}", fontSize = 34.sp, fontWeight = FontWeight.Black, color = if (!x.dnf && x.finish in 1..3) Accent else Fg)
+                if (!x.dnf) Text("/${x.field}", color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 12.dp))
+            }
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                // a race against the AI has no iRating
+                LastStat(t("lr_ir"), if (x.ai) "—" else signed(x.irChange), if (x.ai) Muted else if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
+                LastStat(t("lr_best"), lapTime(x.best), Purple, Modifier.weight(1f).fillMaxHeight())
+                LastStat(t("lr_inc"), "${x.inc}x", if (x.inc >= 8) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
+            }
+            Text(t("see_summary"), color = Accent, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun LastStat(l: String, v: String, c: Color, m: Modifier) {
+    Column(m.clip(RoundedCornerShape(10.dp)).background(Ink).padding(horizontal = 10.dp, vertical = 8.dp)) {
+        Text(l, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, maxLines = 1)
+        Text(v, color = c, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+    }
+}
+
+/** Your rated races of one discipline, oldest first, with the iRating each left you at. */
+private fun irRaces(races: List<Race>, k: String, n: Int) =
+    races.filter { !it.ai && it.ir > 0 && raceDisc(it.cat, it.car) == k }.take(n).reversed()
+
+/** The iRating after each race as a line that follows the finger: the point under it is picked (onSel). */
+@Composable
+private fun IrLine(vals: List<Int>, col: Color, height: Dp, sel: Int?, area: Boolean = false, onSel: (Int) -> Unit) {
+    val n = vals.size
+    if (n < 2) return
+    var width by remember { mutableIntStateOf(1) }
+    fun pickAt(x: Float) = onSel(((x / width.coerceAtLeast(1)) * (n - 1)).roundToInt().coerceIn(0, n - 1))
+    val lo = vals.min() - 10.0; val hi = vals.max() + 10.0
+    Canvas(
+        Modifier.fillMaxWidth().height(height).onSizeChanged { width = it.width }
+            .pointerInput(n) { detectTapGestures(onPress = { pickAt(it.x) }) }
+            .pointerInput(n) { detectHorizontalDragGestures(onDragStart = { pickAt(it.x) }, onHorizontalDrag = { ch, _ -> pickAt(ch.position.x); ch.consume() }) }
+    ) {
+        val pad = 4.dp.toPx()
+        fun x(i: Int) = size.width * i / (n - 1)
+        fun y(v: Int) = (pad + (size.height - 2 * pad) * (1 - (v - lo) / (hi - lo))).toFloat()
+        val p = Path().apply { vals.forEachIndexed { i, v -> if (i == 0) moveTo(x(i), y(v)) else lineTo(x(i), y(v)) } }
+        if (area) drawPath(Path().apply { addPath(p); lineTo(size.width, size.height); lineTo(0f, size.height); close() }, col.copy(alpha = 0.10f))
+        drawPath(p, col, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        sel?.coerceIn(0, n - 1)?.let { i ->
+            drawLine(Fg.copy(alpha = 0.5f), Offset(x(i), 0f), Offset(x(i), size.height), 1.dp.toPx())
+            drawCircle(Ink, 5.dp.toPx(), Offset(x(i), y(vals[i])))
+            drawCircle(col, 5.dp.toPx(), Offset(x(i), y(vals[i])), style = Stroke(width = 2.dp.toPx()))
+        }
+    }
+}
+
+/** My races: your iRating of one discipline over its last races, a line you read with your finger. */
+@Composable
+private fun IrTrend(races: List<Race>, onOpen: (Race) -> Unit) {
+    val discs = DISCS.filter { k -> irRaces(races, k, 2).size >= 2 }
+    if (discs.isEmpty()) return
+    var k by rememberSaveable { mutableStateOf("") }
+    val disc = k.takeIf { it in discs } ?: races.firstOrNull { !it.ai && it.ir > 0 }?.let { raceDisc(it.cat, it.car) }?.takeIf { it in discs } ?: discs[0]
+    val rs = irRaces(races, disc, 12)
+    val vals = rs.map { it.ir + it.irChange }
+    var sel by remember(disc) { mutableStateOf<Int?>(null) }
+    val i = sel ?: (rs.size - 1)
+    val x = rs[i]
+    Panel {
+        if (discs.size > 1) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            discs.forEach { d -> Chip(discName(d), d == disc) { k = d } }
+        }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Section(t("ir_trend", discName(disc).uppercase()))
+            Spacer(Modifier.weight(1f))
+            Text(vals[i].toString(), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(" " + signed(x.irChange), color = if (x.irChange >= 0) Good else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        if (sel == null) Text(t("spark_last", rs.size) + " · " + signed(rs.sumOf { it.irChange }), color = Muted, fontSize = 12.sp)
+        else Text(x.track + " · " + (if (x.dnf) t("dnf") else "P${x.finish}") + " · " + day(x.whenMs) + "  ›", color = Accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.clickable { onOpen(x) })
+        Spacer(Modifier.height(6.dp))
+        IrLine(vals, Accent, 110.dp, sel, area = true) { sel = it }
     }
 }
 
@@ -840,6 +942,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                 state(r) { vm.loadRaces() }
                 val races = r.data ?: emptyList()
                 if (r.data != null && races.isEmpty()) item { Empty(t("no_races")) }
+                if (races.isNotEmpty()) item { IrTrend(races) { x -> vm.race = x; nav.navigate("race") } }
                 items(races) { x -> RaceRow(x) { vm.race = x; nav.navigate("race") } }
             }
         }
@@ -970,6 +1073,29 @@ private fun LazyListScope.sectorItems(an: LapAnalysis) {
     }
 }
 
+/** The coach's top card: the gap to the reference, both times and what to work on first. */
+@Composable
+private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?) {
+    val d = an.refTime?.let { an.lap.time - it }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Surface), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(14.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(t("coach_vs", refName).uppercase(), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp, maxLines = 2)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(d?.let { "%+.3f".format(it) } ?: "—", fontSize = 30.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
+                    color = if (d == null) Fg else if (d <= 0) Good else Bad, modifier = Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(t("you") + " · L${an.lap.n}  " + lapTime(an.lap.time), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    Text(lapTime(an.refTime), color = Blue, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                }
+            }
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Ink).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(t("coach_first").uppercase(), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                if (first == null) Text(t("all_clean"), color = Good, fontSize = 13.sp) else CornerTip(first)
+            }
+        }
+    }
+}
+
 /**
  * The coach, like the web's: the gap to the reference with what to work on first, the plan, the map, the sectors and the
  * corners that cost the most (each with its four phases). The car card shows only when nobody known is ahead.
@@ -977,7 +1103,11 @@ private fun LazyListScope.sectorItems(an: LapAnalysis) {
 private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, onPick: (Int) -> Unit) {
     val tr = an.trace
     val refName = an.refLabel.ifBlank { t("ref") }
-    item {
+    val c0 = tr?.let { compare(it, an.ref) }
+    val cs0 = if (c0 != null && an.ref != null) corners(c0, an.turns) else emptyList()
+    val lose0 = cs0.filter { it.tip != null && it.lost > 0.03 }.sortedByDescending { it.lost }
+    if (cs0.isNotEmpty()) item { CoachGap(an, refName, lose0.firstOrNull()) }
+    else item {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Metric(t("you") + " · L${an.lap.n}", lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent)
             Metric(refName, lapTime(an.refTime), Modifier.weight(1f).fillMaxHeight(), Blue)
@@ -997,11 +1127,12 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, onPick: (Int) 
             val gained = cs.sumOf { minOf(0.0, it.lost) }
             Text(t("coach_sum", "%.2f".format(lost), cs.size, "%.2f".format(-gained)), color = Muted, fontSize = 12.sp)
         }
+        item { Section(t("corners_cost")) }
         item {
-            Panel {
-                Section(t("coach_first").uppercase())
-                val f = lose.firstOrNull()
-                if (f == null) Text(t("all_clean"), color = Good, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp)) else CornerTip(f)
+            Column {
+                CornerStrip(cs, c.step, pick, title = false, onSel = onPick)
+                val k = pick?.let { p -> cs.minByOrNull { kotlin.math.abs(it.atM / c.step - p) }?.takeIf { kotlin.math.abs(it.atM / c.step - p) <= 2 } }
+                Panel(Modifier.padding(top = 8.dp)) { if (k == null) Text(t("corner_pick"), color = Muted, fontSize = 12.sp) else CornerTip(k) }
             }
         }
         if (lose.isNotEmpty()) item {
@@ -2809,11 +2940,14 @@ private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>,
     val lic = r?.second?.trim()?.uppercase() ?: ""
     val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }
     val sr = lic.split(Regex("\\s+")).getOrNull(1)
+    val line = irRaces(races, k, 10)
+    var sel by remember(line.size) { mutableStateOf<Int?>(null) }
     Card(
         m.alpha(if (r == null) 0.55f else 1f), colors = CardDefaults.cardColors(containerColor = Surface),
-        border = BorderStroke(1.dp, col.copy(alpha = 0.4f)), shape = MaterialTheme.shapes.small
+        border = BorderStroke(1.dp, col.copy(alpha = 0.4f)), shape = RoundedCornerShape(12.dp)
     ) {
-        Row(Modifier.padding(12.dp).fillMaxHeight(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+      Column(Modifier.fillMaxHeight()) {
+        Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = if (line.size >= 2) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             DiscIcon(k, 30.dp)
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(discName(k), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 14.sp)
@@ -2825,6 +2959,14 @@ private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>,
                 if (r != null && cls != null) LicBadge(cls, sr)
             }
         }
+        // the iRating after each of its last races: the finger reads the race under it
+        if (line.size >= 2) Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
+            val x = sel?.let { line.getOrNull(it) }
+            Text(x?.let { it.track + " " + signed(it.irChange) } ?: t("spark_last", line.size), color = if (x == null) Muted else if (x.irChange >= 0) Good else Bad,
+                fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IrLine(line.map { it.ir + it.irChange }, col, 30.dp, sel) { sel = it }
+        }
+      }
     }
 }
 
@@ -2845,10 +2987,10 @@ private fun DiscIcon(k: String, size: Dp) {
 /** Every corner as a small bar, like the web's analyzer: taller the more time it costs (red; green when it gains), its
  *  official turn number under it. Press one to read it on the map and the charts. */
 @Composable
-private fun CornerStrip(cs: List<Corner>, step: Double, sel: Int?, onSel: (Int) -> Unit) {
+private fun CornerStrip(cs: List<Corner>, step: Double, sel: Int?, title: Boolean = true, onSel: (Int) -> Unit) {
     val mx = (cs.maxOfOrNull { kotlin.math.abs(it.lost) } ?: 0.0).coerceAtLeast(0.05)
     Panel {
-        Section(t("corners_strip"))
+        if (title) Section(t("corners_strip"))
         Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             cs.forEach { k ->
                 val idx = (k.atM / step).roundToInt()

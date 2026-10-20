@@ -6,8 +6,9 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 
 ## 0.4.2 beta
 
-- **New look**: a darker pit wall with the amber accent, a floating tab bar and clearer sub-tabs; the charts follow
-  your finger.
+- **New look**: a darker pit wall with the amber accent, a floating tab bar and clearer sub-tabs. Home opens on your
+  last race; every licence card and My races draw your iRating as a line you read with your finger; the Coach starts
+  with the gap and what to work on first, then what every corner costs (touch one to read it).
 - **Track notes**: your notes on each track (the same as on your PC and the web) on its track page, where you can
   write them too, and all of them in Account → Track notes.
 - **Driver profiles**: their leaderboards, records and top 3 places at a glance; a recent record opens its driver's

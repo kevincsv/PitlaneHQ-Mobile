@@ -142,6 +142,39 @@ private struct PlanRow: View {
     }
 }
 
+/// The coach's top card: the gap to the reference, both times and what to work on first.
+struct CoachGap: View {
+    let an: LapAnalysis
+    let refName: String
+    let first: Corner?
+    var body: some View {
+        let d = an.refTime.map { an.lap.time - $0 }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(t("coach_vs", refName).uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.3).foregroundColor(Theme.muted).lineLimit(2)
+            HStack {
+                Text(d.map { String(format: "%+.3f", $0) } ?? "—").font(.system(size: 30, weight: .bold, design: .monospaced))
+                    .foregroundColor(d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(t("you") + " · L\(an.lap.n)  " + lapTime(an.lap.time)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.accent)
+                    Text(lapTime(an.refTime)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.blue)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(t("coach_first").uppercased()).font(.system(size: 10, weight: .bold)).tracking(1).foregroundColor(Theme.accent)
+                if let f = first { CornerTipView(k: f) } else { Text(t("all_clean")).font(.subheadline).foregroundColor(Theme.good) }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 10))
+        }
+        .padding(14)
+        .background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+}
+
 /// A corner's four phases (braking, entry, apex, exit): what each costs against lap B.
 private struct PhaseRow: View {
     let k: Corner
@@ -168,26 +201,33 @@ struct CoachBody: View {
     var body: some View {
         let refName = an.refLabel.isEmpty ? t("ref") : an.refLabel
         let d = an.refTime.map { an.lap.time - $0 }
+        let c0 = an.trace.map { compare($0, an.ref) }
+        let cs0: [Corner] = (c0 != nil && an.ref != nil) ? corners(c0!, turns: an.turns) : []
+        let lose0 = cs0.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
+            if !cs0.isEmpty { CoachGap(an: an, refName: refName, first: lose0.first) }
+            else { HStack(spacing: 8) {
                 Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent)
                 Metric(label: refName, value: lapTime(an.refTime), color: Theme.blue)
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .fixedSize(horizontal: false, vertical: true) }
             if an.fastest { Text(t("coach_fastest")).font(.caption).foregroundColor(Theme.good) }
             if let tr = an.trace { details(tr) } else { EmptyNote(text: t("no_trace")) }
         }
     }
 
-    @ViewBuilder private func summary(_ cs: [Corner], _ lose: [Corner]) -> some View {
+    @ViewBuilder private func summary(_ cs: [Corner], _ lose: [Corner], _ c: Compared) -> some View {
         let lost = cs.reduce(0.0) { $0 + max(0, $1.lost) }
         let gained = cs.reduce(0.0) { $0 + min(0, $1.lost) }
+        let lapLen = Double(c.speedA.count) * c.step
         Text(t("coach_sum", String(format: "%.2f", lost), cs.count, String(format: "%.2f", -gained))).font(.caption).foregroundColor(Theme.muted)
-        Panel {
-            SectionLabel(text: t("coach_first").uppercased())
-            if let f = lose.first { CornerTipView(k: f) } else { Text(t("all_clean")).font(.subheadline).foregroundColor(Theme.good) }
-        }
+        // every corner's cost: touch one to read its tip (and see it on the map)
+        SectionLabel(text: t("corners_cost"))
+        CornerStrip(cs: cs, lapLen: lapLen, pick: $pick, title: false)
+        let k = pick.flatMap { p in cs.min { abs(Double($0.atM) / max(lapLen, 1) - p) < abs(Double($1.atM) / max(lapLen, 1) - p) } }
+            .flatMap { abs(Double($0.atM) / max(lapLen, 1) - (pick ?? 0)) < 0.012 ? $0 : nil }
+        Panel { if let k { CornerTipView(k: k) } else { Text(t("corner_pick")).font(.caption).foregroundColor(Theme.muted) } }
         if !lose.isEmpty {
             Panel {
                 SectionLabel(text: t("coach_plan").uppercased())
@@ -202,7 +242,7 @@ struct CoachBody: View {
         let cs: [Corner] = an.ref != nil ? corners(c, turns: an.turns) : []
         let lose = cs.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
         if an.ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
-        else if !cs.isEmpty { summary(cs, lose) }
+        else if !cs.isEmpty { summary(cs, lose, c) }
         if tr.hasShape || an.layout != nil { TrackMapView(c: c, trace: tr, pick: $pick, turns: an.turns, road: an.layout) }
         if !an.lap.sectors.isEmpty { SectorTable(a: an.lap.sectors, b: an.refSectors) }
         if !lose.isEmpty {

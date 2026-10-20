@@ -134,6 +134,7 @@ struct LicCard: View {
     let k: String
     let r: (ir: Int, lic: String, at: Double)?
     let races: [Race]
+    @State private var sel: Int?
     var body: some View {
         let col = discColor(k)
         let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.ai }.prefix(5) // races against the AI give no iRating
@@ -142,6 +143,8 @@ struct LicCard: View {
         let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
         let parts = lic.split(separator: " ")
         let sr: String? = parts.count > 1 ? String(parts[1]) : nil
+        let line = irRaces(races, k, 10)
+        VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 10) {
             DiscIcon(k: k)
             VStack(alignment: .leading, spacing: 3) {
@@ -156,11 +159,19 @@ struct LicCard: View {
             }
             Spacer(minLength: 0)
         }
+        // the iRating after each of its last races: the finger reads the race under it
+        if line.count >= 2 {
+            let x = sel.flatMap { $0 < line.count ? line[$0] : nil }
+            Text(x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)).font(.system(size: 10)).lineLimit(1)
+                .foregroundColor(x == nil ? Theme.muted : x!.irChange >= 0 ? Theme.good : Theme.bad)
+            IrLine(vals: line.map { $0.ir + $0.irChange }, col: col, height: 30, sel: $sel)
+        }
+        }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(col.opacity(0.4), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(col.opacity(0.4), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .opacity(r == nil ? 0.55 : 1)
     }
 }
@@ -193,10 +204,11 @@ struct CornerStrip: View {
     let cs: [Corner]
     let lapLen: Double
     @Binding var pick: Double?
+    var title = true
     var body: some View {
         let mx = max(0.05, cs.map { abs($0.lost) }.max() ?? 0.05)
         Panel {
-            SectionLabel(text: t("corners_strip"))
+            if title { SectionLabel(text: t("corners_strip")) }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .bottom, spacing: 6) {
                     ForEach(cs, id: \.self) { k in CornerBar(k: k, f: Double(k.atM) / max(lapLen, 1), mx: mx, pick: $pick) }
@@ -843,6 +855,141 @@ struct InfoButton: View {
 
 // ---------- Home ----------
 
+/// Your last race on Home: where, the place, what it gave and the way to its summary.
+struct LastRaceCard: View {
+    let race: Race
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(t("last_race")).font(.system(size: 11, weight: .bold)).tracking(1.3).foregroundColor(Theme.accent)
+                Spacer()
+                Text(day(race.when)).font(.caption2).foregroundColor(Theme.muted)
+            }
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(race.track).font(.system(size: 20, weight: .black)).foregroundColor(Theme.fg).lineLimit(1)
+                    Text([race.car, discName(raceDisc(race.cat, race.car))].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                    HStack(spacing: 6) { DrinksBadge(race: race); AiBadge(race: race) }
+                }
+                Spacer()
+                Text(race.dnf ? t("dnf") : "P\(race.finish)").font(.system(size: 34, weight: .black))
+                    .foregroundColor(!race.dnf && (1...3).contains(race.finish) ? Theme.accent : Theme.fg)
+                if !race.dnf { Text("/\(race.field)").font(.system(size: 14)).foregroundColor(Theme.muted).padding(.top, 12) }
+            }
+            HStack(spacing: 8) {
+                // a race against the AI has no iRating
+                stat(t("lr_ir"), race.ai ? "—" : signed(race.irChange), race.ai ? Theme.muted : race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.fg)
+                stat(t("lr_best"), lapTime(race.best), Theme.purple)
+                stat(t("lr_inc"), "\(race.inc)x", race.inc >= 8 ? Theme.bad : Theme.fg)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Text(t("see_summary")).font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.accent)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.accent.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func stat(_ l: String, _ v: String, _ c: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(l).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundColor(Theme.muted).lineLimit(1)
+            Text(v).font(.system(size: 16, weight: .bold, design: .monospaced)).foregroundColor(c).lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// Your rated races of one discipline, oldest first, with the iRating each left you at.
+func irRaces(_ races: [Race], _ k: String, _ n: Int) -> [Race] {
+    Array(races.filter { !$0.ai && $0.ir > 0 && raceDisc($0.cat, $0.car) == k }.prefix(n).reversed())
+}
+
+/// The iRating after each race as a line that follows the finger: the point under it is picked.
+struct IrLine: View {
+    let vals: [Int]
+    let col: Color
+    var height: CGFloat
+    @Binding var sel: Int?
+    var area = false
+    var body: some View {
+        GeometryReader { g in
+            let n = vals.count
+            let lo = Double(vals.min() ?? 0) - 10, hi = Double(vals.max() ?? 0) + 10
+            let x = { (i: Int) -> CGFloat in g.size.width * CGFloat(i) / CGFloat(max(1, n - 1)) }
+            let y = { (v: Int) -> CGFloat in 4 + (g.size.height - 8) * CGFloat(1 - (Double(v) - lo) / (hi - lo)) }
+            let line = Path { p in for (i, v) in vals.enumerated() { i == 0 ? p.move(to: CGPoint(x: x(i), y: y(v))) : p.addLine(to: CGPoint(x: x(i), y: y(v))) } }
+            ZStack {
+                if area {
+                    Path { p in p.addPath(line); p.addLine(to: CGPoint(x: g.size.width, y: g.size.height)); p.addLine(to: CGPoint(x: 0, y: g.size.height)); p.closeSubpath() }
+                        .fill(col.opacity(0.10))
+                }
+                line.stroke(col, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                if let i = sel, i < n {
+                    Path { p in p.move(to: CGPoint(x: x(i), y: 0)); p.addLine(to: CGPoint(x: x(i), y: g.size.height)) }.stroke(Theme.fg.opacity(0.5), lineWidth: 1)
+                    Circle().fill(Theme.ink).overlay(Circle().stroke(col, lineWidth: 2)).frame(width: 10, height: 10).position(x: x(i), y: y(vals[i]))
+                }
+            }
+            .contentShape(Rectangle())
+            .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { v in
+                guard n > 1 else { return }
+                sel = min(n - 1, max(0, Int((v.location.x / max(1, g.size.width) * CGFloat(n - 1)).rounded())))
+            })
+        }
+        .frame(height: height)
+    }
+}
+
+/// My races: your iRating of one discipline over its last races, a line you read with your finger.
+struct IrTrend: View {
+    let races: [Race]
+    @State private var k = ""
+    @State private var sel: Int?
+    var body: some View {
+        let discs = DISCS.filter { irRaces(races, $0, 2).count >= 2 }
+        if !discs.isEmpty {
+            let first = races.first { !$0.ai && $0.ir > 0 }.map { raceDisc($0.cat, $0.car) }
+            let disc = discs.contains(k) ? k : (first.flatMap { discs.contains($0) ? $0 : nil } ?? discs[0])
+            let rs = irRaces(races, disc, 12)
+            let vals = rs.map { $0.ir + $0.irChange }
+            let i = min(sel ?? rs.count - 1, rs.count - 1)
+            let x = rs[i]
+            Panel {
+                if discs.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(discs, id: \.self) { d in
+                                Button { k = d; sel = nil } label: {
+                                    Text(discName(d)).font(.system(size: 11, weight: .bold)).padding(.horizontal, 10).padding(.vertical, 5)
+                                        .background(d == disc ? Theme.accent : Theme.surface2).foregroundColor(d == disc ? Theme.ink : Theme.muted).clipShape(Capsule())
+                                }
+                            }
+                        }
+                    }
+                    .padding(.bottom, 6)
+                }
+                HStack {
+                    SectionLabel(text: t("ir_trend", discName(disc).uppercased()))
+                    Spacer()
+                    Text("\(vals[i])").font(.system(size: 18, weight: .bold, design: .monospaced))
+                    Text(signed(x.irChange)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(x.irChange >= 0 ? Theme.good : Theme.bad)
+                }
+                if sel == nil {
+                    Text(t("spark_last", rs.count) + " · " + signed(rs.reduce(0) { $0 + $1.irChange })).font(.caption).foregroundColor(Theme.muted)
+                } else {
+                    NavigationLink(value: Route.race(x)) {
+                        Text(x.track + " · " + (x.dnf ? t("dnf") : "P\(x.finish)") + " · " + day(x.when) + "  ›").font(.caption).foregroundColor(Theme.accent).lineLimit(1)
+                    }.buttonStyle(.plain)
+                }
+                IrLine(vals: vals, col: Theme.accent, height: 110, sel: $sel, area: true).padding(.top, 6)
+            }
+        }
+    }
+}
+
 struct RaceRow: View {
     let race: Race
     var body: some View {
@@ -925,7 +1072,8 @@ struct HomeView: View {
         let avgInc = recent.isEmpty ? "—" : String(format: "%.1f", Double(incSum) / Double(recent.count))
         Screen(title: account.display.isEmpty ? t("driver") : account.display, sub: t("racing_companion")) {
             if account.admin || (account.supporter && !account.supporterHidden) { HStack(spacing: 6) { MyBadges(); Spacer() } }
-            // the web's order: the days you drove, the licence summary, then your races
+            // the pit wall: your last race on top, then the days you drove, the licence summary and your races
+            if let x = races.first { NavigationLink(value: Route.race(x)) { LastRaceCard(race: x) }.buttonStyle(.plain) }
             DaysDriven(races: races)
             Licences()
             SectionLabel(text: t("race_summary"))
@@ -1403,6 +1551,7 @@ struct AnalysisView: View {
             case 2: mySessions
             default:
                 if account.races.isEmpty { EmptyNote(text: t("no_races")) }
+                else { IrTrend(races: account.races) }
                 ForEach(account.races) { r in
                     NavigationLink(value: Route.race(r)) { RaceRow(race: r) }.buttonStyle(.plain)
                 }
