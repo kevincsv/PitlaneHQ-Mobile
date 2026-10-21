@@ -137,7 +137,7 @@ struct LicCard: View {
     @State var sel: Int?
     var body: some View {
         let col = discColor(k)
-        let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.ai }.prefix(5) // races against the AI give no iRating
+        let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.ai && $0.ir != 1 }.prefix(5) // races against the AI give no iRating
         let chg = last.reduce(0) { $0 + $1.irChange }
         let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
         let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
@@ -177,7 +177,7 @@ extension LicCard {
         let label: String = x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)
         let tint: Color = x.map { $0.irChange >= 0 ? Theme.good : Theme.bad } ?? Theme.muted
         Text(label).font(.system(size: 10)).lineLimit(1).foregroundColor(tint)
-        IrLine(vals: line.map { $0.ir + $0.irChange }, col: col, height: 30, sel: $sel)
+        IrLine(vals: irVals(line, r?.ir), col: col, height: 30, sel: $sel)
     }
 }
 
@@ -913,9 +913,23 @@ struct LastRaceCard: View {
     }
 }
 
-/// Your rated races of one discipline, oldest first, with the iRating each left you at.
+/// Your rated races of one discipline, oldest first (an offline race's placeholder iRating 1 is none).
 func irRaces(_ races: [Race], _ k: String, _ n: Int) -> [Race] {
-    Array(races.filter { !$0.ai && $0.ir > 0 && raceDisc($0.cat, $0.car) == k }.prefix(n).reversed())
+    Array(races.filter { !$0.ai && $0.ir != 1 && raceDisc($0.cat, $0.car) == k }.prefix(n).reversed())
+}
+
+/// The iRating each of those races left you at: the race's own when it has one, else counted back from the newest
+/// known (a race's, or the discipline's rating) with the changes in between.
+func irVals(_ rs: [Race], _ now: Int?) -> [Int] {
+    var cum: [Int] = []
+    var a = 0
+    for r in rs { a += r.irChange; cum.append(a) }
+    var off = 0
+    if let m = rs.lastIndex(where: { $0.ir > 1 }) { off = rs[m].ir + rs[m].irChange - cum[m] }
+    else if let n = now, n > 1, let l = cum.last { off = n - l }
+    var out: [Int] = []
+    for (i, r) in rs.enumerated() { out.append(r.ir > 1 ? r.ir + r.irChange : cum[i] + off) }
+    return out
 }
 
 /// The iRating after each race as a line that follows the finger: the point under it is picked.
@@ -979,6 +993,7 @@ struct IrLine: View {
 /// My races: your iRating of one discipline over its last races, a line you read with your finger.
 struct IrTrend: View {
     let races: [Race]
+    var now: [String: (ir: Int, lic: String, at: Double)] = [:]
     @State private var k = ""
     @State private var sel: Int?
 
@@ -986,7 +1001,7 @@ struct IrTrend: View {
     private var disc: String {
         let ds = discs
         if ds.contains(k) { return k }
-        if let r = races.first(where: { !$0.ai && $0.ir > 0 }) {
+        if let r = races.first(where: { !$0.ai && $0.ir != 1 }) {
             let d = raceDisc(r.cat, r.car)
             if ds.contains(d) { return d }
         }
@@ -1000,8 +1015,8 @@ struct IrTrend: View {
         if rs.count >= 2 {
             Panel {
                 if ds.count > 1 { chips(ds, d) }
-                header(rs, d)
-                IrLine(vals: rs.map { $0.ir + $0.irChange }, col: Theme.accent, height: 110, sel: $sel, area: true).padding(.top, 6)
+                header(rs, irVals(rs, now[d]?.ir), d)
+                IrLine(vals: irVals(rs, now[d]?.ir), col: Theme.accent, height: 110, sel: $sel, area: true).padding(.top, 6)
             }
         }
     }
@@ -1020,14 +1035,14 @@ struct IrTrend: View {
         .padding(.bottom, 6)
     }
 
-    @ViewBuilder private func header(_ rs: [Race], _ d: String) -> some View {
+    @ViewBuilder private func header(_ rs: [Race], _ vals: [Int], _ d: String) -> some View {
         let i: Int = min(sel ?? (rs.count - 1), rs.count - 1)
         let x: Race = rs[i]
         let total: Int = rs.reduce(0) { $0 + $1.irChange }
         HStack {
             SectionLabel(text: t("ir_trend", discName(d).uppercased()))
             Spacer()
-            Text(String(x.ir + x.irChange)).font(.system(size: 18, weight: .bold, design: .monospaced))
+            Text(String(vals[i])).font(.system(size: 18, weight: .bold, design: .monospaced))
             Text(signed(x.irChange)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(x.irChange >= 0 ? Theme.good : Theme.bad)
         }
         if sel == nil {
@@ -1606,7 +1621,7 @@ struct AnalysisView: View {
             case 2: mySessions
             default:
                 if account.races.isEmpty { EmptyNote(text: t("no_races")) }
-                else { IrTrend(races: account.races) }
+                else { IrTrend(races: account.races, now: account.ratings()) }
                 ForEach(account.races) { r in
                     NavigationLink(value: Route.race(r)) { RaceRow(race: r) }.buttonStyle(.plain)
                 }

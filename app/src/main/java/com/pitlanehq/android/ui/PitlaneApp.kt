@@ -537,9 +537,18 @@ private fun LastStat(l: String, v: String, c: Color, m: Modifier) {
     }
 }
 
-/** Your rated races of one discipline, oldest first, with the iRating each left you at. */
+/** Your rated races of one discipline, oldest first (an offline race's placeholder iRating 1 is none). */
 private fun irRaces(races: List<Race>, k: String, n: Int) =
-    races.filter { !it.ai && it.ir > 0 && raceDisc(it.cat, it.car) == k }.take(n).reversed()
+    races.filter { !it.ai && it.ir != 1 && raceDisc(it.cat, it.car) == k }.take(n).reversed()
+
+/** The iRating each of those races left you at: the race's own when it has one, else counted back from the newest
+ *  known (a race's, or the discipline's rating) with the changes in between. */
+private fun irVals(rs: List<Race>, now: Int?): List<Int> {
+    val cum = rs.runningFold(0) { a, r -> a + r.irChange }.drop(1)
+    val m = rs.indexOfLast { it.ir > 1 }
+    val off = if (m >= 0) rs[m].ir + rs[m].irChange - cum[m] else if (now != null && now > 1) now - cum.last() else 0
+    return rs.mapIndexed { i, r -> if (r.ir > 1) r.ir + r.irChange else cum[i] + off }
+}
 
 /** The iRating after each race as a line that follows the finger: the point under it is picked (onSel). */
 @Composable
@@ -570,13 +579,13 @@ private fun IrLine(vals: List<Int>, col: Color, height: Dp, sel: Int?, area: Boo
 
 /** My races: your iRating of one discipline over its last races, a line you read with your finger. */
 @Composable
-private fun IrTrend(races: List<Race>, onOpen: (Race) -> Unit) {
+private fun IrTrend(races: List<Race>, now: Map<String, Triple<Int, String, Long>>, onOpen: (Race) -> Unit) {
     val discs = DISCS.filter { k -> irRaces(races, k, 2).size >= 2 }
     if (discs.isEmpty()) return
     var k by rememberSaveable { mutableStateOf("") }
-    val disc = k.takeIf { it in discs } ?: races.firstOrNull { !it.ai && it.ir > 0 }?.let { raceDisc(it.cat, it.car) }?.takeIf { it in discs } ?: discs[0]
+    val disc = k.takeIf { it in discs } ?: races.firstOrNull { !it.ai && it.ir != 1 }?.let { raceDisc(it.cat, it.car) }?.takeIf { it in discs } ?: discs[0]
     val rs = irRaces(races, disc, 12)
-    val vals = rs.map { it.ir + it.irChange }
+    val vals = irVals(rs, now[disc]?.first)
     var sel by remember(disc) { mutableStateOf<Int?>(null) }
     val i = sel ?: (rs.size - 1)
     val x = rs[i]
@@ -942,7 +951,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                 state(r) { vm.loadRaces() }
                 val races = r.data ?: emptyList()
                 if (r.data != null && races.isEmpty()) item { Empty(t("no_races")) }
-                if (races.isNotEmpty()) item { IrTrend(races) { x -> vm.race = x; nav.navigate("race") } }
+                if (races.isNotEmpty()) item { IrTrend(races, vm.ratings()) { x -> vm.race = x; nav.navigate("race") } }
                 items(races) { x -> RaceRow(x) { vm.race = x; nav.navigate("race") } }
             }
         }
@@ -2935,7 +2944,7 @@ private fun Licences(vm: PitlaneViewModel) {
 @Composable
 private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>, m: Modifier) {
     val col = discColor(k)
-    val last = races.filter { raceDisc(it.cat, it.car) == k && !it.ai }.take(5) // races against the AI give no iRating
+    val last = races.filter { raceDisc(it.cat, it.car) == k && !it.ai && it.ir != 1 }.take(5) // races against the AI give no iRating
     val chg = last.sumOf { it.irChange }
     val lic = r?.second?.trim()?.uppercase() ?: ""
     val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }
@@ -2964,7 +2973,7 @@ private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>,
             val x = sel?.let { line.getOrNull(it) }
             Text(x?.let { it.track + " " + signed(it.irChange) } ?: t("spark_last", line.size), color = if (x == null) Muted else if (x.irChange >= 0) Good else Bad,
                 fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            IrLine(line.map { it.ir + it.irChange }, col, 30.dp, sel) { sel = it }
+            IrLine(irVals(line, r?.first), col, 30.dp, sel) { sel = it }
         }
       }
     }

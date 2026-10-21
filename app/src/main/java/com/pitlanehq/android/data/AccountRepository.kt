@@ -276,7 +276,7 @@ class AccountRepository(context: Context) {
     /** Your iRating of every discipline as the PC last saw it (ratings.json): discipline → (iRating, licence, when). */
     fun ratings(): Map<String, Triple<Int, String, Long>> {
         val o = (if (demo) null else saved("ratings"))?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return emptyMap()
-        return o.keys().asSequence().mapNotNull { k -> o.optJSONObject(k)?.let { k to Triple(it.optInt("ir"), it.optString("lic"), it.optLong("at")) } }.toMap()
+        return o.keys().asSequence().mapNotNull { k -> o.optJSONObject(k)?.takeIf { it.optInt("ir") > 1 }?.let { k to Triple(it.optInt("ir"), it.optString("lic"), it.optLong("at")) } }.toMap() // 1 / "R 0.01": an offline session's placeholder
     }
 
     /** Your notes on other drivers, by their key (or "n:" and their name for older races). */

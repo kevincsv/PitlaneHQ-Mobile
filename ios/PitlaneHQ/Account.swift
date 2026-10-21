@@ -121,7 +121,8 @@ final class Account: ObservableObject {
     func ratings() -> [String: (ir: Int, lic: String, at: Double)] {
         guard !demo, let d = saved("ratings"), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return [:] }
         var out: [String: (ir: Int, lic: String, at: Double)] = [:]
-        for (k, v) in o { if let x = v as? [String: Any] { out[k] = (int(x["ir"]), str(x["lic"]), (x["at"] as? NSNumber)?.doubleValue ?? 0) } }
+        // 1 / "R 0.01": an offline session's placeholder, nobody's rating
+        for (k, v) in o { if let x = v as? [String: Any], int(x["ir"]) > 1 { out[k] = (int(x["ir"]), str(x["lic"]), (x["at"] as? NSNumber)?.doubleValue ?? 0) } }
         return out
     }
 
