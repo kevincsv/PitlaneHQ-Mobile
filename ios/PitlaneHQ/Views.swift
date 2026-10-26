@@ -1140,7 +1140,7 @@ struct HomeView: View {
         let top5 = races.filter { (1...5).contains($0.finish) }.count
         let incSum = recent.reduce(0) { $0 + $1.inc }
         let avgInc = recent.isEmpty ? "—" : String(format: "%.1f", Double(incSum) / Double(recent.count))
-        Screen(title: account.display.isEmpty ? t("driver") : account.display, sub: t("racing_companion")) {
+        Screen(title: account.display.isEmpty ? t("driver") : account.display) {
             if account.admin || (account.supporter && !account.supporterHidden) { HStack(spacing: 6) { MyBadges(); Spacer() } }
             // the pit wall: your last race on top, then the days you drove, the licence summary and your races
             if let x = races.first { NavigationLink(value: Route.race(x)) { LastRaceCard(race: x) }.buttonStyle(.plain) }
@@ -1163,16 +1163,8 @@ struct HomeView: View {
                 NavigationLink(value: Route.race(r)) { RaceRow(race: r) }.buttonStyle(.plain)
             }
             Text(t("ir_estimate")).font(.caption2).foregroundColor(Theme.muted)
-            Panel {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(t("agent_note")).font(.caption)
-                        Text(account.syncUpdated > 0 ? t("synced", dayTime(account.syncUpdated)) : t("never_synced")).font(.caption).foregroundColor(Theme.muted)
-                        if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
-                    }
-                    Spacer()
-                }
-            }
+            // no sync card (the sync is automatic): only what went wrong, when something did
+            if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
         }
         .refreshable { await account.sync() }
     }
@@ -1614,7 +1606,7 @@ struct AnalysisView: View {
     }
 
     var body: some View {
-        Screen(title: t("analysis"), sub: t("uploaded_by_pc")) {
+        Screen(title: t("analysis")) {
             Tabs(labels: [t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")], selected: $tab)
             switch tab {
             case 0, 1: lapsAndCoach
@@ -2979,7 +2971,7 @@ struct CommunityView: View {
     private var empty: Bool { tab == 0 ? combos.data == nil : tab == 1 ? reports.data == nil : setups.data == nil }
 
     var body: some View {
-        Screen(title: t("community"), sub: t("shared_by")) {
+        Screen(title: t("community")) {
             Tabs(labels: [t("leaderboards"), t("leagues")], selected: $sec)
             if sec == 1 {
                 LeagueHub()
@@ -3472,7 +3464,7 @@ struct LiveView: View {
     private func start() { live.start(token: account.token, key: account.dataKey, demo: account.demo) }
 
     var body: some View {
-        Screen(title: t("live_title"), sub: t("live_sub")) {
+        Screen(title: t("live_title")) {
             // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
             Panel {
                 Text(t("your_pc_anywhere")).font(.headline.weight(.black))
@@ -3586,7 +3578,7 @@ struct AdminView: View {
     @State private var confirmDelete: (String, String)?
 
     var body: some View {
-        Screen(title: t("admin_profile"), sub: t("admin_profile_sub")) {
+        Screen(title: t("admin_profile")) {
             ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
                 ForEach([("status", t("admin_server")), ("users", t("admin_accounts")), ("sessions", t("admin_activity_t")), ("uploads", t("admin_shared")), ("blocked", t("admin_blocked"))], id: \.0) { p in
                     let k = p.0
@@ -3785,7 +3777,7 @@ struct DrinksView: View {
     @State private var forgetting: String?
 
     var body: some View {
-        Screen(title: t("drinks"), sub: t("drinks_sub")) {
+        Screen(title: t("drinks")) {
             StatusPill(text: live.pcOnline ? t("pc_online") : live.link == .connecting ? t("connecting") : t("pc_offline"), color: live.pcOnline ? Theme.good : Theme.muted)
             if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
             Panel { Text(t("drinks_note")).font(.caption).foregroundColor(Theme.muted) }
@@ -4061,7 +4053,7 @@ struct TrackNotesList: View {
     @EnvironmentObject var account: Account
     var body: some View {
         let all = account.trackNotes.values.sorted { $0.updated > $1.updated }
-        Screen(title: t("track_notes"), sub: t("track_notes_sub")) {
+        Screen(title: t("track_notes")) {
             if all.isEmpty { EmptyNote(text: t("no_notes_any")) }
             ForEach(all) { n in
                 NavigationLink(value: Route.track(TrackRef(id: n.trackId, name: n.track))) {

@@ -401,7 +401,7 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     val a by vm.account.collectAsState()
     val r by vm.races.collectAsState()
     val races = r.data ?: emptyList()
-    Screen(a.display.ifBlank { t("driver") }, t("racing_companion")) {
+    Screen(a.display.ifBlank { t("driver") }) {
         if (a.admin || (a.supporter && !a.supporterHidden)) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { MyBadges(a) } }
         state(r) { vm.loadRaces() }
         // the pit wall: your last race on top, then the days you drove, the licence summary and your races
@@ -431,20 +431,8 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
         if (r.data != null && races.isEmpty()) item { Empty(t("no_races")) }
         items(races.take(5)) { x -> RaceRow(x) { vm.race = x; nav.navigate("race") } }
         item { Text(t("ir_estimate"), color = Muted, fontSize = 11.sp) }
-        item {
-            Panel {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(t("agent_note"), fontSize = 12.sp)
-                        Text(
-                            if (a.syncUpdated > 0) t("synced", dayTime(a.syncUpdated)) else t("never_synced"),
-                            color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)
-                        )
-                        a.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
-                    }
-                }
-            }
-        }
+        // no sync card (the sync is automatic): only what went wrong, when something did
+        a.error?.let { e -> item { Text(t(e), color = Bad, fontSize = 12.sp) } }
     }
 }
 
@@ -869,7 +857,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(s.data) { if (vm.session == null) s.data?.firstOrNull()?.let { vm.session = it; vm.loadLaps(it.id) } }
     LaunchedEffect(tab, cur?.id, l.data) { val x = vm.session; val ls = l.data; if (tab == 1 && x != null && ls != null && !l.loading) vm.coachFor(x, ls) }
     val open = { x: CloudSession -> vm.session = x; vm.loadLaps(x.id); tab = pickFor }
-    Screen(t("analysis"), t("uploaded_by_pc")) {
+    Screen(t("analysis")) {
         item { Tabs(listOf(t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")), tab) { tab = it; if (it < 2) pickFor = it } }
         when (tab) {
             0, 1 -> {
@@ -1998,7 +1986,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     var cat by rememberSaveable { mutableStateOf("") }
     val acc by vm.account.collectAsState()
     val uri = LocalUriHandler.current
-    Screen(t("community"), t("shared_by")) {
+    Screen(t("community")) {
         item { Tabs(listOf(t("leaderboards"), t("leagues")), sec) { sec = it } }
         if (sec == 1) {
             item { LeagueHub(vm, acc) }
@@ -2428,7 +2416,7 @@ private fun Live(vm: PitlaneViewModel) {
     val uri = LocalUriHandler.current
     var codeIn by rememberSaveable { mutableStateOf("") }
     var codeErr by remember { mutableStateOf(false) }
-    Screen(t("live_title"), t("live_sub")) {
+    Screen(t("live_title")) {
         // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
         item {
             Panel {
@@ -2526,7 +2514,7 @@ private fun Live(vm: PitlaneViewModel) {
 private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val st by vm.admin.collectAsState()
     LaunchedEffect(Unit) { vm.loadAdmin("status") }
-    Screen(t("admin_profile"), t("admin_profile_sub"), back = { nav.popBackStack() }) {
+    Screen(t("admin_profile"), back = { nav.popBackStack() }) {
         item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("status" to t("admin_server"), "users" to t("admin_accounts"), "sessions" to t("admin_activity_t"), "uploads" to t("admin_shared"), "blocked" to t("admin_blocked")).forEach { (k, l) ->
@@ -2708,7 +2696,7 @@ private fun DrinksScreen(vm: PitlaneViewModel, nav: NavHostController) {
             dismissButton = { TextButton({ forgetting = null }) { Text(t("cancel"), color = Muted) } }
         )
     }
-    Screen(t("drinks"), t("drinks_sub"), back = { nav.popBackStack() }) {
+    Screen(t("drinks"), back = { nav.popBackStack() }) {
         item { Status(if (s.pcOnline) t("pc_online") else if (s.link == LinkState.CONNECTING) t("connecting") else t("pc_offline"), if (s.pcOnline) Good else Muted) }
         s.message?.let { item { Text(t(it), color = Bad, fontSize = 12.sp) } }
         item { Panel { Text(t("drinks_note"), color = Muted, fontSize = 12.sp) } }
@@ -3779,7 +3767,7 @@ private fun TrackNotesScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val all by vm.trackNotes.collectAsState()
     LaunchedEffect(Unit) { vm.loadTrackNotes() }
     val list = all.values.sortedByDescending { it.updated }
-    Screen(t("track_notes"), t("track_notes_sub"), back = { nav.popBackStack() }) {
+    Screen(t("track_notes"), back = { nav.popBackStack() }) {
         if (list.isEmpty()) item { Empty(t("no_notes_any")) }
         items(list, key = { it.trackId }) { n ->
             Panel(Modifier.clickable { vm.openTrack(n.trackId, n.track); nav.navigate("track") }) {

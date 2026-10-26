@@ -126,7 +126,7 @@ private let strings: [String: (String, String)] = [
     "anonymous": ("Anonymous", "Anónimo"),
     "drivers": ("{0} drivers", "{0} pilotos"),
     "downloads": ("{0} downloads", "{0} descargas"),
-    "live_title": ("Live telemetry", "Telemetría en vivo"),
+    "live_title": ("Telemetry", "Telemetría"),
     "live_sub": ("From Pitlane HQ Agent through your account", "Desde Pitlane HQ Agent a través de tu cuenta"),
     "connecting": ("CONNECTING", "CONECTANDO"),
     "offline_s": ("OFFLINE", "SIN CONEXIÓN"),

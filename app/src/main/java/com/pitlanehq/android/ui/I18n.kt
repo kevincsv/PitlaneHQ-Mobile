@@ -103,7 +103,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "anonymous" to ("Anonymous" to "Anónimo"),
     "drivers" to ("{0} drivers" to "{0} pilotos"),
     "downloads" to ("{0} downloads" to "{0} descargas"),
-    "live_title" to ("Live telemetry" to "Telemetría en vivo"),
+    "live_title" to ("Telemetry" to "Telemetría"),
     "live_sub" to ("From Pitlane HQ Agent through your account" to "Desde Pitlane HQ Agent a través de tu cuenta"),
     "connecting" to ("CONNECTING" to "CONECTANDO"),
     "offline_s" to ("OFFLINE" to "SIN CONEXIÓN"),
