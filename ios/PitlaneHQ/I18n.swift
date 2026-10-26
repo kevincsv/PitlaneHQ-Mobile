@@ -42,6 +42,7 @@ private let strings: [String: (String, String)] = [
     "kind_test": ("Test drive", "Prueba"),
     "ago_min": ("{0} min ago", "hace {0} min"),
     "ago_h": ("{0} h ago", "hace {0} h"),
+    "ago_1d": ("1 day ago", "hace 1 día"),
     "ago_d": ("{0} days ago", "hace {0} días"),
     "lm_basic": ("Basic", "Básico"),
     "lm_full": ("Full", "Completo"),

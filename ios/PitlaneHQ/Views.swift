@@ -1183,6 +1183,7 @@ func agoText(_ ms: Double) -> String {
     let m = Int((Date().timeIntervalSince1970 * 1000 - ms) / 60000)
     if m < 60 { return t("ago_min", max(1, m)) }
     if m < 60 * 24 { return t("ago_h", m / 60) }
+    if m < 60 * 48 { return t("ago_1d") }
     if m < 60 * 24 * 30 { return t("ago_d", m / 60 / 24) }
     return day(ms)
 }

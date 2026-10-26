@@ -671,6 +671,7 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "kind_test" to ("Test drive" to "Prueba"),
     "ago_min" to ("{0} min ago" to "hace {0} min"),
     "ago_h" to ("{0} h ago" to "hace {0} h"),
+    "ago_1d" to ("1 day ago" to "hace 1 día"),
     "ago_d" to ("{0} days ago" to "hace {0} días"),
     "rec_board" to ("Leaderboard" to "Clasificación"),
 )

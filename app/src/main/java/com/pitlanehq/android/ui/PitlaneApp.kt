@@ -474,6 +474,7 @@ private fun agoText(ms: Long): String {
     return when {
         d < 60 -> t("ago_min", maxOf(1, d))
         d < 60 * 24 -> t("ago_h", d / 60)
+        d < 60 * 48 -> t("ago_1d")
         d < 60 * 24 * 30 -> t("ago_d", d / 60 / 24)
         else -> day(ms)
     }
