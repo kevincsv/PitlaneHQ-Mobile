@@ -1,7 +1,7 @@
 # Changelog
 
 Pitlane HQ is in **beta**. The phone apps share their version number with Pitlane HQ Agent and the
-web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
+web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
 ## 0.4.7 beta
@@ -14,39 +14,40 @@ web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; 
 
 ## 0.4.5 beta
 
-- **Recent records as cards**: the discipline's colour, the time and who set it, and the lap it beat as a bar;
-  touch one for its leaderboard, its track page and the driver's profile.
+- Recent records are now cards with the discipline's colour, the time, who set it and the lap it beat. Tap one to
+  open its leaderboard, its track page or the driver's profile.
 - Fixes and improvements.
 
 ## 0.4.4 beta
 
-- **Valid laps as in iRacing**: only leaving the track or losing the connection makes a lap invalid; a lap through
-  the pit lane is valid.
+- A lap is only invalid if you leave the track or lose the connection, just like in iRacing. Going through the pit
+  lane no longer ruins it.
 - Fixes and improvements.
 
 ## 0.4.3 beta
 
-- **New look**: a darker pit wall with the amber accent, a floating tab bar and clearer sub-tabs. Home opens on your
-  last race; every licence card and My races draw your iRating as a line you read with your finger; the Coach starts
-  with the gap and what to work on first, then what every corner costs (touch one to read it).
-- **Licence summary**: an offline session against the AI no longer shows as your licence ("1 · R 0.01").
-- **Only whole laps count**: a lap that did not go round the whole circuit is never a best lap or a record.
+- The app looks new, darker with the amber accent, a floating tab bar and clearer sub-tabs. Home opens on your last
+  race, you can run your finger along your iRating on every licence card and in My races, and the Coach tells you
+  first how far you are and what to work on, then what each corner costs.
+- An offline race against the AI no longer shows up as your licence.
+- Laps cut short by a reset or a tow never count as a best lap or a record.
 - Fixes and improvements.
 
 ## 0.4.2 beta
 
-- **Track notes**: your notes on each track (the same as on your PC and the web) on its track page, where you can
-  write them too, and all of them in Account → Track notes.
-- **Driver profiles**: their leaderboards, records and top 3 places at a glance; a recent record opens its driver's
-  profile.
-- **One leaderboard for one car**: the SF23's Honda and Toyota, NASCAR's and the Supercars' badges share one board.
+- Your track notes are on each track's page, the same ones as on your PC and the web, and you can write them there
+  too. You'll find them all in Account → Track notes.
+- Driver profiles show their leaderboards, records and top 3 finishes at a glance, and a recent record opens its
+  driver's profile.
+- The same car under different badges now shares one leaderboard. That goes for the SF23's Honda and Toyota,
+  NASCAR and the Supercars.
 - Fixes and improvements.
 
 ## 0.4.1 beta
 
-- **Your laps on the phone**: every lap your PC records is in your account: Laps, Coach, My sessions and My races,
-  with the lap analysis, the map, the braking points and the racing line.
-- **Telemetry live**: follow your race from the PC (Telemetry, Standings, Tyres), or watch a friend with a share code.
-- **Community**: leaderboards by car and track for every discipline, recent records, track pages and the leagues.
-- **Your iRating and licence** of every discipline, race summaries and driver notes.
-- **Account**: one account on every device, Discord linked from Account → Discord.
+- Every lap your PC records is in your account, with Laps, Coach, My sessions and My races, the lap analysis, the
+  map, the braking points and the racing line.
+- Follow your race live from the PC with Telemetry, Standings and Tyres, or watch a friend with a share code.
+- Leaderboards by car and track for every discipline, recent records, track pages and the leagues.
+- Your iRating and licence in every discipline, race summaries and your notes on other drivers.
+- One account on every device, and you can link Discord from Account → Discord.
