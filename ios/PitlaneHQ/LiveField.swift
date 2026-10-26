@@ -101,7 +101,8 @@ func parseLiveSession(_ y: String) -> LiveSession {
     let cfg = yField(wi, "TrackConfigName")
     s.track = yField(wi, "TrackDisplayName") + (cfg.isEmpty ? "" : " · " + cfg)
     s.trackId = Int64(yField(wi, "TrackID")) ?? 0
-    if let r = yField(wi, "TrackLength").range(of: "[0-9.]+", options: .regularExpression), let km = Double(yField(wi, "TrackLength")[r]) { s.trackLen = km * 1000 }
+    let tl = yField(wi, "TrackLength")
+    if let r = tl.range(of: "[0-9.]+", options: .regularExpression), let km = Double(tl[r]) { s.trackLen = km * 1000 }
     for b in yItems(di, "CarIdx") {
         guard let i = Int(yField(b, "CarIdx")) else { continue }
         s.drivers[i] = LiveDriver(idx: i, name: yField(b, "UserName"), number: yField(b, "CarNumber"), cls: yField(b, "CarClassShortName"),
