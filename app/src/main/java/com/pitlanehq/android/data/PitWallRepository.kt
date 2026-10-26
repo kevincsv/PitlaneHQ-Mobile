@@ -40,6 +40,7 @@ class PitWallRepository(private val account: AccountRepository) {
     private var loop: Job? = null
     private var fields: List<String> = emptyList()
     private val laps = LiveLaps() // the laps seen here, for DRINKS mode
+    private val rec = com.pitlanehq.android.model.LiveRec() // every lap seen here, for Full and Compare laps
     private val _state = MutableStateFlow(LiveState())
     val state = _state.asStateFlow()
     // the server says another device uploaded the account (its version): the app reads it again at once
@@ -96,7 +97,9 @@ class PitWallRepository(private val account: AccountRepository) {
             loop = scope.launch {
                 var tick = 0
                 while (true) {
-                    _state.value = LiveState(LinkState.OPEN, pcOnline = true, simConnected = true, values = Demo.live(tick++))
+                    val s = LiveState(LinkState.OPEN, pcOnline = true, simConnected = true, values = Demo.live(tick++))
+                    rec.add(s)
+                    _state.value = s.copy(rec = rec, recVer = rec.ver)
                     delay(100)
                 }
             }
@@ -305,7 +308,8 @@ class PitWallRepository(private val account: AccountRepository) {
                     val dk = s.drinks
                     val drv = if (dk != null && dk.on) dk.driver else ""
                     laps.add(s, drv)
-                    s.copy(ownDelta = laps.delta(s, drv), ownBest = laps.bestTime(drv))
+                    rec.add(s)
+                    s.copy(ownDelta = laps.delta(s, drv), ownBest = laps.bestTime(drv), rec = rec, recVer = rec.ver)
                 }
             }
         }

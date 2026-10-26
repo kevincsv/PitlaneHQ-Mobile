@@ -18,7 +18,9 @@ data class LiveState(
     val arrays: Map<String, List<Double>> = emptyMap(), // the per-car values (CarIdx…)
     val session: LiveSession? = null,     // the session YAML the PC sends: drivers, track
     val ownDelta: Double? = null,         // DRINKS mode: the current lap against this driver's own best (LiveLaps)
-    val ownBest: Double? = null
+    val ownBest: Double? = null,
+    val rec: LiveRec? = null,            // the laps this phone saw (Full and Compare laps)
+    val recVer: Int = 0
 ) {
     fun num(name: String): Double? = when (val v = values[name]) { is Number -> v.toDouble(); is Boolean -> if (v) 1.0 else 0.0; else -> null }
 }

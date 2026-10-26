@@ -31,6 +31,9 @@ final class Live: ObservableObject {
     @Published var ownDelta: Double?                 // DRINKS mode: the current lap against this driver's own best
     @Published var ownBest: Double?
     private let laps = LiveLaps()
+    /// every lap seen here, for Full and Compare laps; recVer changes with it
+    let rec = LiveRec()
+    @Published var recVer = 0
     @Published var message: String?
     @Published var drinks: Drinks?
     @Published var mode: Mode = UserDefaults.standard.bool(forKey: "liveOwn") ? .own : .idle
@@ -123,6 +126,8 @@ final class Live: ObservableObject {
                     self.pcOnline = true
                     self.simConnected = true
                     self.values = Demo.live(tick)
+                    self.rec.add(self.values)
+                    self.recVer = self.rec.ver
                     tick += 1
                     try? await Task.sleep(nanoseconds: 100_000_000)
                 }
@@ -331,6 +336,8 @@ final class Live: ObservableObject {
             laps.add(m, driver: drv)
             ownDelta = laps.delta(m, driver: drv)
             ownBest = laps.bestTime(drv)
+            rec.add(m)
+            recVer = rec.ver
         default:
             break
         }

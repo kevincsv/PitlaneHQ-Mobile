@@ -2413,6 +2413,7 @@ private fun Live(vm: PitlaneViewModel) {
     val s by vm.liveState.collectAsState()
     val notes by vm.driverNotes.collectAsState()
     var sub by rememberSaveable { mutableIntStateOf(0) }
+    var lmode by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { vm.loadDriverNotes() }
     DisposableEffect(Unit) {
         vm.startLive()
@@ -2499,14 +2500,20 @@ private fun Live(vm: PitlaneViewModel) {
         item { Tabs(listOf(t("tab_telemetry"), t("tab_standings"), t("tab_tyres")), sub) { sub = it } }
         when (sub) {
             0 -> {
-                item { LiveTop(s) }
-                item { LiveDeltaBar(s) }
-                item { LiveMap(vm, s) }
-                item { LiveRelative(s, notes) }
-                item { LiveFuel(s) }
-                item { LiveIncidents(s) }
+                // Basic, Full (the lap's traces too) or Compare laps, live, like the PC and the web
+                item { LiveModeBar(lmode) { lmode = it } }
+                if (lmode == 2) item { LiveCompare(vm, s) }
+                else {
+                    item { LiveTop(s) }
+                    item { LiveDeltaBar(s) }
+                    if (lmode == 1) item { LiveTraces(s) }
+                    item { LiveMap(vm, s) }
+                    item { LiveRelative(s, notes) }
+                    item { LiveFuel(s) }
+                    item { LiveIncidents(s) }
+                }
             }
-            1 -> item { LiveStandings(s, notes) }
+            1 -> { item { LiveStandings(s, notes) }; item { PosHistory(s) } }
             else -> item { LiveTyres(s) }
         }
     }
@@ -3376,26 +3383,41 @@ private fun LiveRelative(s: LiveState, notes: Map<String, DriverNote>) {
 /** the standings: every car in order, its last and best lap and its gap to the leader */
 @Composable
 private fun LiveStandings(s: LiveState, notes: Map<String, DriverNote>) {
-    val rows = s.standings()
+    val all = s.standings()
+    var cls by rememberSaveable { mutableStateOf("") }
+    var interval by rememberSaveable { mutableStateOf(false) }
+    val classes = all.mapNotNull { it.d?.cls?.takeIf { c -> c.isNotBlank() } }.distinct()
+    val rows = if (classes.size > 1 && cls.isNotEmpty()) all.filter { it.d?.cls == cls } else all
     val bestAll = rows.mapNotNull { it.best }.minOrNull()
     Panel {
         Section(t("tab_standings").uppercase() + if (rows.isNotEmpty()) " · " + t("lt_drivers_n", rows.size) else "")
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip(t("lm_to_leader"), !interval) { interval = false }
+            Chip(t("lm_interval"), interval) { interval = true }
+            if (classes.size > 1) {
+                Spacer(Modifier.width(6.dp))
+                Chip(t("lm_all_classes"), cls.isEmpty()) { cls = "" }
+                classes.forEach { c -> Chip(c, cls == c) { cls = c } }
+            }
+        }
         if (rows.isEmpty()) { Text(t("lt_no_cars"), color = Muted, fontSize = 12.sp); return@Panel }
+        val lead = rows.first().gap ?: 0.0
         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
             listOf("P" to 30, "#" to 34).forEach { (h, w) -> Text(h, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(w.dp)) }
             Text(t("lt_driver"), color = Muted, fontSize = 10.sp, modifier = Modifier.weight(1f))
             Text(t("last"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
             Text(t("best"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
-            Text(t("lt_gap"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+            Text(if (interval) t("lm_int") else t("lt_gap"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
         }
-        rows.forEach { r ->
+        rows.forEachIndexed { k, r ->
             Row(Modifier.fillMaxWidth().background(if (r.me) Accent.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(4.dp)).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${r.pos}", color = if (r.me) Accent else Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
                 Text(r.d?.number ?: "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(34.dp))
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { LiveName(r, notes) }
                 Text(r.last?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
                 Text(r.best?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (r.best != null && r.best == bestAll) Purple else Fg, modifier = Modifier.width(62.dp))
-                Text(if (r.pos == 1) "—" else r.gap?.let { "+%.1f".format(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+                val g = if (k == 0) null else if (interval) rows[k - 1].gap?.let { p -> r.gap?.let { it - p } } else r.gap?.let { it - lead }
+                Text(if (k == 0) "—" else g?.let { "+%.1f".format(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
             }
         }
     }
@@ -3537,7 +3559,163 @@ private fun TyreCard(s: LiveState, c: String, name: String, m: Modifier) {
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { wear.forEach { w -> Text(w?.let { "${(it * 100).roundToInt()}%" } ?: "–", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Muted) } }
+        val wl = wear.filterNotNull().minOrNull()
+        if (wl != null) Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(5.dp).clip(RoundedCornerShape(3.dp)).background(Line)) {
+            Box(Modifier.fillMaxWidth(wl.toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(if (wl > .7) Good else if (wl > .4) Accent else Bad))
+        }
         s.num(c + "coldPressure")?.let { Text(t("lt_cold", "%.0f kPa".format(it)), fontSize = 10.sp, color = Muted, modifier = Modifier.padding(top = 4.dp)) }
+    }
+}
+
+// ---------- Telemetry's modes: Basic, Full (the lap's traces) and Compare laps (live), like the PC and the web ----------
+
+@Composable
+private fun LiveModeBar(mode: Int, onPick: (Int) -> Unit) {
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(t("lm_basic"), t("lm_full"), t("lm_cmp")).forEachIndexed { i, l -> Chip(l, mode == i) { onPick(i) } }
+    }
+}
+
+/** the rows of a lap against another, along the lap: speed, throttle and brake, the delta and the gear. A is drawn
+ *  up to [upto] (the point of the lap now), B whole. */
+@Composable
+private fun LapRows(a: RecLap, b: RecLap?, upto: Int, total: Int, bCol: Color = Purple) {
+    val dpx = with(LocalDensity.current) { 1.dp.toPx() }
+    val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
+    val paint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0x9A, 0xA6, 0xB8); textSize = labelPx; isAntiAlias = true; isFakeBoldText = true } }
+    val names = listOf(t("lr_speed"), t("lr_pedals"), "Delta", t("lr_gear"))
+    Canvas(Modifier.fillMaxWidth().height(250.dp)) {
+        val n = maxOf(total, a.size, b?.size ?: 0, 2)
+        val gap = 8f * dpx; val rh = (size.height - gap * 3) / 4
+        fun x(i: Int) = i.toFloat() / (n - 1) * size.width
+        val top = FloatArray(4) { it * (rh + gap) }
+        top.forEach { y -> drawRect(Surface2, Offset(0f, y), androidx.compose.ui.geometry.Size(size.width, rh)) }
+        fun line(vals: (Int) -> Float?, count: Int, row: Int, lo: Float, hi: Float, col: Color, w: Float = 1.6f) {
+            val p = Path(); var on = false
+            for (i in 0 until count) {
+                val v = vals(i) ?: continue
+                val y = top[row] + rh - ((v - lo) / maxOf(1e-6f, hi - lo)).coerceIn(0f, 1f) * rh
+                if (!on) { p.moveTo(x(i), y); on = true } else p.lineTo(x(i), y)
+            }
+            drawPath(p, col, style = Stroke(width = w * dpx))
+        }
+        val vmax = maxOf(a.sp.maxOrNull() ?: 1f, b?.sp?.maxOrNull() ?: 1f, 1f) * 1.05f
+        val aN = minOf(upto + 1, a.size)
+        if (b != null) {
+            line({ b.sp.getOrNull(it) }, b.size, 0, 0f, vmax, bCol.copy(alpha = .8f), 1.2f)
+            line({ b.thr.getOrNull(it) }, b.size, 1, 0f, 1f, Good.copy(alpha = .35f), 1.0f)
+            line({ b.brk.getOrNull(it) }, b.size, 1, 0f, 1f, Bad.copy(alpha = .35f), 1.0f)
+            line({ b.gear.getOrNull(it)?.toFloat() }, b.size, 3, 0f, 8f, bCol.copy(alpha = .7f), 1.2f)
+            // the delta: A's time against B's at the same point, ± from the middle of its row
+            val ds = (0 until minOf(aN, b.size)).map { a.t[it] - b.t[it] }
+            val m = maxOf(.3f, ds.maxOfOrNull { kotlin.math.abs(it) } ?: .3f)
+            drawLine(Line, Offset(0f, top[2] + rh / 2), Offset(size.width, top[2] + rh / 2), strokeWidth = 1f * dpx)
+            line({ ds.getOrNull(it) }, ds.size, 2, -m, m, if ((ds.lastOrNull() ?: 0f) <= 0f) Good else Bad, 1.8f)
+        }
+        line({ a.sp.getOrNull(it) }, aN, 0, 0f, vmax, Accent, 1.8f)
+        line({ a.thr.getOrNull(it) }, aN, 1, 0f, 1f, Good, 1.6f)
+        line({ a.brk.getOrNull(it) }, aN, 1, 0f, 1f, Bad, 1.6f)
+        line({ a.gear.getOrNull(it)?.toFloat() }, aN, 3, 0f, 8f, Accent, 1.6f)
+        drawLine(Fg.copy(alpha = .5f), Offset(x(aN - 1), 0f), Offset(x(aN - 1), size.height), strokeWidth = 1f * dpx)
+        names.forEachIndexed { k, s -> drawContext.canvas.nativeCanvas.drawText(s, 4 * dpx, top[k] + labelPx + 2 * dpx, paint) }
+    }
+}
+
+/** Full mode: the lap now drawn as it goes, against your best lap seen here */
+@Composable
+private fun LiveTraces(s: LiveState) {
+    val rec = s.rec; val a = rec?.cur; val b = rec?.best()
+    val total = ((s.session?.trackLen ?: 0.0) / 5).toInt()
+    Panel {
+        Section(t("lm_traces").uppercase())
+        if (a == null || a.size < 2) { Text(t("lm_wait_lap"), color = Muted, fontSize = 12.sp); return@Panel }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+            Text("● " + t("lm_now"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            if (b != null) Text("● " + t("lm_my_best") + " " + lapTime(b.time), color = Purple, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        }
+        LapRows(a, b, a.size - 1, total)
+    }
+}
+
+/** Compare laps, live: the lap now against the one you choose (your best in purple, the last one, any other lap seen
+ *  here), the delta now and corner by corner by the official turns */
+@Composable
+private fun LiveCompare(vm: PitlaneViewModel, s: LiveState) {
+    val rec = s.rec; val a = rec?.cur
+    var pick by rememberSaveable { mutableStateOf("best") }
+    val tid = s.session?.trackId ?: 0L
+    LaunchedEffect(tid) { if (tid > 0) vm.loadLiveTrack(tid) }
+    val lt by vm.liveTrack.collectAsState()
+    val turns = lt?.takeIf { it.first == tid }?.third ?: emptyList()
+    val total = ((s.session?.trackLen ?: 0.0) / 5).toInt()
+    val best = rec?.best(); val last = rec?.last()
+    val b = when {
+        pick == "best" -> best
+        pick == "last" -> last
+        else -> rec?.laps?.firstOrNull { "lap:${it.n}" == pick } ?: best
+    }
+    Panel {
+        Section(t("lm_cmp").uppercase())
+        if (rec == null || a == null || rec.laps.isEmpty()) { Text(t("lm_wait_cmp"), color = Muted, fontSize = 12.sp); return@Panel }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Chip(t("lm_my_best"), pick == "best") { pick = "best" }
+            Chip(t("lm_last"), pick == "last") { pick = "last" }
+            rec.laps.filter { it.time > 0 && it !== best && it !== last }.takeLast(8).reversed().forEach { l ->
+                Chip(t("lm_lap_n", l.n + 1) + " · " + lapTime(l.time), pick == "lap:${l.n}") { pick = "lap:${l.n}" }
+            }
+        }
+        val i = a.size - 1
+        val now = if (b != null && i in b.t.indices && i > 3) (a.t[i] - b.t[i]).toDouble() else null
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Metric(t("lm_best"), best?.let { lapTime(it.time) } ?: "—", Modifier.weight(1f).fillMaxHeight(), color = Purple)
+            Metric(t("lm_last"), last?.let { lapTime(it.time) } ?: "—", Modifier.weight(1f).fillMaxHeight())
+            Metric(t("lm_now_vs"), now?.let { signedS(it, 2) } ?: "—", Modifier.weight(1f).fillMaxHeight(), color = if (now == null) Fg else if (now <= 0) Good else Bad)
+        }
+        Spacer(Modifier.height(8.dp))
+        if (b != null) LapRows(a, b, i, total, if (b === best) Purple else Blue)
+        // corner by corner: from the middle of the straight before each turn to the middle of the one after it
+        val n = maxOf(total, b?.size ?: 0)
+        if (b != null && turns.isNotEmpty() && n > 0) {
+            val cuts = turns.map { (it * n).toInt() }
+            val chips = cuts.mapIndexedNotNull { k, c ->
+                val s0 = if (k == 0) 0 else (cuts[k - 1] + c) / 2
+                val e0 = if (k == cuts.size - 1) minOf(n - 1, c + (n - c) / 2) else (c + cuts[k + 1]) / 2
+                val done = e0 < a.size && e0 < b.size && s0 < e0
+                Triple(k + 1, if (done) ((a.t[e0] - a.t[s0]) - (b.t[e0] - b.t[s0])).toDouble() else null, done)
+            }
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                chips.forEach { (no, d, _) ->
+                    Column(Modifier.clip(RoundedCornerShape(8.dp)).background(Surface2).padding(horizontal = 8.dp, vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("T$no", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text(d?.let { signedS(it, 2) } ?: "·", color = if (d == null) Muted else if (d <= 0) Good else Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** your place at the end of every lap of this session */
+@Composable
+private fun PosHistory(s: LiveState) {
+    val h = s.rec?.posHist?.toList() ?: emptyList()
+    if (h.size < 2) return
+    val dpx = with(LocalDensity.current) { 1.dp.toPx() }
+    Panel {
+        Section(t("lm_pos_hist").uppercase())
+        val lo = h.minOf { it.second }; val hi = maxOf(h.maxOf { it.second }, lo + 1)
+        Canvas(Modifier.fillMaxWidth().height(110.dp)) {
+            val p = Path()
+            h.forEachIndexed { k, (_, pos) ->
+                val x = k.toFloat() / (h.size - 1) * size.width
+                val y = (pos - lo).toFloat() / (hi - lo) * (size.height - 8 * dpx) + 4 * dpx
+                if (k == 0) p.moveTo(x, y) else p.lineTo(x, y)
+            }
+            drawPath(p, Accent, style = Stroke(width = 2f * dpx, join = StrokeJoin.Round))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("P$lo", color = Muted, fontSize = 10.sp); Text(t("lt_lap_of", h.last().first), color = Muted, fontSize = 10.sp); Text("P" + h.last().second, color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        }
     }
 }
 

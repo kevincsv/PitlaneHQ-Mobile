@@ -225,3 +225,59 @@ final class LiveLaps {
         return t - b.t[i]
     }
 }
+
+/// One lap this phone saw, every 5 m: speed (m/s), the lap's time there (s), throttle and brake (0–1) and gear.
+final class RecLap {
+    let n: Int
+    var sp: [Double] = [], t: [Double] = [], thr: [Double] = [], brk: [Double] = [], gear: [Int] = []
+    var time = 0.0
+    var pit = false
+    init(n: Int) { self.n = n }
+    var size: Int { t.count }
+}
+
+/// The laps of the session this phone watches, for Telemetry's Full mode (the traces of the lap) and Compare laps (the
+/// lap now against your best, your last lap or another one, live), and your place at the end of every lap (Standings).
+final class LiveRec {
+    private(set) var laps: [RecLap] = []
+    private(set) var cur: RecLap?
+    private(set) var posHist: [(lap: Int, pos: Int)] = []
+    private(set) var ver = 0
+    private var waitLast: RecLap?
+    private var lastSeen = -1.0
+
+    func clear() { laps = []; cur = nil; posHist = []; waitLast = nil; lastSeen = -1; ver += 1 }
+
+    func add(_ v: [String: Double]) {
+        guard let lcv = v["LapCompleted"], let d = v["LapDist"], let t = v["LapCurrentLapTime"] else { return }
+        let lc = Int(lcv)
+        let last = v["LapLastLapTime"] ?? -1
+        // the game says the lap's time a moment after the line: it is this lap's once it changes
+        if let w = waitLast, last > 0, last != lastSeen { w.time = last; waitLast = nil; lastSeen = last; ver += 1 }
+        guard let c = cur, c.n == lc else {
+            if let c = cur, lc == c.n + 1, c.size > 40 {
+                c.time = c.t.last ?? 0; waitLast = c; laps.append(c); if laps.count > 30 { laps.removeFirst() }
+                if let p = v["PlayerCarPosition"], p > 0 { posHist.append((lc, Int(p))); if posHist.count > 200 { posHist.removeFirst() } }
+            } else if let c = cur, lc < c.n { clear() } // a new session
+            if lastSeen < 0 { lastSeen = last }
+            cur = RecLap(n: lc); ver += 1
+            return
+        }
+        if (v["OnPitRoad"] ?? 0) != 0 { c.pit = true }
+        if d < 0 || (d < 60 && t > 8) { return }
+        let b = Int(d / 5)
+        if b > 4000 { return }
+        let sp = v["Speed"] ?? 0, th = v["Throttle"] ?? 0, br = v["Brake"] ?? 0, g = Int(v["Gear"] ?? 0)
+        while c.size <= b {
+            let e = c.size == 0
+            c.t.append(e ? t : c.t.last!); c.sp.append(e ? sp : c.sp.last!); c.thr.append(e ? th : c.thr.last!)
+            c.brk.append(e ? br : c.brk.last!); c.gear.append(e ? g : c.gear.last!)
+        }
+        c.t[b] = t; c.sp[b] = sp; c.thr[b] = th; c.brk[b] = br; c.gear[b] = g
+        ver += 1
+    }
+
+    /// your best lap seen here (never one through the pits) and the last one finished
+    func best() -> RecLap? { laps.filter { !$0.pit && $0.time > 0 }.min { $0.time < $1.time } }
+    func last() -> RecLap? { laps.last { $0.time > 0 } }
+}

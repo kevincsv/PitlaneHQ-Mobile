@@ -10,6 +10,10 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
   see where the fast drivers brake and how fast they take the apex.
 - New throttle tips for when you open it too fast or take too long to reach full throttle.
 - Each lap's line comes from the game's real position, and the corners are numbered by the track's shape.
+- Telemetry has a Basic and a Full mode with the speed, throttle, brake, delta and gear traces, and Compare laps live
+  against your best, your last lap or another lap, corner by corner.
+- Standings show the gap to the leader or the interval, a class filter when several classes race and your position lap
+  by lap, and Tyres show their wear.
 - Leagues are open to everyone.
 - Fixes and improvements.
 

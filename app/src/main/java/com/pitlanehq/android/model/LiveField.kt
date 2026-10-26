@@ -179,3 +179,63 @@ class LiveLaps {
         return t - b.t[i]
     }
 }
+
+/** One lap this phone saw, every 5 m: speed (m/s), the lap's time there (s), throttle and brake (0–1) and gear. */
+class RecLap(val n: Int) {
+    val sp = ArrayList<Float>(); val t = ArrayList<Float>(); val thr = ArrayList<Float>(); val brk = ArrayList<Float>(); val gear = ArrayList<Int>()
+    var time = 0.0; var pit = false
+    val size get() = t.size
+    fun timeAt(i: Int): Double? = if (i in t.indices) t[i].toDouble() else null
+}
+
+/**
+ * The laps of the session this phone watches, for Telemetry's Full mode (the traces of the lap) and Compare laps (the
+ * lap now against your best, your last lap or another one, live), and your place at the end of every lap (Standings).
+ */
+class LiveRec {
+    val laps = ArrayList<RecLap>()
+    var cur: RecLap? = null
+        private set
+    val posHist = ArrayList<Pair<Int, Int>>() // lap, your place after it
+    var ver = 0
+        private set
+    private var waitLast: RecLap? = null
+    private var lastSeen = -1.0
+
+    fun clear() { laps.clear(); cur = null; posHist.clear(); waitLast = null; lastSeen = -1.0; ver++ }
+
+    fun add(s: LiveState) {
+        val lc = s.num("LapCompleted")?.toInt() ?: return
+        val d = s.num("LapDist") ?: return
+        val t = s.num("LapCurrentLapTime") ?: return
+        val last = s.num("LapLastLapTime") ?: -1.0
+        // the game says the lap's time a moment after the line: it is this lap's once it changes
+        waitLast?.let { w -> if (last > 0 && last != lastSeen) { w.time = last; waitLast = null; lastSeen = last; ver++ } }
+        val c = cur
+        if (c == null || c.n != lc) {
+            if (c != null && lc == c.n + 1 && c.size > 40) {
+                c.time = c.t.last().toDouble(); waitLast = c; laps.add(c); if (laps.size > 30) laps.removeAt(0)
+                s.num("PlayerCarPosition")?.toInt()?.takeIf { it > 0 }?.let { posHist.add(lc to it); if (posHist.size > 200) posHist.removeAt(0) }
+            } else if (c != null && lc < c.n) clear() // a new session
+            if (lastSeen < 0) lastSeen = last
+            cur = RecLap(lc); ver++
+            return
+        }
+        if ((s.num("OnPitRoad") ?: 0.0) != 0.0) c.pit = true
+        if (d < 0 || (d < 60 && t > 8)) return
+        val b = (d / 5).toInt()
+        if (b > 4000) return
+        val sp = (s.num("Speed") ?: 0.0).toFloat(); val th = (s.num("Throttle") ?: 0.0).toFloat(); val br = (s.num("Brake") ?: 0.0).toFloat(); val g = s.num("Gear")?.toInt() ?: 0
+        while (c.size <= b) {
+            val e = c.size == 0
+            c.t.add(if (e) t.toFloat() else c.t.last()); c.sp.add(if (e) sp else c.sp.last()); c.thr.add(if (e) th else c.thr.last())
+            c.brk.add(if (e) br else c.brk.last()); c.gear.add(if (e) g else c.gear.last())
+        }
+        c.t[b] = t.toFloat(); c.sp[b] = sp; c.thr[b] = th; c.brk[b] = br; c.gear[b] = g
+        ver++
+    }
+
+    /** your best lap seen here (never one through the pits) and the last one finished */
+    fun best(): RecLap? = laps.filter { !it.pit && it.time > 0 }.minByOrNull { it.time }
+    fun last(): RecLap? = laps.lastOrNull { it.time > 0 }
+}

@@ -22,19 +22,32 @@ struct LiveTabsView: View {
     @ObservedObject var live: Live
     @EnvironmentObject var account: Account
     @State private var sub = 0
+    @State private var lmode = 0
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Tabs(labels: [t("tab_telemetry"), t("tab_standings"), t("tab_tyres")], selected: $sub)
             switch sub {
             case 0:
-                LiveTopView(live: live)
-                LiveDeltaBarView(live: live)
-                LiveMapView(live: live)
-                LiveRelativeView(live: live)
-                LiveFuelView(live: live)
-                LiveIncidentsView(live: live)
+                // Basic, Full (the lap's traces too) or Compare laps, live, like the PC and the web
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array([t("lm_basic"), t("lm_full"), t("lm_cmp")].enumerated()), id: \.offset) { i, l in LiveChip(label: l, on: lmode == i) { lmode = i } }
+                    }
+                }
+                if lmode == 2 {
+                    LiveCompareView(live: live)
+                } else {
+                    LiveTopView(live: live)
+                    LiveDeltaBarView(live: live)
+                    if lmode == 1 { LiveTracesView(live: live) }
+                    LiveMapView(live: live)
+                    LiveRelativeView(live: live)
+                    LiveFuelView(live: live)
+                    LiveIncidentsView(live: live)
+                }
             case 1:
                 LiveStandingsView(live: live)
+                PosHistoryView(live: live)
             default:
                 LiveTyresView(live: live)
             }
@@ -182,7 +195,7 @@ struct LiveRelativeView: View {
         Panel {
             SectionLabel(text: t("lt_relative").uppercased())
             if rows.isEmpty { Text(t("lt_no_cars")).font(.caption).foregroundColor(Theme.muted) }
-            ForEach(rows) { r in
+            ForEach(Array(rows.enumerated()), id: \.element.id) { k, r in
                 HStack(spacing: 4) {
                     Text(r.pos > 0 ? "P\(r.pos)" : "").foregroundColor(Theme.muted).frame(width: 34, alignment: .leading)
                     Text(r.d.map { "#" + $0.number } ?? "").foregroundColor(Theme.muted).frame(width: 36, alignment: .leading)
@@ -202,11 +215,26 @@ struct LiveRelativeView: View {
 /// the standings: every car in order, its last and best lap and its gap to the leader
 struct LiveStandingsView: View {
     @ObservedObject var live: Live
+    @State private var cls = ""
+    @State private var interval = false
     var body: some View {
-        let rows = live.standings()
+        let all = live.standings()
+        let classes = all.compactMap { r -> String? in guard let c = r.d?.cls, !c.isEmpty else { return nil }; return c }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        let rows = classes.count > 1 && !cls.isEmpty ? all.filter { $0.d?.cls == cls } : all
         let bestAll = rows.compactMap { $0.best }.min()
+        let lead = rows.first?.gap ?? 0
         Panel {
             SectionLabel(text: t("tab_standings").uppercased() + (rows.isEmpty ? "" : " · " + t("lt_drivers_n", rows.count)))
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    LiveChip(label: t("lm_to_leader"), on: !interval) { interval = false }
+                    LiveChip(label: t("lm_interval"), on: interval) { interval = true }
+                    if classes.count > 1 {
+                        LiveChip(label: t("lm_all_classes"), on: cls.isEmpty) { cls = "" }.padding(.leading, 6)
+                        ForEach(classes, id: \.self) { c in LiveChip(label: c, on: cls == c) { cls = c } }
+                    }
+                }
+            }
             if rows.isEmpty { Text(t("lt_no_cars")).font(.caption).foregroundColor(Theme.muted) }
             if !rows.isEmpty {
                 HStack(spacing: 4) {
@@ -216,7 +244,7 @@ struct LiveStandingsView: View {
                     Spacer()
                     Text(t("last")).frame(width: 62, alignment: .leading)
                     Text(t("best")).frame(width: 62, alignment: .leading)
-                    Text(t("lt_gap")).frame(width: 44, alignment: .trailing)
+                    Text(interval ? t("lm_int") : t("lt_gap")).frame(width: 44, alignment: .trailing)
                 }
                 .font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted)
             }
@@ -228,7 +256,8 @@ struct LiveStandingsView: View {
                     Spacer()
                     Text(r.last.map { lapTime($0) } ?? "—").frame(width: 62, alignment: .leading)
                     Text(r.best.map { lapTime($0) } ?? "—").foregroundColor(r.best != nil && r.best == bestAll ? Theme.purple : Theme.fg).frame(width: 62, alignment: .leading)
-                    Text(r.pos == 1 ? "—" : r.gap.map { String(format: "+%.1f", $0) } ?? "—").frame(width: 44, alignment: .trailing)
+                    let gp: Double? = k == 0 ? nil : interval ? rows[k - 1].gap.flatMap { p in r.gap.map { $0 - p } } : r.gap.map { $0 - lead }
+                    Text(k == 0 ? "—" : gp.map { String(format: "+%.1f", $0) } ?? "—").frame(width: 44, alignment: .trailing)
                 }
                 .font(.system(size: 11, design: .monospaced))
                 .padding(.vertical, 4)
@@ -415,8 +444,207 @@ struct LiveTyresView: View {
                     if k < 2 { Spacer() }
                 }
             }
+            if let wl = wear.compactMap({ $0 }).min() {
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.line)
+                        Capsule().fill(wl > 0.7 ? Theme.good : wl > 0.4 ? Theme.accent : Theme.bad).frame(width: g.size.width * CGFloat(min(max(wl, 0), 1)))
+                    }
+                }
+                .frame(height: 5)
+            }
             if let p = live.num(c + "coldPressure") { Text(t("lt_cold", String(format: "%.0f kPa", p))).font(.system(size: 10)).foregroundColor(Theme.muted) }
         }
         .padding(8).frame(maxWidth: .infinity).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+// ---------- Telemetry's modes: Basic, Full (the lap's traces) and Compare laps (live), like the PC and the web ----------
+
+/// a small on/off chip, like the web's
+struct LiveChip: View {
+    let label: String
+    let on: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Text(label).font(.system(size: 11, weight: .bold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 5)
+                .background(on ? Theme.accent : Theme.surface2).foregroundColor(on ? Theme.bg : Theme.muted).clipShape(Capsule())
+        }
+    }
+}
+
+/// the rows of a lap against another, along the lap: speed, throttle and brake, the delta and the gear. A is drawn up
+/// to `upto` (the point of the lap now), B whole.
+struct LapRowsView: View {
+    let a: RecLap
+    let b: RecLap?
+    let upto: Int
+    let total: Int
+    var bCol: Color = Theme.purple
+    var body: some View {
+        Canvas { ctx, size in
+            let n = max(total, a.size, b?.size ?? 0, 2)
+            let gap: CGFloat = 8, rh = (size.height - gap * 3) / 4
+            func x(_ i: Int) -> CGFloat { CGFloat(i) / CGFloat(n - 1) * size.width }
+            let top = (0..<4).map { CGFloat($0) * (rh + gap) }
+            for y in top { ctx.fill(Path(CGRect(x: 0, y: y, width: size.width, height: rh)), with: .color(Theme.surface2)) }
+            func line(_ vals: (Int) -> Double?, _ count: Int, _ row: Int, _ lo: Double, _ hi: Double, _ col: Color, _ w: CGFloat) {
+                var p = Path(); var on = false
+                for i in 0..<max(0, count) {
+                    guard let v = vals(i) else { continue }
+                    let f = min(max((v - lo) / max(1e-6, hi - lo), 0), 1)
+                    let pt = CGPoint(x: x(i), y: top[row] + rh - CGFloat(f) * rh)
+                    if on { p.addLine(to: pt) } else { p.move(to: pt); on = true }
+                }
+                ctx.stroke(p, with: .color(col), lineWidth: w)
+            }
+            func g<T>(_ a: [T], _ i: Int) -> T? { i >= 0 && i < a.count ? a[i] : nil }
+            let vmax = max(a.sp.max() ?? 1, b?.sp.max() ?? 1, 1) * 1.05
+            let aN = min(upto + 1, a.size)
+            if let b {
+                line({ g(b.sp, $0) }, b.size, 0, 0, vmax, bCol.opacity(0.8), 1.2)
+                line({ g(b.thr, $0) }, b.size, 1, 0, 1, Theme.good.opacity(0.35), 1)
+                line({ g(b.brk, $0) }, b.size, 1, 0, 1, Theme.bad.opacity(0.35), 1)
+                line({ g(b.gear, $0).map(Double.init) }, b.size, 3, 0, 8, bCol.opacity(0.7), 1.2)
+                // the delta: A's time against B's at the same point, ± from the middle of its row
+                let ds = (0..<max(0, min(aN, b.size))).map { a.t[$0] - b.t[$0] }
+                let m = max(0.3, ds.map { abs($0) }.max() ?? 0.3)
+                var mid = Path(); mid.move(to: CGPoint(x: 0, y: top[2] + rh / 2)); mid.addLine(to: CGPoint(x: size.width, y: top[2] + rh / 2))
+                ctx.stroke(mid, with: .color(Theme.line), lineWidth: 1)
+                line({ g(ds, $0) }, ds.count, 2, -m, m, (ds.last ?? 0) <= 0 ? Theme.good : Theme.bad, 1.8)
+            }
+            line({ g(a.sp, $0) }, aN, 0, 0, vmax, Theme.accent, 1.8)
+            line({ g(a.thr, $0) }, aN, 1, 0, 1, Theme.good, 1.6)
+            line({ g(a.brk, $0) }, aN, 1, 0, 1, Theme.bad, 1.6)
+            line({ g(a.gear, $0).map(Double.init) }, aN, 3, 0, 8, Theme.accent, 1.6)
+            var cur = Path(); cur.move(to: CGPoint(x: x(max(0, aN - 1)), y: 0)); cur.addLine(to: CGPoint(x: x(max(0, aN - 1)), y: size.height))
+            ctx.stroke(cur, with: .color(Theme.fg.opacity(0.5)), lineWidth: 1)
+            for (k, s) in [t("lr_speed"), t("lr_pedals"), "Delta", t("lr_gear")].enumerated() {
+                ctx.draw(Text(s).font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted), at: CGPoint(x: 4, y: top[k] + 3), anchor: .topLeading)
+            }
+        }
+        .frame(height: 250)
+    }
+}
+
+/// Full mode: the lap now drawn as it goes, against your best lap seen here
+struct LiveTracesView: View {
+    @ObservedObject var live: Live
+    var body: some View {
+        let _ = live.recVer
+        let a = live.rec.cur, b = live.rec.best()
+        let total = Int((live.session?.trackLen ?? 0) / 5)
+        Panel {
+            SectionLabel(text: t("lm_traces").uppercased())
+            if let a, a.size >= 2 {
+                HStack(spacing: 12) {
+                    Text("● " + t("lm_now")).foregroundColor(Theme.accent)
+                    if let b { Text("● " + t("lm_my_best") + " " + lapTime(b.time)).foregroundColor(Theme.purple) }
+                }
+                .font(.system(size: 11, weight: .bold))
+                LapRowsView(a: a, b: b, upto: a.size - 1, total: total)
+            } else {
+                Text(t("lm_wait_lap")).font(.caption).foregroundColor(Theme.muted)
+            }
+        }
+    }
+}
+
+/// Compare laps, live: the lap now against the one you choose (your best in purple, the last one, any other lap seen
+/// here), the delta now and corner by corner by the official turns
+struct LiveCompareView: View {
+    @ObservedObject var live: Live
+    @EnvironmentObject var account: Account
+    @State private var pick = "best"
+    @State private var turns: [Double] = []
+    @State private var turnsFor: Int = 0
+    var body: some View {
+        let _ = live.recVer
+        let rec = live.rec
+        let total = Int((live.session?.trackLen ?? 0) / 5)
+        let best = rec.best(), last = rec.last()
+        let b: RecLap? = pick == "best" ? best : pick == "last" ? last : (rec.laps.first { "lap:\($0.n)" == pick } ?? best)
+        Panel {
+            SectionLabel(text: t("lm_cmp").uppercased())
+            if let a = rec.cur, !rec.laps.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        LiveChip(label: t("lm_my_best"), on: pick == "best") { pick = "best" }
+                        LiveChip(label: t("lm_last"), on: pick == "last") { pick = "last" }
+                        ForEach(Array(rec.laps.filter { $0.time > 0 && $0 !== best && $0 !== last }.suffix(8).reversed().enumerated()), id: \.offset) { _, l in
+                            LiveChip(label: t("lm_lap_n", l.n + 1) + " · " + lapTime(l.time), on: pick == "lap:\(l.n)") { pick = "lap:\(l.n)" }
+                        }
+                    }
+                }
+                let i = a.size - 1
+                let now: Double? = (b != nil && i > 3 && i < b!.t.count) ? a.t[i] - b!.t[i] : nil
+                HStack(spacing: 8) {
+                    Metric(label: t("lm_best"), value: best.map { lapTime($0.time) } ?? "—", color: Theme.purple)
+                    Metric(label: t("lm_last"), value: last.map { lapTime($0.time) } ?? "—")
+                    Metric(label: t("lm_now_vs"), value: now.map { signedS($0, 2) } ?? "—", color: now == nil ? Theme.fg : (now! <= 0 ? Theme.good : Theme.bad))
+                }
+                if let b {
+                    LapRowsView(a: a, b: b, upto: i, total: total, bCol: b === best ? Theme.purple : Theme.blue)
+                    // corner by corner: from the middle of the straight before each turn to the middle of the one after it
+                    let n = max(total, b.size)
+                    if !turns.isEmpty && n > 0 {
+                        let cuts = turns.map { Int($0 * Double(n)) }
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(Array(cuts.enumerated()), id: \.offset) { k, c in
+                                    let s0 = k == 0 ? 0 : (cuts[k - 1] + c) / 2
+                                    let e0 = k == cuts.count - 1 ? min(n - 1, c + (n - c) / 2) : (c + cuts[k + 1]) / 2
+                                    let d: Double? = (e0 < a.size && e0 < b.size && s0 < e0) ? (a.t[e0] - a.t[s0]) - (b.t[e0] - b.t[s0]) : nil
+                                    VStack(spacing: 1) {
+                                        Text("T\(k + 1)").font(.system(size: 10, weight: .bold)).foregroundColor(Theme.muted)
+                                        Text(d.map { signedS($0, 2) } ?? "·").font(.system(size: 11, design: .monospaced)).foregroundColor(d == nil ? Theme.muted : (d! <= 0 ? Theme.good : Theme.bad))
+                                    }
+                                    .padding(.horizontal, 8).padding(.vertical, 5).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(t("lm_wait_cmp")).font(.caption).foregroundColor(Theme.muted)
+            }
+        }
+        .task(id: live.session?.trackId ?? 0) {
+            let tid = live.session?.trackId ?? 0
+            if tid > 0 { turns = await account.turns(trackId: tid) }
+        }
+    }
+}
+
+/// your place at the end of every lap of this session
+struct PosHistoryView: View {
+    @ObservedObject var live: Live
+    var body: some View {
+        let _ = live.recVer
+        let h = live.rec.posHist
+        if h.count >= 2 {
+            let lo = h.map { $0.pos }.min()!, hi = max(h.map { $0.pos }.max()!, lo + 1)
+            Panel {
+                SectionLabel(text: t("lm_pos_hist").uppercased())
+                Canvas { ctx, size in
+                    var p = Path()
+                    for (k, e) in h.enumerated() {
+                        let pt = CGPoint(x: CGFloat(k) / CGFloat(h.count - 1) * size.width, y: CGFloat(e.pos - lo) / CGFloat(hi - lo) * (size.height - 8) + 4)
+                        if k == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+                    }
+                    ctx.stroke(p, with: .color(Theme.accent), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+                }
+                .frame(height: 110)
+                HStack {
+                    Text("P\(lo)").foregroundColor(Theme.muted)
+                    Spacer()
+                    Text(t("lt_lap_of", "\(h.last!.lap)")).foregroundColor(Theme.muted)
+                    Spacer()
+                    Text("P\(h.last!.pos)").foregroundColor(Theme.accent).bold()
+                }
+                .font(.system(size: 10))
+            }
+        }
     }
 }

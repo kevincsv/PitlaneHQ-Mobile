@@ -254,13 +254,17 @@ enum Demo {
         m["Gear"] = row[3]
         m["FuelLevel"] = 62 - Double(tick) * 0.002
         m["Lap"] = Double(4 + tick / liveTrace.rows.count)
-        m["LapCurrentLapTime"] = row[5]
+        // the lap's time, distance and number, so Full and Compare laps have laps to draw (each a little different)
+        let lapN = tick / liveTrace.rows.count
+        m["LapCurrentLapTime"] = row[5] * (1 + 0.004 * sin(Double(lapN) * 1.7))
+        m["LapDist"] = Double(tick % liveTrace.rows.count) * 10
+        m["LapCompleted"] = Double(3 + lapN)
         m["LapLastLapTime"] = c.lap + 0.31
         m["LapBestLapTime"] = c.lap + 0.12
         m["LapDeltaToBestLap"] = sin(Double(tick) / 40) * 0.4
         m["Throttle"] = row[1]
         m["Brake"] = row[2]
-        m["PlayerCarPosition"] = 6
+        m["PlayerCarPosition"] = Double(6 - lapN % 3)
         return m
     }
 }

@@ -174,9 +174,11 @@ object Demo {
         val row = tr.rows[i]
         return mapOf(
             "Speed" to row[0], "RPM" to 4000 + row[0] * 80, "Gear" to row[3], "FuelLevel" to 62.0 - tick * 0.002,
-            "Lap" to 4 + tick / tr.rows.size, "LapCurrentLapTime" to row[5], "LapLastLapTime" to c.lap + 0.31,
+            "Lap" to 4 + tick / tr.rows.size, "LapLastLapTime" to c.lap + 0.31,
             "LapBestLapTime" to c.lap + 0.12, "LapDeltaToBestLap" to sin(tick / 40.0) * 0.4, "Throttle" to row[1],
-            "Brake" to row[2], "PlayerCarPosition" to 6
+            "Brake" to row[2], "PlayerCarPosition" to 6 - (tick / tr.rows.size) % 3,
+            // the lap's distance and number, so Full and Compare laps have laps to draw (each a little different)
+            "LapDist" to i * 10.0, "LapCompleted" to 3 + tick / tr.rows.size, "LapCurrentLapTime" to row[5] * (1 + 0.004 * sin(tick / tr.rows.size * 1.7))
         )
     }
 }
