@@ -412,6 +412,22 @@ func fixText(_ s: String) -> String {
     guard s.contains("Ã") || s.contains("Â"), let d = s.data(using: .isoLatin1), let u = String(data: d, encoding: .utf8) else { return s }
     return u
 }
+/// One car under several badges is one car (the server's carfamily.js): the lists show the family without the brand.
+private let carFams: [(String, String)] = [
+    ("Super Formula SF23", "^Super Formula SF23\\b"),
+    ("NASCAR Cup Series Next Gen", "^NASCAR Cup Series Next Gen\\b"),
+    ("NASCAR Cup Series Gen 6", "^NASCAR (Cup|Monster Energy Cup) Series (Chevrolet|Ford|Toyota)\\b"),
+    ("NASCAR Xfinity Series", "^NASCAR Xfinity\\b"),
+    ("NASCAR Truck Series", "^NASCAR (Craftsman |Camping World |Gander (RV & )?Outdoors )?Truck\\b"),
+    ("ARCA Menards Series", "^ARCA Menards\\b"),
+    ("Supercars Gen3", "^Supercars?\\b.*\\bGen ?3\\b"),
+    ("Supercars Gen2", "^Supercars? (Ford Mustang GT|Holden ZB Commodore)\\b"),
+    ("V8 Supercars", "^V8 Supercars?\\b"),
+]
+func carFam(_ s: String) -> String {
+    let n = fixText(s).trimmingCharacters(in: .whitespaces)
+    return carFams.first { n.range(of: $0.1, options: [.regularExpression, .caseInsensitive]) != nil }?.0 ?? n
+}
 /// A name as a key: no accents, no case, letters and numbers only, so the same car or track is one entry.
 func nameKey(_ s: String) -> String {
     fixText(s).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased().filter { $0.isLetter || $0.isNumber }

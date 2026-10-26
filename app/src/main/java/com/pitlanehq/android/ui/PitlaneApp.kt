@@ -917,7 +917,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                     // name without accents or broken characters, so one track never shows twice
                     val trackName = { x: CloudSession -> fixText(x.track) + (if (x.trackConfig.isNotBlank()) " · " + fixText(x.trackConfig) else "") }
                     val trackOf = { x: CloudSession -> nameKey(trackName(x)) }
-                    val carOf = { x: CloudSession -> nameKey(x.car) }
+                    val carOf = { x: CloudSession -> nameKey(carFam(x.car)) }
                     val zone = java.time.ZoneId.systemDefault()
                     val dayOf = { x: CloudSession -> java.time.Instant.ofEpochMilli(x.started).atZone(zone).toLocalDate().let { "${it.year}-${it.monthValue}-${it.dayOfMonth}" } }
                     val match = { x: CloudSession, skip: String ->
@@ -939,7 +939,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                                 FilterMenu(t("kind_all"), forKind.size, listOf("race", "qual", "prac", "test").map { k -> Triple(k, t("filt_$k"), forKind.count { kindOf(it.kind) == k }) }.filter { it.third > 0 || it.first == fKind }, fKind, Modifier.weight(1f)) { fKind = it }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FilterMenu(t("every_car"), forCar.size, group(forCar, carOf) { fixText(it.car) }, fCar, Modifier.weight(1f)) { fCar = it }
+                                FilterMenu(t("every_car"), forCar.size, group(forCar, carOf) { carFam(it.car) }, fCar, Modifier.weight(1f)) { fCar = it }
                                 FilterMenu(t("every_track"), forTrack.size, group(forTrack, trackOf, trackName), fTrack, Modifier.weight(1f)) { fTrack = it }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2327,6 +2327,19 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
 /** Text that came through a wrong encoding ("AutÃ³dromo") read back as it was written ("Autódromo"). */
 fun fixText(s: String): String = if (s.contains('Ã') || s.contains('Â')) runCatching { String(s.toByteArray(Charsets.ISO_8859_1), Charsets.UTF_8) }.getOrNull()?.takeIf { !it.contains('\uFFFD') } ?: s else s
 /** A name as a key: no accents, no case, letters and numbers only, so the same car or track is one entry. */
+// one car under several badges is one car (the server's carfamily.js): the lists show the family without the brand
+private val CAR_FAMS = listOf(
+    "Super Formula SF23" to Regex("^Super Formula SF23\\b", RegexOption.IGNORE_CASE),
+    "NASCAR Cup Series Next Gen" to Regex("^NASCAR Cup Series Next Gen\\b", RegexOption.IGNORE_CASE),
+    "NASCAR Cup Series Gen 6" to Regex("^NASCAR (Cup|Monster Energy Cup) Series (Chevrolet|Ford|Toyota)\\b", RegexOption.IGNORE_CASE),
+    "NASCAR Xfinity Series" to Regex("^NASCAR Xfinity\\b", RegexOption.IGNORE_CASE),
+    "NASCAR Truck Series" to Regex("^NASCAR (Craftsman |Camping World |Gander (RV & )?Outdoors )?Truck\\b", RegexOption.IGNORE_CASE),
+    "ARCA Menards Series" to Regex("^ARCA Menards\\b", RegexOption.IGNORE_CASE),
+    "Supercars Gen3" to Regex("^Supercars?\\b.*\\bGen ?3\\b", RegexOption.IGNORE_CASE),
+    "Supercars Gen2" to Regex("^Supercars? (Ford Mustang GT|Holden ZB Commodore)\\b", RegexOption.IGNORE_CASE),
+    "V8 Supercars" to Regex("^V8 Supercars?\\b", RegexOption.IGNORE_CASE),
+)
+fun carFam(s: String): String { val n = fixText(s).trim(); return CAR_FAMS.firstOrNull { it.second.containsMatchIn(n) }?.first ?: n }
 fun nameKey(s: String): String = java.text.Normalizer.normalize(fixText(s).lowercase(), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").replace(Regex("[^a-z0-9]+"), "")
 
 /** One small filter menu: "Every car (5)" and, when opened, each choice with how many sessions it has. */

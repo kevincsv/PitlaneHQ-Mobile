@@ -1500,7 +1500,7 @@ struct AnalysisView: View {
     // a car or a track is known by its name without accents or broken characters, so one track never shows twice
     private func trackName(_ x: CloudSession) -> String { fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig)) }
     private func trackKey(_ x: CloudSession) -> String { nameKey(trackName(x)) }
-    private func carKey(_ x: CloudSession) -> String { nameKey(x.car) }
+    private func carKey(_ x: CloudSession) -> String { nameKey(carFam(x.car)) }
     /// the choices of one filter: (key, name, sessions), by name
     private func group(_ l: [CloudSession], _ key: (CloudSession) -> String, _ name: (CloudSession) -> String) -> [(String, String, Int)] {
         var out: [String: (String, Int)] = [:]
@@ -1523,7 +1523,7 @@ struct AnalysisView: View {
     @ViewBuilder private func filters(_ all: [CloudSession], _ forCat: [CloudSession], _ forKind: [CloudSession], _ forCar: [CloudSession], _ forTrack: [CloudSession], _ forDay: [CloudSession], _ shown: Int) -> some View {
         let cats: [(String, String, Int)] = DISCS.filter { k in all.contains { $0.cat == k } }.map { k in (k, discName(k), forCat.filter { $0.cat == k }.count) }
         let kinds: [(String, String, Int)] = ["race", "qual", "prac", "test"].map { k in (k, t("filt_" + k), forKind.filter { kindOf($0.kind) == k }.count) }.filter { $0.2 > 0 || $0.0 == fKind }
-        let cars = group(forCar, carKey) { fixText($0.car) }
+        let cars = group(forCar, carKey) { carFam($0.car) }
         let tracks = group(forTrack, trackKey, trackName)
         let days: [String: Int] = forDay.reduce(into: [String: Int]()) { $0[dayKey($1), default: 0] += 1 }
         let dayLabel: String = (fDay.isEmpty ? t("days_drove") : t("days_drove") + " · " + fDay) + (showDays ? " ▴" : " ▾")
