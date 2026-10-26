@@ -802,6 +802,22 @@ final class Account: ObservableObject {
         _ = try? await call("POST", "/community/coach/rate", body: ["game": "iracing", "trackId": trackId, "carId": carId, "sid": sid, "started": Int64(started), "n": n, "apex": apexM, "kind": kind, "cls": cls, "up": up])
     }
     /// A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map.
+    /// What the coach learnt from everyone's tips (coachtips.js): the tips an admin turned off ("kind|cls"), how many drivers
+    /// each bucket helped and whether a tip may say it; nil without a connection.
+    func coachInfo() async -> CoachInfo? {
+        if demo { return nil }
+        guard let j = try? await cachedGet("/community/coach/weights").data as? [String: Any] else { return nil }
+        let off = Set((j["off"] as? [String]) ?? [])
+        var conf: [String: (Int, Int)] = [:]
+        for b in (j["buckets"] as? [[String: Any]]) ?? [] { conf["\(str(b["kind"]))|\(str(b["cls"]))"] = (int(b["win"]), int(b["n"])) }
+        return CoachInfo(off: off, conf: conf, confidence: (j["confidence"] as? Bool) ?? false, min: (j["min"] as? NSNumber)?.intValue ?? 30)
+    }
+    /// The driver's own memory: the kinds of tip that repeat across their tracks (habits), the most repeated first.
+    func coachHabits() async -> [Habit] {
+        if demo { return [] }
+        guard let j = try? await cachedGet("/community/coach/me").data as? [String: Any], let a = j["habits"] as? [[String: Any]] else { return [] }
+        return a.map { Habit(kind: str($0["kind"]), tracks: int($0["tracks"]), sessions: int($0["sessions"])) }
+    }
     func turns(trackId: Int64) async -> [Double] {
         if demo || trackId <= 0 { return [] }
         guard let j = try? await cachedGet("/community/turns?game=iracing&trackId=\(trackId)").data as? [String: Any], let a = j["turns"] as? [Any] else { return [] }

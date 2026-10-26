@@ -29,7 +29,9 @@ data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, va
     val layout: Pair<List<Double>, List<Double>>? = null,
     // the session, its car and track as the community knows them, and the model's corner card (where the fastest drivers
     // here brake and how fast they take each corner): the thumbs on a tip and the hint beside it
-    val session: CloudSession? = null, val trackId: Long = 0, val carId: Long = 0, val corners: List<CornerCard> = emptyList())
+    val session: CloudSession? = null, val trackId: Long = 0, val carId: Long = 0, val corners: List<CornerCard> = emptyList(),
+    // what the coach learnt from everyone (the tips turned off, how many drivers each helped) and this driver's habits
+    val coach: CoachInfo? = null, val habits: List<Habit> = emptyList())
 
 /** The pit lane of a track (from laps through the pits): [5 m point of a lap of n points, metres to the left of the track]. */
 data class PitLane(val n: Int, val pts: List<Pair<Int, Double>>)
@@ -410,11 +412,13 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             }
             // the official turn numbers of this track, when an admin has placed them on its map (else the corners are counted)
             val turns = c?.let { runCatching { repo.turns(it.trackId) }.getOrNull() } ?: emptyList()
+            val coach = runCatching { repo.coachInfo() }.getOrNull()
+            val habits = runCatching { repo.coachHabits() }.getOrDefault(emptyList())
             // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
             val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId) }.getOrNull() else null
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
             if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time).corners }.getOrDefault(emptyList())
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards))
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards, coach = coach, habits = habits))
         }
     }
 

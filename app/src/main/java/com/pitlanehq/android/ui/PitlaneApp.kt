@@ -1086,6 +1086,9 @@ private fun CornerTip(k: Corner, an: LapAnalysis? = null, vm: PitlaneViewModel? 
         }
     }
     k.lineTip?.let { lt -> Text(t(lt, *k.lineArgs.toTypedArray()), fontSize = 12.sp, color = Accent) }
+    // how many drivers this tip helped on corners like this, when the admin lets the tips say it
+    val ci = an?.coach
+    if (ci != null && ci.confidence && tip != null) ci.conf[tip.removePrefix("tip_") + "|" + k.cls]?.let { (win, n) -> if (n >= ci.min) Text(t("tip_helped", win, n), fontSize = 11.sp, color = Muted) }
     an?.let { CornerCard.of(it.corners, k.apexM) }?.let { c ->
         Text(t("corner_fast", c.b0.toInt(), c.b1.toInt(), (c.v0 * 3.6).toInt(), (c.v1 * 3.6).toInt(), c.n), fontSize = 11.sp, color = Muted, lineHeight = 15.sp)
     }
@@ -1141,10 +1144,12 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
     val tr = an.trace
     val refName = an.refLabel.ifBlank { t("ref") }
     val c0 = tr?.let { compare(it, an.ref) }
-    val cs0 = if (c0 != null && an.ref != null) corners(c0, an.turns) else emptyList()
+    val cs0 = if (c0 != null && an.ref != null) corners(c0, an.turns, an.coach?.off ?: emptySet()) else emptyList()
     val lose0 = cs0.filter { it.tip != null && it.lost > 0.03 }.sortedByDescending { it.lost }
     if (cs0.isNotEmpty()) item { CoachGap(an, refName, lose0.firstOrNull(), vm) }
-    else item {
+    // the driver's habit first: a kind of tip that repeats on several of their tracks
+    an.habits.firstOrNull()?.takeIf { it.tracks >= 3 }?.let { h -> item { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions), fontSize = 13.sp) } } }
+    if (cs0.isEmpty()) item {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Metric(t("you") + " · L${an.lap.n}", lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent)
             Metric(refName, lapTime(an.refTime), Modifier.weight(1f).fillMaxHeight(), Blue)
@@ -1155,7 +1160,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
     if (an.fastest) item { Text(t("coach_fastest"), color = Good, fontSize = 12.sp) }
     if (tr == null) { item { Empty(t("no_trace")) }; return }
     val c = compare(tr, an.ref)
-    val cs = if (an.ref != null) corners(c, an.turns) else emptyList()
+    val cs = if (an.ref != null) corners(c, an.turns, an.coach?.off ?: emptySet()) else emptyList()
     val lose = cs.filter { it.tip != null && it.lost > 0.03 }.sortedByDescending { it.lost }
     if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
     else if (cs.isNotEmpty()) {
@@ -1263,7 +1268,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
             // every corner as a small bar under the key facts, like the web's analyzer: press one to read it on the map and the charts
             if (an.trace != null && an.ref != null) {
                 val cc = compare(an.trace, an.ref)
-                val cs = corners(cc, an.turns)
+                val cs = corners(cc, an.turns, an.coach?.off ?: emptySet())
                 if (cs.isNotEmpty()) item { CornerStrip(cs, cc.step, pick) { pick = it } }
             }
             // the car card: what this car does on other tracks (its hardest braking, where the fast drivers shift up, its
@@ -1286,7 +1291,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     sel = pick, onSel = { pick = it }) }
                 if (an.ref != null) {
                     // the coach in four phases (braking, entry, apex, exit), like the web's
-                    val cs = corners(c, an.turns)
+                    val cs = corners(c, an.turns, an.coach?.off ?: emptySet())
                     if (cs.isEmpty()) {
                         item { Section(t("where_time")) }
                         val ls = losses(c)

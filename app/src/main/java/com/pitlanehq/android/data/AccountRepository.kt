@@ -62,6 +62,11 @@ class Got<T>(val data: T, val stale: Boolean = false)
 /** The model's references for a lap: the record and the next level (each a trace with its time), and the corner card. */
 data class ModelRefs(val rec: Pair<Trace, Double>?, val lvl: Pair<Trace, Double>?, val corners: List<CornerCard> = emptyList())
 
+/** What the coach learnt from everyone's tips: the tips turned off, how many drivers each bucket helped, the confidence switch. */
+data class CoachInfo(val off: Set<String>, val conf: Map<String, Pair<Int, Int>>, val confidence: Boolean, val min: Int)
+/** A kind of tip that repeats across the driver's tracks. */
+data class Habit(val kind: String, val tracks: Int, val sessions: Int)
+
 class AccountRepository(context: Context) {
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS).build()
     private val prefs = context.getSharedPreferences("pitlane-account", Context.MODE_PRIVATE)
@@ -621,6 +626,22 @@ class AccountRepository(context: Context) {
         return (0 until x.length()).map { x.optDouble(it) } to (0 until y.length()).map { y.optDouble(it) }
     }
     /** A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map. */
+    /** What the coach learnt from everyone's tips (coachtips.js): the tips an admin turned off ("kind|cls"), how many drivers each
+     *  bucket helped and whether a tip may say it; null without a connection. */
+    fun coachInfo(): CoachInfo? {
+        if (demo) return null
+        val j = runCatching { JSONObject(cachedGet("/community/coach/weights").data) }.getOrNull() ?: return null
+        val off = j.optJSONArray("off")?.let { a -> (0 until a.length()).map { a.optString(it) } }?.toSet() ?: emptySet()
+        val conf = HashMap<String, Pair<Int, Int>>()
+        j.optJSONArray("buckets")?.let { a -> for (i in 0 until a.length()) { val b = a.optJSONObject(i) ?: continue; conf[b.optString("kind") + "|" + b.optString("cls")] = b.optInt("win") to b.optInt("n") } }
+        return CoachInfo(off, conf, j.optBoolean("confidence"), j.optInt("min", 30))
+    }
+    /** The driver's own memory: the kinds of tip that repeat across their tracks (habits), the most repeated first. */
+    fun coachHabits(): List<Habit> {
+        if (demo) return emptyList()
+        val a = runCatching { JSONObject(cachedGet("/community/coach/me").data) }.getOrNull()?.optJSONArray("habits") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Habit(it.optString("kind"), it.optInt("tracks"), it.optInt("sessions")) }
+    }
     fun turns(trackId: Long): List<Double> {
         if (demo || trackId <= 0) return emptyList()
         val a = JSONObject(cachedGet("/community/turns?game=iracing&trackId=$trackId").data).optJSONArray("turns") ?: return emptyList()

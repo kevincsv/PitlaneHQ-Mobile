@@ -21,6 +21,9 @@ struct LapAnalysis {
     var trackId: Int64 = 0
     var carId: Int64 = 0
     var corners: [CornerCard] = []
+    // what the coach learnt from everyone (the tips turned off, how many drivers each helped) and this driver's habits
+    var coach: CoachInfo?
+    var habits: [Habit] = []
 }
 
 private func fillArgs(_ s0: String, _ args: [String]) -> String {
@@ -50,6 +53,8 @@ extension Account {
         // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
         if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { a.car = try? await carCard(carId: cc.carId) }
         if let tc = c { a.turns = await turns(trackId: tc.trackId); a.trackId = tc.trackId; a.carId = tc.carId }
+        a.coach = await coachInfo()
+        a.habits = await coachHabits()
         // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
         if let tc = c, !(a.trace?.hasShape ?? false) { a.layout = await trackLayout(trackId: tc.trackId) }
         let own = all.filter { $0.valid && $0.time > 0 && $0.id != lap.id && $0.drv == lap.drv }.min { $0.time < $1.time }
@@ -149,6 +154,10 @@ struct CornerTipView: View {
                 }
             }
             if let lt = k.lineTip { Text(fillArgs(t(lt), k.lineArgs)).font(.footnote).foregroundColor(Theme.accent) }
+            // how many drivers this tip helped on corners like this, when the admin lets the tips say it
+            if let ci = an?.coach, ci.confidence, let tp = k.tip, let b = ci.conf[String(tp.dropFirst(4)) + "|" + k.cls], b.1 >= ci.min {
+                Text(t("tip_helped", b.0, b.1)).font(.caption2).foregroundColor(Theme.muted)
+            }
             if let an, let c = CornerCard.of(an.corners, apexM: k.apexM) {
                 Text(t("corner_fast", Int(c.b0), Int(c.b1), Int(c.v0 * 3.6), Int(c.v1 * 3.6), c.n)).font(.caption2).foregroundColor(Theme.muted)
             }
@@ -247,6 +256,8 @@ struct CoachBody: View {
         let lose0: [Corner] = cs0.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
         VStack(alignment: .leading, spacing: 10) {
             if !cs0.isEmpty { CoachGap(an: an, refName: refName, first: lose0.first) }
+            // the driver's habit first: a kind of tip that repeats on several of their tracks
+            if let h = an.habits.first, h.tracks >= 3 { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions)).font(.subheadline) } }
             else { HStack(spacing: 8) {
                 Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent)
                 Metric(label: refName, value: lapTime(an.refTime), color: Theme.blue)
@@ -260,7 +271,7 @@ struct CoachBody: View {
 
     private func gapCorners() -> [Corner] {
         guard let tr = an.trace, an.ref != nil else { return [] }
-        return corners(compare(tr, an.ref), turns: an.turns)
+        return corners(compare(tr, an.ref), turns: an.turns, off: an.coach?.off ?? [])
     }
 
     @ViewBuilder private func summary(_ cs: [Corner], _ lose: [Corner], _ c: Compared) -> some View {
@@ -297,7 +308,7 @@ struct CoachBody: View {
 
     @ViewBuilder private func details(_ tr: Trace) -> some View {
         let c = compare(tr, an.ref)
-        let cs: [Corner] = an.ref != nil ? corners(c, turns: an.turns) : []
+        let cs: [Corner] = an.ref != nil ? corners(c, turns: an.turns, off: an.coach?.off ?? []) : []
         let lose = cs.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
         if an.ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
         else if !cs.isEmpty { summary(cs, lose, c) }

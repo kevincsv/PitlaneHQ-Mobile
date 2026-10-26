@@ -156,7 +156,7 @@ fun turnNo(turns: List<Double>, at: Double, lapLen: Double, fallback: Int): Int 
     return bi + 1
 }
 
-fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
+fun corners(c: Compared, turns: List<Double> = emptyList(), off: Set<String> = emptySet()): List<Corner> {
     val tB = c.tB ?: return emptyList()
     val sB = c.speedB ?: return emptyList()
     val bB = c.brkB ?: return emptyList()
@@ -208,6 +208,8 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
         val i0 = max(0, zi - bins(50.0))
         val i1 = min(n - 1, zmin + bins(150.0))
         val lost = seg(i0, i1)
+        val vb = sB[zmin]  // km/h at the reference's slowest point
+        val cls = if (vb < 80) "slow" else if (vb < 150) "medium" else "fast"
         // the same corner on this lap: its brake point within 100 m
         val w = bins(100.0)
         val ja = (max(1, zi - w)..min(n - 1, zi + w)).filter { c.brkA[it] > .12 && c.brkA[it - 1] <= .12 }.minByOrNull { kotlin.math.abs(it - zi) }
@@ -276,6 +278,11 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
                     phase == "exit" && lA >= 2 && lA > lB + 1 -> { tip = "tip_lifts"; args = listOf(lA, lB) }
                 }
             }
+            // a tip an admin turned off for corners of this speed gives way to the phase's plain tip (like the web)
+            if (tip != null && (tip!!.removePrefix("tip_") + "|" + cls) in off) {
+                tip = when (phase) { "entry" -> "tip_entry_speed"; "apex" -> "tip_apex_line"; "exit" -> "tip_full_throttle"; else -> "tip_brake_generic" }
+                args = emptyList()
+            }
         }
         // the line: where the car was across the track; braking at the reference's point but on the wrong part of the
         // track is said first, a generic tip gives way to it, otherwise it goes under the tip
@@ -289,9 +296,8 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
                 else { lineKey = lt.first; lineArgs = listOf(lt.second) }
             }
         }
-        val vb = sB[zmin]  // km/h at the reference's slowest point
         Corner(if (z.turn >= 0) z.turn + 1 else turnNo(turns, zmin * c.step, n * c.step, idx + 1), (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs,
-            apexM = (zmin * c.step).toInt(), cls = if (vb < 80) "slow" else if (vb < 150) "medium" else "fast")
+            apexM = (zmin * c.step).toInt(), cls = cls)
     }
 }
 

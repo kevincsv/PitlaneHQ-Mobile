@@ -648,7 +648,21 @@ struct PitLane {
     let pts: [(Int, Double)]
 }
 
-func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
+/// What the coach learnt from everyone's tips: the tips turned off, how many drivers each bucket helped, the confidence switch.
+struct CoachInfo {
+    let off: Set<String>
+    let conf: [String: (Int, Int)]
+    let confidence: Bool
+    let min: Int
+}
+/// A kind of tip that repeats across the driver's tracks.
+struct Habit: Hashable {
+    let kind: String
+    let tracks: Int
+    let sessions: Int
+}
+
+func corners(_ c: Compared, turns: [Double] = [], off: Set<String> = []) -> [Corner] {
     guard let tB = c.tB, let sB = c.speedB, let bB = c.brkB, let hB = c.thrB else { return [] }
     let n = [c.tA.count, tB.count, sB.count, bB.count, hB.count, c.brkA.count, c.thrA.count, c.speedA.count].min() ?? 0
     if n < 10 { return [] }
@@ -699,6 +713,8 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
         let zi = z.zi, zmin = z.zmin
         let i0 = max(0, zi - bins(50)), i1 = min(n - 1, zmin + bins(150))
         let lost = seg(i0, i1)
+        let vb = sB[zmin]  // km/h at the reference's slowest point
+        let cls = vb < 80 ? "slow" : vb < 150 ? "medium" : "fast"
         // the same corner on this lap: its brake point within 100 m
         let w = bins(100)
         var ja: Int? = nil
@@ -768,6 +784,11 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
                 else if gA >= 1 && gB >= 1 && gB < gA { tip = "tip_gear_down"; args = ["\(gB)", "\(gA)"] }
                 else if phase == "exit" && lA >= 2 && lA > lB + 1 { tip = "tip_lifts"; args = ["\(lA)", "\(lB)"] }
             }
+            // a tip an admin turned off for corners of this speed gives way to the phase's plain tip (like the web)
+            if let tp = tip, off.contains(String(tp.dropFirst(4)) + "|" + cls) {
+                tip = phase == "entry" ? "tip_entry_speed" : phase == "apex" ? "tip_apex_line" : phase == "exit" ? "tip_full_throttle" : "tip_brake_generic"
+                args = []
+            }
         }
         // the line: where the car was across the track; braking at the reference's point but on the wrong part of the
         // track is said first, a generic tip gives way to it, otherwise it goes under the tip
@@ -780,9 +801,8 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
                 else { lineKey = lt.0; lineArgs = [lt.1] }
             }
         }
-        let vb = sB[zmin]  // km/h at the reference's slowest point
         out.append(Corner(n: z.turn >= 0 ? z.turn + 1 : turnNo(turns, at: Double(zmin) * c.step, lapLen: Double(n) * c.step, fallback: idx + 1), atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs,
-                          apexM: Int(Double(zmin) * c.step), cls: vb < 80 ? "slow" : vb < 150 ? "medium" : "fast"))
+                          apexM: Int(Double(zmin) * c.step), cls: cls))
     }
     return out
 }
