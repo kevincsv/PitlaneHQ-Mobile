@@ -400,39 +400,201 @@ private fun <T> LazyListScope.state(l: Loadable<T>, retry: () -> Unit) {
 private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     val a by vm.account.collectAsState()
     val r by vm.races.collectAsState()
+    val sl by vm.sessions.collectAsState()
+    val live by vm.liveState.collectAsState()
+    LaunchedEffect(Unit) { if (sl.data == null && !sl.loading) vm.loadSessions() }
     val races = r.data ?: emptyList()
-    Screen(a.display.ifBlank { t("driver") }) {
-        if (a.admin || (a.supporter && !a.supporterHidden)) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { MyBadges(a) } }
-        state(r) { vm.loadRaces() }
-        // the pit wall: your last race on top, then the days you drove, the licence summary and your races
-        races.firstOrNull()?.let { x -> item { LastRace(x) { vm.race = x; nav.navigate("race") } } }
-        item { DaysDriven(vm, nav, races) }
-        item { Licences(vm) }
-        item { Section(t("race_summary")) }
+    val sessions = sl.data ?: emptyList()
+    val hr = java.time.LocalTime.now().hour
+    val hi = t(if (hr < 6 || hr >= 21) "hm_evening" else if (hr < 13) "hm_morning" else "hm_afternoon")
+    val name = a.display.ifBlank { "" }
+    val toAnalysis = { tab: Int -> vm.analysisTab = tab; nav.navigate("analysis") { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } }
+    // like the web and the PC: the greeting and your PC, four numbers of the month, your last race, the recent
+    // sessions, the licence summary and the days you drove, each on its card
+    Screen(if (name.isNotBlank()) "$hi, $name" else hi) {
         item {
-            // no iRating here: each category has its own (the licence summary above), never one number for all
-            val recent = races.take(10)
-            Grid(
-                listOf(
-                    MetricData(t("races"), "${races.size}"),
-                    MetricData(t("wins"), "${races.count { it.finish == 1 }}"),
-                    MetricData(t("top5"), "${races.count { it.finish in 1..5 }}"),
-                    MetricData(t("avg_inc"), if (recent.isEmpty()) "—" else "%.1f".format(recent.map { it.inc }.average()))
-                ), columns = 2
-            )
-        }
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Section(t("your_recent_races"))
-                Spacer(Modifier.weight(1f))
-                if (races.size > 5) TextButton({ vm.analysisTab = 3; nav.navigate("analysis") { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } }) { Text(t("see_all"), color = Accent, fontSize = 12.sp) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (a.admin || (a.supporter && !a.supporterHidden)) MyBadges(a)
+                Text("●", color = if (live.pcOnline) Good else Muted, fontSize = 12.sp)
+                Text(t(if (live.pcOnline) "hm_pc_on" else "hm_pc_off"), color = Muted, fontSize = 12.sp)
             }
         }
-        if (r.data != null && races.isEmpty()) item { Empty(t("no_races")) }
-        items(races.take(5)) { x -> RaceRow(x) { vm.race = x; nav.navigate("race") } }
-        item { Text(t("ir_estimate"), color = Muted, fontSize = 11.sp) }
+        if (live.pcOnline && live.simConnected) item {
+            Panel(Modifier.clickable { nav.navigate("live") { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(t("hm_on_track"), fontWeight = FontWeight.Black)
+                        Text(t("hm_open_live"), color = Muted, fontSize = 12.sp)
+                    }
+                    Text("›", color = Muted, fontSize = 20.sp)
+                }
+            }
+        }
+        state(r) { vm.loadRaces() }
+        item { HomeKpis(races, sessions) }
+        races.firstOrNull()?.let { x -> item { HomeLastRace(x, { vm.race = x; nav.navigate("race") }, { toAnalysis(0) }) } }
+        item { HomeRecent(races.drop(1), sessions, { x -> vm.race = x; nav.navigate("race") }, { x -> vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) { toAnalysis(2) } }
+        if (r.data != null && races.isEmpty() && sessions.isEmpty()) item { Empty(t("no_races")) }
+        item { Licences(vm) }
+        item { DaysDriven(vm, nav, races) }
         // no sync card (the sync is automatic): only what went wrong, when something did
         a.error?.let { e -> item { Text(t(e), color = Bad, fontSize = 12.sp) } }
+    }
+}
+
+/** The four numbers of the month: your laps and the hours on track (from the account's sessions), the races and the best result. */
+@Composable
+private fun HomeKpis(races: List<Race>, sessions: List<CloudSession>) {
+    val m0 = java.time.LocalDate.now().withDayOfMonth(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+    val ms = sessions.filter { it.started >= m0 && it.laps > 0 }
+    val laps = ms.sumOf { it.laps }
+    // a session's time is its laps at its best lap's pace, like the web for a session without the server's total
+    val secs = ms.sumOf { x -> x.laps * (x.best?.takeIf { it > 0 && it < 3600 }?.times(1.03) ?: 0.0) }
+    val days = ms.map { java.time.Instant.ofEpochMilli(it.started).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }.toSet().size
+    val month = races.filter { it.whenMs >= m0 }
+    val pool = month.ifEmpty { races }
+    val best = pool.filter { it.finish > 0 && !it.dnf }.minWithOrNull(compareBy<Race> { it.finish }.thenByDescending { it.whenMs })
+    val h = secs / 3600
+    val hTxt = if (secs <= 0) "–" else if (h >= 10) "${h.roundToInt()} h" else if (h >= 1) "%.1f h".format(h) else "${(secs / 60).roundToInt()} min"
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Metric(t("hm_laps_month"), "$laps", Modifier.weight(1f).fillMaxHeight(), sub = if (ms.isNotEmpty()) t("hm_in_sessions", ms.size) else null)
+            Metric(t("hm_hours_month"), hTxt, Modifier.weight(1f).fillMaxHeight(), sub = if (days > 0) t("hm_days_driven", days) else null)
+        }
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Metric(t("hm_races_month"), "${month.size}", Modifier.weight(1f).fillMaxHeight(), sub = if (month.isNotEmpty()) t("hm_top5", month.count { it.finish in 1..5 && !it.dnf }) else null)
+            Metric(t("hm_best_result"), best?.let { "P${it.finish}" } ?: "–", Modifier.weight(1f).fillMaxHeight(), color = Accent, sub = best?.let { it.car + " · " + it.track })
+        }
+    }
+}
+
+/** "3 h ago", "2 days ago" */
+private fun agoText(ms: Long): String {
+    val d = (System.currentTimeMillis() - ms) / 60000
+    return when {
+        d < 60 -> t("ago_min", maxOf(1, d))
+        d < 60 * 24 -> t("ago_h", d / 60)
+        d < 60 * 24 * 30 -> t("ago_d", d / 60 / 24)
+        else -> day(ms)
+    }
+}
+
+/** A small tag of the kind of session: Race, Qualifying, Practice, Test drive */
+@Composable
+private fun KindTag(kind: String) {
+    val x = kind.lowercase()
+    val (l, c) = when {
+        "race" in x -> t("kind_race") to Accent
+        "qual" in x -> t("kind_qual") to Purple
+        "test" in x || "offline" in x -> t("kind_test") to Muted
+        else -> t("kind_prac") to Blue
+    }
+    Text(l, color = c, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.border(1.dp, c.copy(alpha = .5f), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp))
+}
+
+/** Your last race: the place against the start, the position lap by lap, the iRating, incidents and best lap */
+@Composable
+private fun HomeLastRace(x: Race, onSummary: () -> Unit, onLaps: () -> Unit) {
+    val gain = if (x.start > 0 && x.finish > 0 && !x.dnf) x.start - x.finish else 0
+    val pos = x.laps.map { it.pos }.filter { it > 0 }
+    val ir = if (x.ai || x.irChange == 0) null else x.irChange
+    Panel(Modifier.clickable(onClick = onSummary)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Section(t("hm_last_race"))
+            Spacer(Modifier.weight(1f))
+            Text(agoText(x.whenMs), color = Muted, fontSize = 11.sp)
+        }
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.width(92.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(if (x.dnf) t("dnf") else "P${x.finish}", fontSize = 30.sp, fontWeight = FontWeight.Black, color = if (x.dnf) Bad else Fg)
+                    Text("/${x.field}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+                }
+                if (gain != 0) Text((if (gain > 0) "▲ " else "▼ ") + kotlin.math.abs(gain) + " " + t("hm_from") + " P${x.start}", color = if (gain > 0) Good else Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    KindTag("race")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { DrinksBadge(x); AiBadge(x) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(discColor(raceDisc(x.cat, x.car))))
+                    Text(" " + x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (pos.size > 1) {
+                    val lo = pos.min(); val hi = maxOf(pos.max(), lo + 1)
+                    Canvas(Modifier.fillMaxWidth().height(30.dp).padding(top = 4.dp)) {
+                        val p = Path()
+                        pos.forEachIndexed { k, v ->
+                            val px = k.toFloat() / (pos.size - 1) * size.width; val py = (v - lo).toFloat() / (hi - lo) * size.height
+                            if (k == 0) p.moveTo(px, py) else p.lineTo(px, py)
+                        }
+                        drawPath(p, Accent, style = Stroke(width = 1.6f * density, join = StrokeJoin.Round))
+                    }
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LastStat(t("lr_ir"), ir?.let { signed(it) } ?: "–", if (ir == null) Muted else if (ir > 0) Good else Bad, Modifier.weight(1f).fillMaxHeight())
+            LastStat(t("lr_inc"), "${x.inc}x", if (x.inc >= 8) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
+            LastStat(t("lr_best"), lapTime(x.best), Purple, Modifier.weight(1f).fillMaxHeight())
+        }
+        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onSummary) { Text(t("hm_race_summary"), color = Accent, fontSize = 13.sp) }
+            TextButton(onLaps) { Text(t("hm_analyse_laps"), color = Accent, fontSize = 13.sp) }
+        }
+    }
+}
+
+/** The recent sessions: the races and the other sessions (practice, qualifying, test drives) together, newest first */
+@Composable
+private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: (Race) -> Unit, onSession: (CloudSession) -> Unit, onAll: () -> Unit) {
+    val rows: List<Pair<Long, Any>> = (races.map { it.whenMs to (it as Any) } + sessions.filter { !it.kind.contains("race", true) }.map { it.started to (it as Any) })
+        .sortedByDescending { it.first }.take(6)
+    if (rows.isEmpty()) return
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Section(t("hm_recent"))
+            Spacer(Modifier.weight(1f))
+            TextButton(onAll) { Text(t("see_all"), color = Accent, fontSize = 12.sp) }
+        }
+        rows.forEachIndexed { k, (_, o) ->
+            if (k > 0) HorizontalDivider(color = Line)
+            when (o) {
+                is Race -> {
+                    val ir = if (o.ai || o.irChange == 0) null else o.irChange
+                    HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.track, "race", raceDisc(o.cat, o.car), o.car + " · " + agoText(o.whenMs), ir, o.laps.size, o.best, { onRace(o) }) { DrinksBadge(o); AiBadge(o) }
+                }
+                is CloudSession -> HomeRow("–", Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + agoText(o.started), null, o.laps, o.best, { onSession(o) }) {
+                    if (o.drvs.isNotEmpty() || o.ai) SessionBadges(o)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeRow(place: String, placeCol: Color, track: String, kind: String, disc: String, sub: String, ir: Int?, laps: Int, best: Double?, onClick: () -> Unit, badges: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(place, color = placeCol, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(track, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                KindTag(kind)
+            }
+            badges()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(if (disc.isNotBlank()) discColor(disc) else Muted))
+                Text(" $sub", color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (ir != null) Text(" · ${signed(ir)} iR", color = if (ir > 0) Good else Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+        Column(horizontalAlignment = Alignment.End) {
+            Text(t("laps_n", laps), color = Muted, fontSize = 11.sp)
+            Text(lapTime(best), color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        }
     }
 }
 
@@ -2473,7 +2635,7 @@ private fun Live(vm: PitlaneViewModel) {
                     Text((if (s.pcOnline) t("watching") else t("waiting_their_pc")) + " · " + s.code.chunked(4).joinToString("-"), color = if (s.pcOnline) Good else Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 6.dp))
                     OutlinedButton({ vm.liveWatch(LiveMode.IDLE) }) { Text(t("disconnect"), color = Bad) }
                 } else {
-                    Text(t("watch_other_sub"), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 6.dp))
+                    Spacer(Modifier.height(6.dp))
                     OutlinedTextField(codeIn, { codeIn = it; codeErr = false }, label = { Text("ABCD-EFGH-JK") }, singleLine = true, modifier = Modifier.fillMaxWidth(), isError = codeErr)
                     if (codeErr) Text(t("code_bad"), color = Bad, fontSize = 12.sp)
                     Button({ val c = com.pitlanehq.android.data.Crypto.codeNorm(codeIn); if (com.pitlanehq.android.data.Crypto.codeOk(c)) vm.liveWatch(LiveMode.CODE, c) else codeErr = true },

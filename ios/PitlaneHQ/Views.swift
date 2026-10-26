@@ -1132,41 +1132,227 @@ struct AiBadge: View {
 struct HomeView: View {
     @EnvironmentObject var account: Account
     @EnvironmentObject private var inbox: Inbox
+    @EnvironmentObject var live: Live
+    @State private var sessions: [CloudSession] = []
 
     var body: some View {
         let races = account.races
-        let recent = Array(races.prefix(10))
-        let wins = races.filter { $0.finish == 1 }.count
-        let top5 = races.filter { (1...5).contains($0.finish) }.count
-        let incSum = recent.reduce(0) { $0 + $1.inc }
-        let avgInc = recent.isEmpty ? "—" : String(format: "%.1f", Double(incSum) / Double(recent.count))
-        Screen(title: account.display.isEmpty ? t("driver") : account.display) {
-            if account.admin || (account.supporter && !account.supporterHidden) { HStack(spacing: 6) { MyBadges(); Spacer() } }
-            // the pit wall: your last race on top, then the days you drove, the licence summary and your races
-            if let x = races.first { NavigationLink(value: Route.race(x)) { LastRaceCard(race: x) }.buttonStyle(.plain) }
-            DaysDriven(races: races)
-            Licences()
-            SectionLabel(text: t("race_summary"))
-            MetricGrid(items: [
-                MetricData(label: t("races"), value: "\(races.count)"),
-                MetricData(label: t("wins"), value: "\(wins)"),
-                MetricData(label: t("top5"), value: "\(top5)"),
-                MetricData(label: t("avg_inc"), value: avgInc),
-            ], columns: 2)
-            HStack {
-                SectionLabel(text: t("your_recent_races"))
+        let hr = Calendar.current.component(.hour, from: Date())
+        let hi = t(hr < 6 || hr >= 21 ? "hm_evening" : hr < 13 ? "hm_morning" : "hm_afternoon")
+        // like the web and the PC: the greeting and your PC, four numbers of the month, your last race, the recent
+        // sessions, the licence summary and the days you drove, each on its card
+        Screen(title: account.display.isEmpty ? hi : hi + ", " + account.display) {
+            HStack(spacing: 8) {
+                if account.admin || (account.supporter && !account.supporterHidden) { MyBadges() }
+                Text("●").font(.caption).foregroundColor(live.pcOnline ? Theme.good : Theme.muted)
+                Text(t(live.pcOnline ? "hm_pc_on" : "hm_pc_off")).font(.caption).foregroundColor(Theme.muted)
                 Spacer()
-                if races.count > 5 { Button(t("see_all")) { inbox.analysisTab = 3; inbox.goTab = 1 }.font(.caption).foregroundColor(Theme.accent) }
             }
-            if races.isEmpty { EmptyNote(text: t("no_races")) }
-            ForEach(races.prefix(5)) { r in
-                NavigationLink(value: Route.race(r)) { RaceRow(race: r) }.buttonStyle(.plain)
+            if live.pcOnline && live.simConnected {
+                Button { inbox.goTab = 3 } label: {
+                    Panel {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(t("hm_on_track")).font(.headline.weight(.black)).foregroundColor(Theme.fg)
+                                Text(t("hm_open_live")).font(.caption).foregroundColor(Theme.muted)
+                            }
+                            Spacer()
+                            Text("›").font(.title2).foregroundColor(Theme.muted)
+                        }
+                    }
+                }.buttonStyle(.plain)
             }
-            Text(t("ir_estimate")).font(.caption2).foregroundColor(Theme.muted)
+            HomeKpis(races: races, sessions: sessions)
+            if let x = races.first {
+                HomeLastRace(race: x, onLaps: { inbox.analysisTab = 0; inbox.goTab = 1 })
+            }
+            HomeRecent(races: Array(races.dropFirst()), sessions: sessions) { inbox.analysisTab = 2; inbox.goTab = 1 }
+            if races.isEmpty && sessions.isEmpty { EmptyNote(text: t("no_races")) }
+            Licences()
+            DaysDriven(races: races)
             // no sync card (the sync is automatic): only what went wrong, when something did
             if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
         }
-        .refreshable { await account.sync() }
+        .task { if sessions.isEmpty, let g = try? await account.sessions() { sessions = g.data } }
+        .refreshable { await account.sync(); if let g = try? await account.sessions() { sessions = g.data } }
+    }
+}
+
+/// "3 h ago", "2 days ago"
+func agoText(_ ms: Double) -> String {
+    let m = Int((Date().timeIntervalSince1970 * 1000 - ms) / 60000)
+    if m < 60 { return t("ago_min", max(1, m)) }
+    if m < 60 * 24 { return t("ago_h", m / 60) }
+    if m < 60 * 24 * 30 { return t("ago_d", m / 60 / 24) }
+    return day(ms)
+}
+
+/// A small tag of the kind of session: Race, Qualifying, Practice, Test drive
+struct KindTag: View {
+    let kind: String
+    var body: some View {
+        let x = kind.lowercased()
+        let (l, c): (String, Color) = x.contains("race") ? (t("kind_race"), Theme.accent) : x.contains("qual") ? (t("kind_qual"), Theme.purple)
+            : (x.contains("test") || x.contains("offline")) ? (t("kind_test"), Theme.muted) : (t("kind_prac"), Theme.blue)
+        Text(l).font(.system(size: 10, weight: .bold)).foregroundColor(c).lineLimit(1)
+            .padding(.horizontal, 7).padding(.vertical, 1).overlay(Capsule().stroke(c.opacity(0.5), lineWidth: 1))
+    }
+}
+
+/// The four numbers of the month: your laps and the hours on track (from the account's sessions), the races and the best result.
+struct HomeKpis: View {
+    let races: [Race]
+    let sessions: [CloudSession]
+    var body: some View {
+        let cal = Calendar.current
+        let m0 = (cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()).timeIntervalSince1970 * 1000
+        let ms = sessions.filter { $0.started >= m0 && $0.laps > 0 }
+        let laps = ms.reduce(0) { $0 + $1.laps }
+        // a session's time is its laps at its best lap's pace, like the web for a session without the server's total
+        let secs = ms.reduce(0.0) { a, x in a + Double(x.laps) * ((x.best ?? 0) > 0 && (x.best ?? 0) < 3600 ? x.best! * 1.03 : 0) }
+        let days = Set(ms.map { cal.startOfDay(for: Date(timeIntervalSince1970: $0.started / 1000)) }).count
+        let month = races.filter { $0.when >= m0 }
+        let pool = month.isEmpty ? races : month
+        let best = pool.filter { $0.finish > 0 && !$0.dnf }.sorted { $0.finish != $1.finish ? $0.finish < $1.finish : $0.when > $1.when }.first
+        let h = secs / 3600
+        let hTxt = secs <= 0 ? "–" : h >= 10 ? "\(Int(h.rounded())) h" : h >= 1 ? String(format: "%.1f h", h) : "\(Int((secs / 60).rounded())) min"
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Metric(label: t("hm_laps_month"), value: "\(laps)", sub: ms.isEmpty ? nil : t("hm_in_sessions", ms.count))
+                Metric(label: t("hm_hours_month"), value: hTxt, sub: days > 0 ? t("hm_days_driven", days) : nil)
+            }
+            HStack(spacing: 8) {
+                Metric(label: t("hm_races_month"), value: "\(month.count)", sub: month.isEmpty ? nil : t("hm_top5", month.filter { (1...5).contains($0.finish) && !$0.dnf }.count))
+                Metric(label: t("hm_best_result"), value: best.map { "P\($0.finish)" } ?? "–", color: Theme.accent, sub: best.map { $0.car + " · " + $0.track })
+            }
+        }
+    }
+}
+
+/// Your last race: the place against the start, the position lap by lap, the iRating, incidents and best lap
+struct HomeLastRace: View {
+    let race: Race
+    let onLaps: () -> Void
+    var body: some View {
+        let x = race
+        let gain = x.start > 0 && x.finish > 0 && !x.dnf ? x.start - x.finish : 0
+        let pos = x.laps.map { $0.pos }.filter { $0 > 0 }
+        let ir: Int? = x.ai || x.irChange == 0 ? nil : x.irChange
+        Panel {
+            HStack {
+                SectionLabel(text: t("hm_last_race"))
+                Spacer()
+                Text(agoText(x.when)).font(.caption2).foregroundColor(Theme.muted)
+            }
+            NavigationLink(value: Route.race(x)) {
+                HStack(alignment: .center, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .lastTextBaseline, spacing: 0) {
+                            Text(x.dnf ? t("dnf") : "P\(x.finish)").font(.system(size: 30, weight: .black)).foregroundColor(x.dnf ? Theme.bad : Theme.fg)
+                            Text("/\(x.field)").font(.caption).foregroundColor(Theme.muted)
+                        }
+                        if gain != 0 { Text((gain > 0 ? "▲ " : "▼ ") + "\(abs(gain)) " + t("hm_from") + " P\(x.start)").font(.system(size: 11, weight: .bold)).foregroundColor(gain > 0 ? Theme.good : Theme.bad) }
+                    }
+                    .frame(width: 92, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) { Text(x.track).font(.subheadline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: "race") }
+                        HStack(spacing: 6) { DrinksBadge(race: x); AiBadge(race: x) }
+                        HStack(spacing: 4) { Circle().fill(discColor(raceDisc(x.cat, x.car))).frame(width: 7, height: 7); Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1) }
+                        if pos.count > 1 {
+                            let lo = pos.min()!, hi = max(pos.max()!, lo + 1)
+                            Canvas { ctx, size in
+                                var p = Path()
+                                for (k, v) in pos.enumerated() {
+                                    let pt = CGPoint(x: CGFloat(k) / CGFloat(pos.count - 1) * size.width, y: CGFloat(v - lo) / CGFloat(hi - lo) * size.height)
+                                    if k == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+                                }
+                                ctx.stroke(p, with: .color(Theme.accent), style: StrokeStyle(lineWidth: 1.6, lineJoin: .round))
+                            }
+                            .frame(height: 30)
+                        }
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            HStack(spacing: 8) {
+                stat(t("lr_ir"), ir.map { signed($0) } ?? "–", ir == nil ? Theme.muted : ir! > 0 ? Theme.good : Theme.bad)
+                stat(t("lr_inc"), "\(x.inc)x", x.inc >= 8 ? Theme.bad : Theme.fg)
+                stat(t("lr_best"), lapTime(x.best), Theme.purple)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 16) {
+                NavigationLink(value: Route.race(x)) { Text(t("hm_race_summary")).font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent) }
+                Button(action: onLaps) { Text(t("hm_analyse_laps")).font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent) }
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private func stat(_ l: String, _ v: String, _ c: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(l).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundColor(Theme.muted).lineLimit(1)
+            Text(v).font(.system(size: 16, weight: .bold, design: .monospaced)).foregroundColor(c).lineLimit(1)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Theme.bg).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// The recent sessions: the races and the other sessions (practice, qualifying, test drives) together, newest first
+struct HomeRecent: View {
+    let races: [Race]
+    let sessions: [CloudSession]
+    let onAll: () -> Void
+    private enum Item { case race(Race), ses(CloudSession) }
+    var body: some View {
+        let items: [(Double, Item)] = (races.map { ($0.when, Item.race($0)) } + sessions.filter { !$0.kind.lowercased().contains("race") }.map { ($0.started, Item.ses($0)) })
+            .sorted { $0.0 > $1.0 }.prefix(6).map { $0 }
+        if !items.isEmpty {
+            Panel {
+                HStack {
+                    SectionLabel(text: t("hm_recent"))
+                    Spacer()
+                    Button(t("see_all"), action: onAll).font(.caption).foregroundColor(Theme.accent)
+                }
+                ForEach(Array(items.enumerated()), id: \.offset) { k, e in
+                    if k > 0 { Divider().background(Theme.line) }
+                    switch e.1 {
+                    case .race(let r):
+                        let ir: Int? = r.ai || r.irChange == 0 ? nil : r.irChange
+                        NavigationLink(value: Route.race(r)) {
+                            row(r.dnf ? t("dnf") : "P\(r.finish)", r.dnf ? Theme.bad : Theme.fg, r.track, "race", raceDisc(r.cat, r.car), r.car + " · " + agoText(r.when), ir, r.laps.count, r.best) {
+                                HStack(spacing: 6) { DrinksBadge(race: r); AiBadge(race: r) }
+                            }
+                        }.buttonStyle(.plain)
+                    case .ses(let x):
+                        NavigationLink(value: Route.session(x)) {
+                            row("–", Theme.muted, fixText(x.track), x.kind, x.cat ?? "", fixText(x.car) + " · " + agoText(x.started), nil, x.laps, x.best) { SessionBadges(x: x) }
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func row<B: View>(_ place: String, _ pc: Color, _ track: String, _ kind: String, _ disc: String, _ sub: String, _ ir: Int?, _ laps: Int, _ best: Double?, @ViewBuilder _ badges: () -> B) -> some View {
+        HStack(spacing: 8) {
+            Text(place).font(.system(size: 14, weight: .black, design: .monospaced)).foregroundColor(pc).frame(width: 44, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) { Text(track).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: kind) }
+                badges()
+                HStack(spacing: 4) {
+                    Circle().fill(disc.isEmpty ? Theme.muted : discColor(disc)).frame(width: 6, height: 6)
+                    Text(sub).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+                    if let ir { Text("· \(signed(ir)) iR").font(.system(size: 11, weight: .bold)).foregroundColor(ir > 0 ? Theme.good : Theme.bad) }
+                }
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(t("laps_n", laps)).font(.system(size: 11)).foregroundColor(Theme.muted)
+                Text(lapTime(best)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.muted)
+            }
+        }
+        .padding(.vertical, 8).contentShape(Rectangle())
     }
 }
 
@@ -3518,7 +3704,6 @@ struct LiveView: View {
                         .font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
                     Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
                 } else {
-                    Text(t("watch_other_sub")).font(.caption).foregroundColor(Theme.muted).padding(.vertical, 4)
                     TextField("ABCD-EFGH-JK", text: $codeIn).textInputAutocapitalization(.characters).autocorrectionDisabled().padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                     if codeErr { Text(t("code_bad")).font(.caption).foregroundColor(Theme.bad) }
                     Button(t("watch")) {
