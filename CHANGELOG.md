@@ -4,11 +4,17 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
-## 0.4.2 beta
+## 0.4.3 beta
 
 - **New look**: a darker pit wall with the amber accent, a floating tab bar and clearer sub-tabs. Home opens on your
   last race; every licence card and My races draw your iRating as a line you read with your finger; the Coach starts
   with the gap and what to work on first, then what every corner costs (touch one to read it).
+- **Licence summary**: an offline session against the AI no longer shows as your licence ("1 · R 0.01").
+- **Only whole laps count**: a lap that did not go round the whole circuit is never a best lap or a record.
+- Fixes and improvements.
+
+## 0.4.2 beta
+
 - **Track notes**: your notes on each track (the same as on your PC and the web) on its track page, where you can
   write them too, and all of them in Account → Track notes.
 - **Driver profiles**: their leaderboards, records and top 3 places at a glance; a recent record opens its driver's
