@@ -754,6 +754,10 @@ func corners(_ c: Compared, turns: [Double] = [], off: Set<String> = []) -> [Cor
             let gB = c.gearB?[safe: zmin].map { Int($0) } ?? 0
             func lifts(_ th: [Double], _ from: Int, _ to: Int) -> Int { var n = 0; var prev = -1.0; if from > min(to, th.count - 1) { return 0 }; for k in from...min(to, th.count - 1) { let t = th[k]; if prev >= 0 && prev > 0.8 && t < 0.5 { n += 1 }; prev = t }; return n }
             let lA = aMin.map { lifts(c.thrA, $0, i1) } ?? 0
+            // how the throttle is opened after the apex: metres from picking it up (5 %) to full (95 %)
+            func ramp(_ th: [Double], _ from: Int, _ to: Int) -> Int? { var a = -1; if from > min(to, th.count - 1) { return nil }; for k in from...min(to, th.count - 1) { if a < 0 && th[k] > 0.05 { a = k }; if a >= 0 && th[k] > 0.95 { return Int(Double(k - a) * c.step) } }; return nil }
+            let rampA = aMin.flatMap { ramp(c.thrA, $0, i1) }
+            let rampB = ramp(hB, zmin, i1)
             let lB = lifts(hB, zmin, i1)
             // braking later than the reference and arriving slower at the apex is one mistake, whatever phase pays for it
             if let d = dd, let dm = dmin, d > 6, dm < -2 { tip = "tip_brake_late_apex"; args = ["\(d)", "\(Int(-dm))"] } else {
@@ -774,6 +778,8 @@ func corners(_ c: Compared, turns: [Double] = [], off: Set<String> = []) -> [Cor
                 if let dm = dmin, dm < -2 { tip = "tip_apex_speed"; args = ["\(Int(-dm))"] } else if let dm = dmin, dm >= 0 { tip = "tip_apex_longer" } else { tip = "tip_apex_line" }
             default:
                 if let l = late, l >= 8 { tip = "tip_throttle"; args = ["\(l)"] }
+                else if let ra = rampA, let rb = rampB, rb - ra >= 15, lA > lB { tip = "tip_throttle_rough"; args = ["\(ra)", "\(rb)"] }
+                else if let ra = rampA, let rb = rampB, ra - rb >= 15 { tip = "tip_throttle_slow"; args = ["\(ra)", "\(rb)"] }
                 else if coastA - coastB >= 10 { tip = "tip_no_wait" }
                 else if let l = late, let dm = dmin, l <= -8, dm < -1 { tip = "tip_exit_speed"; args = ["\(-l)", "\(Int(-dm))"] }
                 else { tip = "tip_full_throttle" }

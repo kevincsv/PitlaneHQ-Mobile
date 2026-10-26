@@ -246,6 +246,10 @@ fun corners(c: Compared, turns: List<Double> = emptyList(), off: Set<String> = e
             fun lifts(th: List<Double>, from: Int, to: Int): Int { var n = 0; var prev = -1.0; for (k in from..min(to, th.size - 1)) { val t = th[k]; if (prev >= 0 && prev > .8 && t < .5) n++; prev = t }; return n }
             val lA = aMin?.let { lifts(c.thrA, it, i1) } ?: 0
             val lB = lifts(hB, zmin, i1)
+            // how the throttle is opened after the apex: metres from picking it up (5 %) to full (95 %)
+            fun ramp(th: List<Double>, from: Int, to: Int): Int? { var a = -1; for (k in from..min(to, th.size - 1)) { if (a < 0 && th[k] > .05) a = k; if (a >= 0 && th[k] > .95) return ((k - a) * c.step).toInt() }; return null }
+            val rampA = aMin?.let { ramp(c.thrA, it, i1) }
+            val rampB = ramp(hB, zmin, i1)
             // braking later than the reference and arriving slower at the apex is one mistake, whatever phase pays for it
             if (dd != null && dd > 6 && dmin != null && dmin < -2) { tip = "tip_brake_late_apex"; args = listOf(dd, (-dmin).toInt()) }
             else when (phase) {
@@ -266,6 +270,8 @@ fun corners(c: Compared, turns: List<Double> = emptyList(), off: Set<String> = e
                 "apex" -> if (dmin != null && dmin < -2) { tip = "tip_apex_speed"; args = listOf((-dmin).toInt()) } else if (dmin != null && dmin >= 0) tip = "tip_apex_longer" else tip = "tip_apex_line"
                 else -> when {
                     late != null && late >= 8 -> { tip = "tip_throttle"; args = listOf(late) }
+                    rampA != null && rampB != null && rampB - rampA >= 15 && lA > lB -> { tip = "tip_throttle_rough"; args = listOf(rampA, rampB) }
+                    rampA != null && rampB != null && rampA - rampB >= 15 -> { tip = "tip_throttle_slow"; args = listOf(rampA, rampB) }
                     coastA - coastB >= 10 -> tip = "tip_no_wait"
                     late != null && late <= -8 && dmin != null && dmin < -1 -> { tip = "tip_exit_speed"; args = listOf(-late, (-dmin).toInt()) }
                     else -> tip = "tip_full_throttle"
