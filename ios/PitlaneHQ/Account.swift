@@ -648,6 +648,7 @@ final class Account: ObservableObject {
         if let x = t["x"] as? [NSNumber], let y = t["y"] as? [NSNumber], x.count == d.count, y.count == d.count {
             tr.x = x.map(\.doubleValue)
             tr.y = y.map(\.doubleValue)
+            if let g = t["g"] as? [NSNumber], g.count == 2 { tr.g = g.map(\.doubleValue) }  // the path's origin when it comes from the game's position
         }
         if let inc = t["inc"] as? [NSNumber] { tr.inc = inc.map(\.doubleValue) }
         if let k = t["incK"] as? [String] { tr.incK = k }
@@ -745,16 +746,18 @@ final class Account: ObservableObject {
             return [at(0), at(2), at(3), at(4), 0, at(1)]
         }
         func nums(_ a: Any?) -> [Double]? { (a as? [Any])?.map { ($0 as? NSNumber)?.doubleValue ?? 0 } }
-        func xy(_ o: Any?, _ n: Int) -> ([Double], [Double])? {
+        // a path with its origin g when it comes from the game's position (the apps put two paths in one frame by it)
+        func xy(_ o: Any?, _ n: Int) -> (x: [Double], y: [Double], g: [Double]?)? {
             guard let o = o as? [String: Any], let x = nums(o["x"]), let y = nums(o["y"]), x.count == n, y.count == n else { return nil }
-            return (x, y)
+            let g = nums(o["g"])
+            return (x, y, g != nil && g!.count == 2 ? g : nil)
         }
         func num0(_ o: [String: Any], _ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
         var rec: (Trace, Double)? = nil
         if let ideal = m["ideal"] as? [[Any]], ideal.count > 40, num0(m, "idealTime") > 0 {
             let rows = ideal.map(row)
             var tr = Trace(bin: 5, rows: rows)
-            if let p = xy(m["idealXY"], rows.count) ?? xy(m["lineXY"], rows.count) { tr.x = p.0; tr.y = p.1 }
+            if let p = xy(m["idealXY"], rows.count) ?? xy(m["lineXY"], rows.count) { tr.x = p.x; tr.y = p.y; tr.g = p.g }
             rec = (tr, num0(m, "idealTime"))
         }
         var lvl: (Trace, Double)? = nil
@@ -777,6 +780,7 @@ final class Account: ObservableObject {
                 }
                 let cut = nb > 0 ? Array(rows.prefix(nb)) : rows
                 var tr = Trace(bin: 5, rows: cut)
+                if let rg = nums(x["g"]), rg.count == 2 { tr.g = rg }
                 if let rx = nums(x["x"]), let ry = nums(x["y"]), rx.count >= 6, rx.count == ry.count {
                     var ox: [Double] = [], oy: [Double] = []
                     for k in rx.indices {
@@ -786,7 +790,7 @@ final class Account: ObservableObject {
                     }
                     if ox.count >= cut.count { tr.x = Array(ox.prefix(cut.count)); tr.y = Array(oy.prefix(cut.count)) }
                 }
-                if tr.x == nil, let p = xy(m["lineXY"], cut.count) { tr.x = p.0; tr.y = p.1 }
+                if tr.x == nil, let p = xy(m["lineXY"], cut.count) { tr.x = p.x; tr.y = p.y; tr.g = p.g }
                 lvl = (tr, tm)
             }
         }

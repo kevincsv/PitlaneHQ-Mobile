@@ -36,6 +36,8 @@ struct Trace {
     /// The shape of the track: where the car was at every row (Pitlane HQ 0.5 and later record it).
     var x: [Double]? = nil
     var y: [Double]? = nil
+    /// The origin [lat, lon] of x=0, y=0 when the path comes from the game's position (exact); nil by dead reckoning.
+    var g: [Double]? = nil
     /// The incidents of the lap as [d, pts, d, pts…] (lap distance in m, incident points).
     var inc: [Double] = []
     var hasShape: Bool { x != nil && y != nil && x!.count == rows.count && x!.count > 10 }
@@ -475,6 +477,16 @@ struct Compared {
 /// The racing line, as the PC and the web read it: both laps carry the path their car drove (every 5 m, the game's
 /// heading for both); at the same lap distance A's point along B's normal is how far A was to one side of B; the slow
 /// drift of that dead reckoning goes with a ±400 m moving average. Nil when either has no path or they are not the same track.
+/// B's path in A's frame: both from the game's position (B moved to A's origin) or both by dead reckoning; nil when one is
+/// each, because they never line up.
+func sameFrame(_ a: Trace, _ b: Trace) -> ([Double], [Double])? {
+    guard let bx = b.x, let by = b.y else { return nil }
+    if (a.g == nil) != (b.g == nil) { return nil }
+    guard let ga = a.g, let gb = b.g, !(ga[0] == gb[0] && ga[1] == gb[1]) else { return (bx, by) }
+    let dx = (gb[1] - ga[1]) * 111320 * cos(ga[0] * .pi / 180), dy = (gb[0] - ga[0]) * 110540
+    return (bx.map { $0 + dx }, by.map { $0 + dy })
+}
+
 func lineOffsets(_ ax: [Double], _ ay: [Double], _ bx: [Double], _ by: [Double]) -> [Double]? {
     let n = [ax.count, ay.count, bx.count, by.count].min() ?? 0
     if n < 60 { return nil }
@@ -564,7 +576,8 @@ func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
     let tA = d.map { at(a, $0, 5) }
     let tB = b.map { tr in d.map { at(tr, $0, 5) } }
     var line: [Double]? = nil
-    if a.hasShape, let b, b.hasShape, abs(a.bin - b.bin) < 1e-6 { line = lineOffsets(a.x!, a.y!, b.x!, b.y!) }
+    var bxy: ([Double], [Double])? = nil
+    if a.hasShape, let b, b.hasShape, abs(a.bin - b.bin) < 1e-6, let p = sameFrame(a, b) { bxy = p; line = lineOffsets(a.x!, a.y!, p.0, p.1) }
     var out = Compared(
         step: step,
         speedA: d.map { at(a, $0, 0) * 3.6 },
@@ -578,7 +591,8 @@ func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
         gearA: d.map { gearAt(a, $0) },
         gearB: b.map { tr in d.map { gearAt(tr, $0) } }
     )
-    if let line, let b, let bx = b.x, let by = b.y {
+    if let line, let b, let bxy {
+        let bx = bxy.0, by = bxy.1
         out.lat = d.map { let i = Int(($0 / a.bin).rounded()); return i < line.count ? line[i] : .nan }
         out.bx = d.map { bx[max(0, min(bx.count - 1, Int(($0 / b.bin).rounded())))] }
         out.by = d.map { by[max(0, min(by.count - 1, Int(($0 / b.bin).rounded())))] }
@@ -657,9 +671,32 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
             i += 1
         }
     }
+    // the corners by the track's turns (the official ones, or the ones the layout's geometry gives): two brake applications in
+    // one corner are one corner, and a turn taken without braking (a lift) is a corner of its own, like the web's cornerZones
+    struct Z { var zi: Int; var zmin: Int; let turn: Int; let lift: Bool }
+    var zs: [Z] = zones.map { Z(zi: $0.0, zmin: $0.1, turn: -1, lift: false) }
+    if !turns.isEmpty {
+        let ap = turns.map { Int($0 * Double(n)) }.filter { $0 >= 1 && $0 < n - 1 }
+        func near(_ i: Int) -> Int { var b = -1, bd = Int.max; for (k, a) in ap.enumerated() { let d = abs(a - i); if d < bd { bd = d; b = k } }; return bd <= bins(150) ? b : -1 }
+        var byTurn: [Int: Z] = [:]
+        var loose: [Z] = []
+        for (zi, zmin) in zones {
+            let k = near(zmin)
+            if k < 0 { loose.append(Z(zi: zi, zmin: zmin, turn: -1, lift: false)); continue }
+            if var o = byTurn[k] { if sB[zmin] < sB[o.zmin] { o.zmin = zmin }; o.zi = min(o.zi, zi); byTurn[k] = o } else { byTurn[k] = Z(zi: zi, zmin: zmin, turn: k, lift: false) }
+        }
+        for (k, a) in ap.enumerated() where byTurn[k] == nil {
+            var i0 = max(0, a - bins(100))
+            for i in stride(from: a, to: max(1, a - bins(200)), by: -1) where hB[i] > 0.9 { i0 = i; break }
+            var imin = a
+            for i in i0..<min(n, a + bins(50)) where sB[i] < sB[imin] { imin = i }
+            if sB[i0] - sB[imin] > 7 { byTurn[k] = Z(zi: i0, zmin: imin, turn: k, lift: true) }  // it really slows (7 km/h, like the web's 2 m/s)
+        }
+        zs = (Array(byTurn.values) + loose).sorted { $0.zi < $1.zi }
+    }
     var out: [Corner] = []
-    for (idx, z) in zones.enumerated() {
-        let zi = z.0, zmin = z.1
+    for (idx, z) in zs.enumerated() {
+        let zi = z.zi, zmin = z.zmin
         let i0 = max(0, zi - bins(50)), i1 = min(n - 1, zmin + bins(150))
         let lost = seg(i0, i1)
         // the same corner on this lap: its brake point within 100 m
@@ -685,6 +722,7 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
         var phase: String? = nil
         if lost > 0.03 {
             phase = ph.max { $0.value < $1.value }?.key
+            if z.lift && phase == "brake" { phase = "entry" }  // a corner taken without braking has no braking phase to speak of
             let dd: Int? = ja.map { Int(Double($0 - zi) * c.step) }
             var ipa = ja ?? 0
             if let j = ja, let m = aMin { for k in j...max(j, m) where c.brkA[k] > c.brkA[ipa] { ipa = k } }
@@ -743,7 +781,7 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
             }
         }
         let vb = sB[zmin]  // km/h at the reference's slowest point
-        out.append(Corner(n: turnNo(turns, at: Double(zmin) * c.step, lapLen: Double(n) * c.step, fallback: idx + 1), atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs,
+        out.append(Corner(n: z.turn >= 0 ? z.turn + 1 : turnNo(turns, at: Double(zmin) * c.step, lapLen: Double(n) * c.step, fallback: idx + 1), atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs,
                           apexM: Int(Double(zmin) * c.step), cls: vb < 80 ? "slow" : vb < 150 ? "medium" : "fast"))
     }
     return out

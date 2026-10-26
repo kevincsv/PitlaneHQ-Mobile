@@ -20,6 +20,17 @@ class Compared(
  * to one side of B; the slow drift of that dead reckoning goes with a ±400 m moving average. Null when either lap has
  * no path or the two paths are not the same track.
  */
+/** B's path in A's frame: both from the game's position (B moved to A's origin) or both by dead reckoning; null when one is
+ *  each, because they never line up. */
+fun sameFrame(a: Trace, b: Trace): Pair<List<Double>, List<Double>>? {
+    val bx = b.x ?: return null; val by = b.y ?: return null
+    val ga = a.g; val gb = b.g
+    if ((ga == null) != (gb == null)) return null
+    if (ga == null || gb == null || (ga[0] == gb[0] && ga[1] == gb[1])) return bx to by
+    val dx = (gb[1] - ga[1]) * 111320 * kotlin.math.cos(ga[0] * Math.PI / 180); val dy = (gb[0] - ga[0]) * 110540
+    return bx.map { it + dx } to by.map { it + dy }
+}
+
 fun lineOffsets(ax: List<Double>, ay: List<Double>, bx: List<Double>, by: List<Double>): DoubleArray? {
     val n = minOf(ax.size, ay.size, bx.size, by.size)
     if (n < 60) return null
@@ -65,7 +76,8 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
     val d = (0 until n).map { it * step }
     val tA = d.map { at(a, it, 5) }
     val tB = b?.let { tr -> d.map { at(tr, it, 5) } }
-    val line = if (a.hasShape && b != null && b.hasShape && kotlin.math.abs(a.bin - b.bin) < 1e-6) lineOffsets(a.x!!, a.y!!, b.x!!, b.y!!) else null
+    val bxy = if (a.hasShape && b != null && b.hasShape && kotlin.math.abs(a.bin - b.bin) < 1e-6) sameFrame(a, b) else null
+    val line = bxy?.let { lineOffsets(a.x!!, a.y!!, it.first, it.second) }
     return Compared(
         step,
         d.map { at(a, it, 0) * 3.6 },
@@ -79,8 +91,8 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
         d.map { a.rows[(it / a.bin).roundToInt().coerceIn(0, a.rows.size - 1)].getOrElse(3) { 0.0 } },
         b?.let { tr -> d.map { tr.rows[(it / tr.bin).roundToInt().coerceIn(0, tr.rows.size - 1)].getOrElse(3) { 0.0 } } },
         line?.let { l -> d.map { l.getOrElse((it / a.bin).roundToInt()) { Double.NaN } } },
-        if (line != null) d.map { b!!.x!![(it / b.bin).roundToInt().coerceIn(0, b.x!!.size - 1)] } else null,
-        if (line != null) d.map { b!!.y!![(it / b.bin).roundToInt().coerceIn(0, b.y!!.size - 1)] } else null
+        if (line != null && bxy != null) d.map { bxy.first[(it / b!!.bin).roundToInt().coerceIn(0, bxy.first.size - 1)] } else null,
+        if (line != null && bxy != null) d.map { bxy.second[(it / b!!.bin).roundToInt().coerceIn(0, bxy.second.size - 1)] } else null
     )
 }
 
@@ -168,7 +180,31 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
             i = max(k, i + 1)
         } else i++
     }
-    return zones.mapIndexed { idx, (zi, zmin) ->
+    // the corners by the track's turns (the official ones, or the ones the layout's geometry gives): two brake applications in
+    // one corner are one corner, and a turn taken without braking (a lift) is a corner of its own, like the web's cornerZones
+    class Z(var zi: Int, var zmin: Int, val turn: Int, val lift: Boolean)
+    val zs: List<Z> = if (turns.isEmpty()) zones.map { Z(it.first, it.second, -1, false) } else {
+        val ap = turns.map { (it * n).toInt() }.filter { it in 1 until n - 1 }
+        fun near(i: Int): Int { var b = -1; var bd = Int.MAX_VALUE; ap.forEachIndexed { k, a -> val d = kotlin.math.abs(a - i); if (d < bd) { bd = d; b = k } }; return if (bd <= bins(150.0)) b else -1 }
+        val by = LinkedHashMap<String, Z>()
+        for ((zi, zmin) in zones) {
+            val k = near(zmin)
+            if (k < 0) { by["z$zi"] = Z(zi, zmin, -1, false); continue }
+            val o = by["t$k"]
+            if (o == null) by["t$k"] = Z(zi, zmin, k, false) else { if (sB[zmin] < sB[o.zmin]) o.zmin = zmin; o.zi = min(o.zi, zi) }
+        }
+        ap.forEachIndexed { k, a ->
+            if (by.containsKey("t$k")) return@forEachIndexed
+            var i0 = max(0, a - bins(100.0))
+            for (i in a downTo max(1, a - bins(200.0))) if (hB[i] > .9) { i0 = i; break }
+            var imin = a
+            for (i in i0 until min(n, a + bins(50.0))) if (sB[i] < sB[imin]) imin = i
+            if (sB[i0] - sB[imin] > 7) by["t$k"] = Z(i0, imin, k, true)  // it really slows (7 km/h, like the web's 2 m/s)
+        }
+        by.values.sortedBy { it.zi }
+    }
+    return zs.mapIndexed { idx, z ->
+        val zi = z.zi; val zmin = z.zmin
         val i0 = max(0, zi - bins(50.0))
         val i1 = min(n - 1, zmin + bins(150.0))
         val lost = seg(i0, i1)
@@ -190,6 +226,7 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
         var phase: String? = null
         if (lost > .03) {
             phase = ph.maxBy { it.value }.key
+            if (z.lift && phase == "brake") phase = "entry"  // a corner taken without braking has no braking phase to speak of
             val dd = ja?.let { ((it - zi) * c.step).toInt() }
             var ipa = ja ?: 0
             if (ja != null && aMin != null) for (k in ja..aMin) if (c.brkA[k] > c.brkA[ipa]) ipa = k
@@ -253,7 +290,7 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
             }
         }
         val vb = sB[zmin]  // km/h at the reference's slowest point
-        Corner(turnNo(turns, zmin * c.step, n * c.step, idx + 1), (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs,
+        Corner(if (z.turn >= 0) z.turn + 1 else turnNo(turns, zmin * c.step, n * c.step, idx + 1), (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs,
             apexM = (zmin * c.step).toInt(), cls = if (vb < 80) "slow" else if (vb < 150) "medium" else "fast")
     }
 }

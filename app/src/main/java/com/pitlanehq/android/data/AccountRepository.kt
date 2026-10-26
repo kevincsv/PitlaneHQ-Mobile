@@ -514,7 +514,7 @@ class AccountRepository(context: Context) {
         val y = j.optJSONArray("y")?.let { doubles(it) }
         val xy = x != null && y != null && x.size == d.length() && y.size == d.length()
         return Trace(j.optDouble("bin", 10.0), (0 until d.length()).map { i -> d.getJSONArray(i).let { r -> DoubleArray(6) { k -> r.optDouble(k, 0.0) } } }, if (xy) x else null, if (xy) y else null, j.optJSONArray("inc")?.let { doubles(it) } ?: emptyList(),
-            j.optJSONArray("incK")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList())
+            j.optJSONArray("incK")?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList(), g = if (xy) j.optJSONArray("g")?.let { doubles(it) }?.takeIf { it.size == 2 } else null)
     }
 
     /**
@@ -529,10 +529,11 @@ class AccountRepository(context: Context) {
         val cards = m.optJSONArray("corners")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
             CornerCard(o.optDouble("d", 0.0), o.optDouble("apex", 0.0), o.optDouble("b0", 0.0), o.optDouble("b1", 0.0), o.optDouble("v0", 0.0), o.optDouble("v1", 0.0), o.optInt("n", 0)) } } ?: emptyList()
         fun row(b: JSONArray) = doubleArrayOf(b.optDouble(0, 0.0), b.optDouble(2, 0.0), b.optDouble(3, 0.0), b.optDouble(4, 0.0), 0.0, b.optDouble(1, 0.0))
-        fun xy(o: JSONObject?, n: Int): Pair<List<Double>, List<Double>>? {
+        // a path with its origin g when it comes from the game's position (the apps put two paths in one frame by it)
+        fun xy(o: JSONObject?, n: Int): Triple<List<Double>, List<Double>, List<Double>?>? {
             if (o == null) return null
             val x = o.optJSONArray("x")?.let { doubles(it) } ?: return null; val y = o.optJSONArray("y")?.let { doubles(it) } ?: return null
-            return if (x.size == n && y.size == n) x to y else null
+            return if (x.size == n && y.size == n) Triple(x, y, o.optJSONArray("g")?.let { doubles(it) }?.takeIf { it.size == 2 }) else null
         }
         var rec: Pair<Trace, Double>? = null
         val ideal = m.optJSONArray("ideal")
@@ -540,7 +541,7 @@ class AccountRepository(context: Context) {
         if (ideal != null && ideal.length() > 40 && idealTime > 0) {
             val rows = (0 until ideal.length()).mapNotNull { ideal.optJSONArray(it)?.let { b -> row(b) } }
             val p = xy(m.optJSONObject("idealXY"), rows.size) ?: xy(m.optJSONObject("lineXY"), rows.size)
-            rec = Trace(5.0, rows, p?.first, p?.second) to idealTime
+            rec = Trace(5.0, rows, p?.first, p?.second, g = p?.third) to idealTime
         }
         var lvl: Pair<Trace, Double>? = null
         val lad = m.optJSONArray("ladder")
@@ -563,14 +564,15 @@ class AccountRepository(context: Context) {
                 }
                 val cut = if (nb > 0) rows.take(nb) else rows
                 val rx = x.optJSONArray("x")?.let { doubles(it) }; val ry = x.optJSONArray("y")?.let { doubles(it) }
+                var pg: List<Double>? = x.optJSONArray("g")?.let { doubles(it) }?.takeIf { it.size == 2 }
                 var px: List<Double>? = null; var py: List<Double>? = null
                 if (rx != null && ry != null && rx.size >= 6 && rx.size == ry.size) {
                     val ox = ArrayList<Double>(); val oy = ArrayList<Double>()
                     rx.forEachIndexed { k, v -> val n = if (k + 1 < rx.size) k + 1 else k; ox.add(v); ox.add((v + rx[n]) / 2); oy.add(ry[k]); oy.add((ry[k] + ry[n]) / 2) }
                     if (ox.size >= cut.size) { px = ox.take(cut.size); py = oy.take(cut.size) }
                 }
-                if (px == null) xy(m.optJSONObject("lineXY"), cut.size)?.let { px = it.first; py = it.second }
-                lvl = Trace(5.0, cut, px, py) to t
+                if (px == null) xy(m.optJSONObject("lineXY"), cut.size)?.let { px = it.first; py = it.second; pg = it.third }
+                lvl = Trace(5.0, cut, px, py, g = pg) to t
             }
         }
         return ModelRefs(rec, lvl, cards)

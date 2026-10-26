@@ -64,7 +64,9 @@ data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boo
 /** One incident of a lap: where (m), its points and what it was ("off", "loss", "light" contact or "contact"). */
 data class Incident(val d: Double, val pts: Int, val kind: String)
 
-data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Double>? = null, val y: List<Double>? = null, val inc: List<Double> = emptyList(), val incK: List<String> = emptyList()) {
+data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Double>? = null, val y: List<Double>? = null, val inc: List<Double> = emptyList(), val incK: List<String> = emptyList(),
+                 val g: List<Double>? = null  // the origin [lat, lon] of x=0, y=0 when the path comes from the game's position (exact); null by dead reckoning
+) {
     /** The incidents of the lap, from the trace's [d, pts, d, pts…] and their kinds (older laps: by the points). */
     val incidents: List<Incident> get() = (0 until inc.size / 2).map { i ->
         val pts = inc[2 * i + 1].toInt()
