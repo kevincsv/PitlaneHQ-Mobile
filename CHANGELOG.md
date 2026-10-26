@@ -14,6 +14,8 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
   against your best, your last lap or another lap, corner by corner.
 - Standings show the gap to the leader or the interval, a class filter when several classes race and your position lap
   by lap, and Tyres show their wear.
+- Home shows your laps, hours and races of the month, your last race lap by lap and your recent sessions, like the web
+  and the PC.
 - Leagues are open to everyone.
 - Fixes and improvements.
 
