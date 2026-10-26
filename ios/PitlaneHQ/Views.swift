@@ -3059,6 +3059,7 @@ struct RecentRecords: View {
     let cat: String
     @StateObject private var recs = Loader<[RecordItem]>()
     @State private var all = false
+    @State private var open = ""
 
     private func name(_ a: String?) -> String { a == nil || a == "Anonymous" ? t("anonymous") : a! }
 
@@ -3080,35 +3081,89 @@ struct RecentRecords: View {
             } else if list.isEmpty {
                 Text(t("no_records")).font(.subheadline).foregroundColor(Theme.muted)
             }
-            ForEach(all ? list : Array(list.prefix(6))) { x in
-                VStack(alignment: .leading, spacing: 2) {
-                    NavigationLink(value: Route.combo(x.combo)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(name(x.alias) + (x.mine ? " · " + t("you_badge") : "")).font(.subheadline.weight(.black)).foregroundColor(x.mine ? Theme.accent : Theme.fg).lineLimit(1)
-                                Spacer()
-                                Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
-                            }
-                            Text(x.car + " · " + x.track).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    HStack {
-                        Text((x.prevTime.map { t("record_beat", name(x.prevAlias), String(format: "%.3f", $0 - x.time)) } ?? t("record_first")) + " · " + day(x.created)).font(.caption2).foregroundColor(Theme.muted).lineLimit(1)
-                        Spacer()
-                        if x.prof {
-                            NavigationLink(value: Route.profile(x.id)) { Text(t("profile")).font(.caption.bold()).foregroundColor(Theme.accent) }.buttonStyle(.plain)
-                        }
-                        NavigationLink(value: Route.track(TrackRef(id: x.trackId, name: x.track))) { Text(t("track_page_short")).font(.caption.bold()).foregroundColor(Theme.accent) }.buttonStyle(.plain)
-                    }
-                }
-                .padding(.top, 6)
-            }
+            // each record a card: its discipline's stripe, the car and track, the time and who set it, the lap it beat as a
+            // bar (longer the bigger the margin); touched, its leaderboard, its track page and its driver's profile
+            let most = max(0.001, list.compactMap { x in x.prevTime.map { $0 - x.time } }.max() ?? 1)
+            ForEach(all ? list : Array(list.prefix(6))) { x in RecordCard(x: x, most: most, open: $open) }
             if list.count > 6 {
                 Button(all ? t("fewer") : t("show_all_n", list.count)) { all.toggle() }.font(.subheadline.bold()).foregroundColor(Theme.accent)
             }
         }
         .task(id: account.demo) { await recs.load { try await account.records() } }
+    }
+}
+
+/// One recent record as a card (Community → Recent records).
+struct RecordCard: View {
+    let x: RecordItem
+    let most: Double
+    @Binding var open: String
+
+    private func name(_ a: String?) -> String { a == nil || a == "Anonymous" ? t("anonymous") : a! }
+
+    var body: some View {
+        let on = open == x.id
+        VStack(alignment: .leading, spacing: 8) {
+            Button { open = on ? "" : x.id } label: { head }.buttonStyle(.plain)
+            beat
+            if on { actions }
+        }
+        .padding(12)
+        .background(Theme.ink)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? Theme.accent.opacity(0.45) : Theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.top, 8)
+    }
+
+    private var head: some View {
+        HStack(spacing: 10) {
+            RoundedRectangle(cornerRadius: 2).fill(discColor(x.cat ?? "")).frame(width: 4)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(day(x.created) + (x.cat.map { " · " + discName($0) } ?? "")).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+                Text(x.car).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1)
+                Text(x.track).font(.system(size: 12)).foregroundColor(Theme.muted).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(lapTime(x.time)).font(.system(size: 15, weight: .bold, design: .monospaced)).foregroundColor(Theme.purple)
+                Text(name(x.alias) + (x.mine ? " · " + t("you_badge") : "")).font(.system(size: 12, weight: .semibold)).foregroundColor(x.mine ? Theme.accent : Theme.fg).lineLimit(1)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .contentShape(Rectangle())
+    }
+
+    private var beat: some View {
+        let by: Double? = x.prevTime.map { $0 - x.time }
+        let f: CGFloat = by.map { CGFloat(min(1, max(0.06, $0 / most))) } ?? 1
+        let text: String = by.map { t("record_beat", name(x.prevAlias), String(format: "%.3f", $0)) } ?? t("record_first")
+        return HStack(spacing: 8) {
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.surface2)
+                    Capsule().fill(Theme.purple).frame(width: g.size.width * f)
+                }
+            }
+            .frame(height: 6)
+            Text(text).font(.system(size: 12)).foregroundColor(Theme.muted).lineLimit(1)
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 6) {
+            NavigationLink(value: Route.combo(x.combo)) { pill(t("rec_board"), true) }.buttonStyle(.plain)
+            NavigationLink(value: Route.track(TrackRef(id: x.trackId, name: x.track))) { pill(t("track_page_short"), false) }.buttonStyle(.plain)
+            if x.prof { NavigationLink(value: Route.profile(x.id)) { pill(t("profile"), false) }.buttonStyle(.plain) }
+        }
+    }
+
+    private func pill(_ s: String, _ main: Bool) -> some View {
+        Text(s).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+            .frame(maxWidth: .infinity, minHeight: 36)
+            .foregroundColor(main ? Theme.ink : Theme.fg)
+            .background(main ? Theme.accent : Color.clear)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(main ? Color.clear : Theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 

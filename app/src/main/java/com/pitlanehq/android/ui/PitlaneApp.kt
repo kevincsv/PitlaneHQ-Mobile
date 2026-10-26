@@ -2041,6 +2041,7 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
     val r by vm.records.collectAsState()
     LaunchedEffect(Unit) { if (r.data == null && !r.loading) vm.loadRecords() }
     var all by rememberSaveable { mutableStateOf(false) }
+    var open by rememberSaveable { mutableStateOf("") }
     val list = (r.data ?: emptyList()).filter { cat.isEmpty() || it.cat == cat }
     fun name(a: String?) = if (a == null || a == "Anonymous") t("anonymous") else a
     Panel {
@@ -2056,18 +2057,43 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
             r.error != null && r.data == null -> Text(t(r.error!!), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
             list.isEmpty() -> Text(t("no_records"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
         }
+        // each record a card: its discipline's stripe, the car and track, the time and who set it, the lap it beat as a
+        // bar (longer the bigger the margin); touched, its leaderboard, its track page and its driver's profile
+        val most = list.mapNotNull { x -> x.prevTime?.let { it - x.time } }.maxOrNull()?.coerceAtLeast(0.001) ?: 1.0
         (if (all) list else list.take(6)).forEach { x ->
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp).clickable { vm.combo = x.combo; vm.loadBoard(x.combo); nav.navigate("combo") }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(name(x.alias) + (if (x.mine) " · " + t("you_badge") else ""), fontWeight = FontWeight.Black, color = if (x.mine) Accent else Fg, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            val on = open == x.id
+            val col = discColor(x.cat ?: "")
+            Column(
+                Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(Ink)
+                    .border(1.dp, if (on) Accent.copy(alpha = 0.45f) else Line, RoundedCornerShape(12.dp))
+                    .clickable { open = if (on) "" else x.id }.padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(col))
+                    Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                        Text(day(x.created) + (x.cat?.let { " · " + discName(it) } ?: ""), color = Muted, fontSize = 11.sp, maxLines = 1)
+                        Text(x.car, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(x.track, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(name(x.alias) + (if (x.mine) " · " + t("you_badge") else ""), color = if (x.mine) Accent else Fg, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
+                    }
                 }
-                Text(x.car + " · " + x.track, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val pt = x.prevTime
-                    Text((if (pt != null) t("record_beat", name(x.prevAlias), "%.3f".format(pt - x.time)) else t("record_first")) + " · " + day(x.created), color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (x.prof) TextButton({ vm.loadProfile(x.id); nav.navigate("profile") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) { Text(t("profile"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
-                    TextButton({ vm.openTrack(x.trackId, x.track); nav.navigate("track") }, contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)) { Text(t("track_page_short"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val by = x.prevTime?.let { it - x.time }
+                    val f = if (by == null) 1f else (by / most).toFloat().coerceIn(0.06f, 1f)
+                    Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Surface2)) {
+                        Box(Modifier.fillMaxWidth(f).fillMaxHeight().background(Purple))
+                    }
+                    Text(if (by != null) t("record_beat", name(x.prevAlias), "%.3f".format(by)) else t("record_first"), color = Muted, fontSize = 12.sp, maxLines = 1)
+                }
+                if (on) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val btn = Modifier.weight(1f).heightIn(min = 36.dp)
+                    Button({ vm.combo = x.combo; vm.loadBoard(x.combo); nav.navigate("combo") }, btn, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink), contentPadding = PaddingValues(4.dp)) { Text(t("rec_board"), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1) }
+                    OutlinedButton({ vm.openTrack(x.trackId, x.track); nav.navigate("track") }, btn, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(4.dp)) { Text(t("track_page_short"), color = Fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1) }
+                    if (x.prof) OutlinedButton({ vm.loadProfile(x.id); nav.navigate("profile") }, btn, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line), contentPadding = PaddingValues(4.dp)) { Text(t("profile"), color = Fg, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1) }
                 }
             }
         }

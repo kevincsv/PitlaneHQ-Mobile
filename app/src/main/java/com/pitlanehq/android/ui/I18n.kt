@@ -596,4 +596,5 @@ private val STRINGS: Map<String, Pair<String, String>> = mapOf(
     "coach_vs" to ("Your lap against {0}" to "Tu vuelta frente a {0}"),
     "corners_cost" to ("WHAT EACH CORNER COSTS" to "LO QUE CUESTA CADA CURVA"),
     "corner_pick" to ("Touch a corner to read it" to "Toca una curva para leerla"),
+    "rec_board" to ("Leaderboard" to "Clasificación"),
 )

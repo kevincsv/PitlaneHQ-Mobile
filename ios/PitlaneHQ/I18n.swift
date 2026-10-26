@@ -599,4 +599,5 @@ private let strings: [String: (String, String)] = [
     "coach_vs": ("Your lap against {0}", "Tu vuelta frente a {0}"),
     "corners_cost": ("WHAT EACH CORNER COSTS", "LO QUE CUESTA CADA CURVA"),
     "corner_pick": ("Touch a corner to read it", "Toca una curva para leerla"),
+    "rec_board": ("Leaderboard", "Clasificación"),
 ]
