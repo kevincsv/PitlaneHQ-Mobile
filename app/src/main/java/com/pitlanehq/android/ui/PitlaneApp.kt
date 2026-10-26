@@ -1717,7 +1717,7 @@ private fun LeagueHub(vm: PitlaneViewModel, acc: AccountState) {
     val closed = lg.error == "leagues are in development"
     val all = lg.data ?: emptyList()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (closed || acc.admin) Panel {
+        if (closed) Panel {
             Row(verticalAlignment = Alignment.CenterVertically) { Text(t("leagues"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
             Text(if (closed) t("leagues_wip") else t("leagues_admin_hub"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
         }

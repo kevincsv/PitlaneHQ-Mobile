@@ -2644,7 +2644,7 @@ struct LeagueHub: View {
     var body: some View {
         let all = list ?? []
         VStack(alignment: .leading, spacing: 10) {
-            if closed || account.admin {
+            if closed {
                 Panel {
                     HStack { Text(t("leagues")).font(.headline.weight(.black)).foregroundColor(Theme.fg); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
                     Text(closed ? t("leagues_wip") : t("leagues_admin_hub")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4)

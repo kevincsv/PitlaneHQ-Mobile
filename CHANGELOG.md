@@ -10,6 +10,7 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
   see where the fast drivers brake and how fast they take the apex.
 - New throttle tips for when you open it too fast or take too long to reach full throttle.
 - Each lap's line comes from the game's real position, and the corners are numbered by the track's shape.
+- Leagues are open to everyone.
 - Fixes and improvements.
 
 ## 0.4.7 beta
