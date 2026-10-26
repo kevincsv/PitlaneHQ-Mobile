@@ -1,6 +1,9 @@
 # Pitlane HQ phone apps: rules for working on this project
 
 - Reply to the owner in Spanish.
+- Android and iOS are one app: the same screens, texts, layout and features on both. Every change the owner asks
+  for in one of them (even when they only name Android or only iOS) is made in both in the same commit, and both
+  builds are checked before it goes up. No explanatory subtitles under the screen titles.
 - Push only when the owner says so ("súbelo", "sube todo"…). Never create pull requests unless asked.
 - Anything sensitive that goes to GitHub is encrypted or kept in GitHub secrets (signing keys,
   passwords); never paste tokens or keys anywhere.
