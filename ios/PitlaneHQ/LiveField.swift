@@ -21,6 +21,7 @@ struct LiveSession {
     var estLap = 0.0
     var track = ""
     var trackId: Int64 = 0
+    var trackLen = 0.0 // m
     var drivers: [Int: LiveDriver] = [:]
     var kinds: [Int: String] = [:]
     var laps: [Int: Int] = [:]
@@ -100,6 +101,7 @@ func parseLiveSession(_ y: String) -> LiveSession {
     let cfg = yField(wi, "TrackConfigName")
     s.track = yField(wi, "TrackDisplayName") + (cfg.isEmpty ? "" : " · " + cfg)
     s.trackId = Int64(yField(wi, "TrackID")) ?? 0
+    if let r = yField(wi, "TrackLength").range(of: "[0-9.]+", options: .regularExpression), let km = Double(yField(wi, "TrackLength")[r]) { s.trackLen = km * 1000 }
     for b in yItems(di, "CarIdx") {
         guard let i = Int(yField(b, "CarIdx")) else { continue }
         s.drivers[i] = LiveDriver(idx: i, name: yField(b, "UserName"), number: yField(b, "CarNumber"), cls: yField(b, "CarClassShortName"),

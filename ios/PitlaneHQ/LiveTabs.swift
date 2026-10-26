@@ -195,7 +195,7 @@ struct LiveRelativeView: View {
         Panel {
             SectionLabel(text: t("lt_relative").uppercased())
             if rows.isEmpty { Text(t("lt_no_cars")).font(.caption).foregroundColor(Theme.muted) }
-            ForEach(Array(rows.enumerated()), id: \.element.id) { k, r in
+            ForEach(rows) { r in
                 HStack(spacing: 4) {
                     Text(r.pos > 0 ? "P\(r.pos)" : "").foregroundColor(Theme.muted).frame(width: 34, alignment: .leading)
                     Text(r.d.map { "#" + $0.number } ?? "").foregroundColor(Theme.muted).frame(width: 36, alignment: .leading)
@@ -248,7 +248,7 @@ struct LiveStandingsView: View {
                 }
                 .font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted)
             }
-            ForEach(rows) { r in
+            ForEach(Array(rows.enumerated()), id: \.element.id) { k, r in
                 HStack(spacing: 4) {
                     Text("\(r.pos)").foregroundColor(r.me ? Theme.accent : Theme.muted).frame(width: 30, alignment: .leading)
                     Text(r.d?.number ?? "").foregroundColor(Theme.muted).frame(width: 34, alignment: .leading)
