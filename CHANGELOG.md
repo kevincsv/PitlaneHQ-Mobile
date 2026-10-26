@@ -4,6 +4,14 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.5.0 beta
+
+- The coach tells you first the habits you repeat across tracks, you can rate every tip with 👍 or 👎 and under it you
+  see where the fast drivers brake and how fast they take the apex.
+- New throttle tips for when you open it too fast or take too long to reach full throttle.
+- Each lap's line comes from the game's real position, and the corners are numbered by the track's shape.
+- Fixes and improvements.
+
 ## 0.4.7 beta
 
 - Fixes and improvements.
