@@ -26,7 +26,10 @@ import kotlinx.coroutines.withContext
 data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>, val car: JSONObject? = null,
     val turns: List<Double> = emptyList(), val pit: PitLane? = null, val fastest: Boolean = false,
     // the track's layout drawn by the community: the map's road when the lap carries no path of its own (like the web)
-    val layout: Pair<List<Double>, List<Double>>? = null)
+    val layout: Pair<List<Double>, List<Double>>? = null,
+    // the session, its car and track as the community knows them, and the model's corner card (where the fastest drivers
+    // here brake and how fast they take each corner): the thumbs on a tip and the hint beside it
+    val session: CloudSession? = null, val trackId: Long = 0, val carId: Long = 0, val corners: List<CornerCard> = emptyList())
 
 /** The pit lane of a track (from laps through the pits): [5 m point of a lap of n points, metres to the left of the track]. */
 data class PitLane(val n: Int, val pts: List<Pair<Int, Double>>)
@@ -364,6 +367,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
             val card = (c ?: combos.firstOrNull { it.car.equals(s.car, true) })?.let { runCatching { repo.carCard(it.carId) }.getOrNull() }
             var fastest = false
+            var cards: List<CornerCard> = emptyList()
             // each driver against their own laps (DRINKS mode: a friend's lap against that friend's best)
             val ownBest = {
                 val best = all.filter { it.valid && it.time > 0 && it.id != lap.id && it.drv == lap.drv }.minByOrNull { it.time }
@@ -377,7 +381,9 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             if (kind == RefKind.MY_BEST) ownBest()
             else {
                 // the model's references, like the PC and the web: the next level, else the record
-                val (rec, lvl) = c?.let { runCatching { repo.modelRefs(it.trackId, it.carId, lap.time) }.getOrNull() } ?: (null to null)
+                val mr = c?.let { runCatching { repo.modelRefs(it.trackId, it.carId, lap.time) }.getOrNull() }
+                val rec = mr?.rec; val lvl = mr?.lvl
+                cards = mr?.corners ?: emptyList()
                 val pick = if (kind == RefKind.LEVEL) lvl ?: rec else rec
                 if (pick != null && pick.second < lap.time - 0.001) {
                     ref = pick.first
@@ -406,8 +412,21 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             val turns = c?.let { runCatching { repo.turns(it.trackId) }.getOrNull() } ?: emptyList()
             // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
             val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId) }.getOrNull() else null
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout))
+            // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
+            if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time).corners }.getOrDefault(emptyList())
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards))
         }
+    }
+
+    /** The thumbs the driver gave the coach's tips on this device, by session and corner ("sid:apexM" → 1 or -1). */
+    val tipRatings = MutableStateFlow<Map<String, Int>>(emptyMap())
+    /** A thumb on a tip (pressing the same one again takes it back): kept on the server with the account, so the coach learns. */
+    fun rateTip(an: LapAnalysis, k: Corner, up: Int) {
+        val s = an.session ?: return
+        val key = s.id + ":" + k.apexM
+        val now = if (tipRatings.value[key] == up) 0 else up
+        tipRatings.value = tipRatings.value.toMutableMap().also { if (now == 0) it.remove(key) else it[key] = now }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.rateTip(an.trackId, an.carId, s.id, s.started, k.n, k.apexM, k.tip?.removePrefix("tip_") ?: "", k.cls, now) } }
     }
 
     // the live map: the track's layout drawn by the community, and its official turns, once per track

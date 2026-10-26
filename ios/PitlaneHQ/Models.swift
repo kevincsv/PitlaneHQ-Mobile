@@ -602,6 +602,19 @@ struct Corner: Hashable {
     let args: [String]
     var lineTip: String? = nil  // what the line says, besides the tip
     var lineArgs: [String] = []
+    var apexM: Int = 0          // the reference's slowest point, metres from the line: the same corner on the server (coachtips.js)
+    var cls: String = ""        // the corner's speed there: slow (under 80 km/h), medium (under 150), fast
+}
+
+/// The corner card the model learnt (`corners` in /community/model): where the fastest drivers of this car and track
+/// brake (b0..b1, metres from the line) and how fast they pass the slowest point (v0..v1, m/s) of one corner of the
+/// record lap, from n drivers' best laps. A hint beside a tip, never a lap to compare with.
+struct CornerCard: Hashable {
+    let d: Double, apex: Double, b0: Double, b1: Double, v0: Double, v1: Double, n: Int
+    /// the card of a corner whose slowest point is at `apexM` metres (within 60 m), or nil
+    static func of(_ cards: [CornerCard], apexM: Int) -> CornerCard? {
+        cards.filter { abs($0.apex - Double(apexM)) <= 60 }.min { abs($0.apex - Double(apexM)) < abs($1.apex - Double(apexM)) }
+    }
 }
 
 let phaseKeys = ["brake", "entry", "apex", "exit"]
@@ -729,7 +742,9 @@ func corners(_ c: Compared, turns: [Double] = []) -> [Corner] {
                 else { lineKey = lt.0; lineArgs = [lt.1] }
             }
         }
-        out.append(Corner(n: turnNo(turns, at: Double(zmin) * c.step, lapLen: Double(n) * c.step, fallback: idx + 1), atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs))
+        let vb = sB[zmin]  // km/h at the reference's slowest point
+        out.append(Corner(n: turnNo(turns, at: Double(zmin) * c.step, lapLen: Double(n) * c.step, fallback: idx + 1), atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs,
+                          apexM: Int(Double(zmin) * c.step), cls: vb < 80 ? "slow" : vb < 150 ? "medium" : "fast"))
     }
     return out
 }

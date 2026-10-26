@@ -93,8 +93,18 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
 data class Corner(
     val n: Int, val atM: Int, val lost: Double, val phases: Map<String, Double>, val phase: String?,
     val coastA: Double, val coastB: Double, val tip: String?, val args: List<Any>,
-    val lineTip: String? = null, val lineArgs: List<Any> = emptyList()  // what the line says, besides the tip
+    val lineTip: String? = null, val lineArgs: List<Any> = emptyList(),  // what the line says, besides the tip
+    val apexM: Int = atM,       // the reference's slowest point, metres from the line: the same corner on the server (coachtips.js)
+    val cls: String = ""        // the corner's speed there: slow (under 80 km/h), medium (under 150), fast
 )
+
+/** The corner card the model learnt (`corners` in /community/model): where the fastest drivers of this car and track
+ *  brake (b0..b1, metres from the line) and how fast they pass the slowest point (v0..v1, m/s) of one corner of the
+ *  record lap, from n drivers' best laps. A hint beside a tip, never a lap to compare with. */
+data class CornerCard(val d: Double, val apex: Double, val b0: Double, val b1: Double, val v0: Double, val v1: Double, val n: Int) {
+    /** the card of a corner whose slowest point is at [apexM] metres (within 60 m), or null */
+    companion object { fun of(cards: List<CornerCard>, apexM: Int): CornerCard? = cards.filter { kotlin.math.abs(it.apex - apexM) <= 60 }.minByOrNull { kotlin.math.abs(it.apex - apexM) } }
+}
 
 /** How far A was to the inside of B (m, + inside) at B's turn-in, apex and exit; null on a straight or without a line. */
 fun cornerLine(c: Compared, brake: Int, apex: Int, exit: Int, span: Int): Triple<Double, Double, Double>? {
@@ -242,7 +252,9 @@ fun corners(c: Compared, turns: List<Double> = emptyList()): List<Corner> {
                 else { lineKey = lt.first; lineArgs = listOf(lt.second) }
             }
         }
-        Corner(turnNo(turns, zmin * c.step, n * c.step, idx + 1), (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs)
+        val vb = sB[zmin]  // km/h at the reference's slowest point
+        Corner(turnNo(turns, zmin * c.step, n * c.step, idx + 1), (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs,
+            apexM = (zmin * c.step).toInt(), cls = if (vb < 80) "slow" else if (vb < 150) "medium" else "fast")
     }
 }
 

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -886,7 +887,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                         else {
                             state(co) { vm.coachKey = ""; vm.coachFor(cur, ls) }
                             val an = co.data
-                            if (an != null && vm.coachKey.startsWith(cur.id + "|")) coachItems(an, pick) { pick = it }
+                            if (an != null && vm.coachKey.startsWith(cur.id + "|")) coachItems(an, pick, vm) { pick = it }
                         }
                     }
                 }
@@ -1061,16 +1062,33 @@ private fun LazyListScope.lapItems(vm: PitlaneViewModel, nav: NavHostController,
     }
 }
 
-/** A corner that costs time: its official turn, where, the phase that loses the most, the tip and what the line says. */
+/** A corner that costs time: its official turn, where, the phase that loses the most, the tip and what the line says.
+ *  With the analysis: 👍/👎 on the tip (the coach learns from them, coachtips.js) and the corner card (where the fastest
+ *  drivers here brake and how fast they take the corner, a range of real laps). */
 @Composable
-private fun CornerTip(k: Corner) {
+private fun CornerTip(k: Corner, an: LapAnalysis? = null, vm: PitlaneViewModel? = null) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(t("corner_n", k.n), fontWeight = FontWeight.Black, color = Accent)
         Text("  " + t("at_m", k.atM) + (k.phase?.let { " · " + t("phase_$it") } ?: ""), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
         Text("+%.2f".format(k.lost), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
     }
-    k.tip?.let { Text(t(it, *k.args.toTypedArray()), fontSize = 13.sp) }
+    val tip = k.tip
+    if (tip != null) {
+        val ratings = vm?.tipRatings?.collectAsState()?.value
+        val mine = if (an?.session != null) ratings?.get(an.session.id + ":" + k.apexM) ?: 0 else 0
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(t(tip, *k.args.toTypedArray()), fontSize = 13.sp, modifier = Modifier.weight(1f))
+            if (an?.session != null && vm != null) listOf(1 to "👍", -1 to "👎").forEach { (up, g) ->
+                Text(g, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp).clip(RoundedCornerShape(6.dp))
+                    .border(1.dp, if (mine == up) Accent else Line, RoundedCornerShape(6.dp)).clickable { vm.rateTip(an, k, up) }.padding(horizontal = 5.dp, vertical = 3.dp)
+                    .alpha(if (mine == up) 1f else .55f))
+            }
+        }
+    }
     k.lineTip?.let { lt -> Text(t(lt, *k.lineArgs.toTypedArray()), fontSize = 12.sp, color = Accent) }
+    an?.let { CornerCard.of(it.corners, k.apexM) }?.let { c ->
+        Text(t("corner_fast", c.b0.toInt(), c.b1.toInt(), (c.v0 * 3.6).toInt(), (c.v1 * 3.6).toInt(), c.n), fontSize = 11.sp, color = Muted, lineHeight = 15.sp)
+    }
 }
 
 /** Lap A's sectors against lap B's. */
@@ -1094,7 +1112,7 @@ private fun LazyListScope.sectorItems(an: LapAnalysis) {
 
 /** The coach's top card: the gap to the reference, both times and what to work on first. */
 @Composable
-private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?) {
+private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?, vm: PitlaneViewModel? = null) {
     val d = an.refTime?.let { an.lap.time - it }
     Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Surface), border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(14.dp)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1109,7 +1127,7 @@ private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?) {
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Ink).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(t("coach_first").uppercase(), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                if (first == null) Text(t("all_clean"), color = Good, fontSize = 13.sp) else CornerTip(first)
+                if (first == null) Text(t("all_clean"), color = Good, fontSize = 13.sp) else CornerTip(first, an, vm)
             }
         }
     }
@@ -1119,13 +1137,13 @@ private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?) {
  * The coach, like the web's: the gap to the reference with what to work on first, the plan, the map, the sectors and the
  * corners that cost the most (each with its four phases). The car card shows only when nobody known is ahead.
  */
-private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, onPick: (Int) -> Unit) {
+private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneViewModel? = null, onPick: (Int) -> Unit) {
     val tr = an.trace
     val refName = an.refLabel.ifBlank { t("ref") }
     val c0 = tr?.let { compare(it, an.ref) }
     val cs0 = if (c0 != null && an.ref != null) corners(c0, an.turns) else emptyList()
     val lose0 = cs0.filter { it.tip != null && it.lost > 0.03 }.sortedByDescending { it.lost }
-    if (cs0.isNotEmpty()) item { CoachGap(an, refName, lose0.firstOrNull()) }
+    if (cs0.isNotEmpty()) item { CoachGap(an, refName, lose0.firstOrNull(), vm) }
     else item {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Metric(t("you") + " · L${an.lap.n}", lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent)
@@ -1151,7 +1169,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, onPick: (Int) 
             Column {
                 CornerStrip(cs, c.step, pick, title = false, onSel = onPick)
                 val k = pick?.let { p -> cs.minByOrNull { kotlin.math.abs(it.atM / c.step - p) }?.takeIf { kotlin.math.abs(it.atM / c.step - p) <= 2 } }
-                Panel(Modifier.padding(top = 8.dp)) { if (k == null) Text(t("corner_pick"), color = Muted, fontSize = 12.sp) else CornerTip(k) }
+                Panel(Modifier.padding(top = 8.dp)) { if (k == null) Text(t("corner_pick"), color = Muted, fontSize = 12.sp) else CornerTip(k, an, vm) }
             }
         }
         if (lose.isNotEmpty()) item {
@@ -1179,7 +1197,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, onPick: (Int) 
         item { Section(t("coach_top").uppercase()) }
         items(lose.take(3)) { k ->
             Panel {
-                CornerTip(k)
+                CornerTip(k, an, vm)
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PHASE_KEYS.forEach { p ->
                         val v = k.phases[p] ?: 0.0
@@ -1300,7 +1318,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         item { Section(t("where_time")) }
                         val top = cs.filter { it.tip != null }.sortedByDescending { it.lost }.take(5)
                         if (top.isEmpty()) item { Empty(t("all_clean")) }
-                        items(top) { k -> Panel { CornerTip(k) } }
+                        items(top) { k -> Panel { CornerTip(k, an, vm) } }
                     }
                 }
             }

@@ -59,6 +59,9 @@ class Got<T>(val data: T, val stale: Boolean = false)
  * the wrap key. The session token, the data key and everything saved for offline use are kept
  * sealed with an Android Keystore key.
  */
+/** The model's references for a lap: the record and the next level (each a trace with its time), and the corner card. */
+data class ModelRefs(val rec: Pair<Trace, Double>?, val lvl: Pair<Trace, Double>?, val corners: List<CornerCard> = emptyList())
+
 class AccountRepository(context: Context) {
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS).build()
     private val prefs = context.getSharedPreferences("pitlane-account", Context.MODE_PRIVATE)
@@ -519,9 +522,12 @@ class AccountRepository(context: Context) {
      * driven) and the next level (the real lap of the driver just ahead, 0.3–3 % faster). Their points come every 5 m
      * (the record) or every 10 m (the next level, put back to 5 m like the web's up()); null when there is none.
      */
-    fun modelRefs(trackId: Long, carId: Long, lapTime: Double): Pair<Pair<Trace, Double>?, Pair<Trace, Double>?> {
-        if (demo || trackId <= 0 || carId <= 0) return null to null
-        val m = runCatching { JSONObject(cachedGet("/community/model?game=iracing&trackId=$trackId&carId=$carId").data) }.getOrNull() ?: return null to null
+    fun modelRefs(trackId: Long, carId: Long, lapTime: Double): ModelRefs {
+        if (demo || trackId <= 0 || carId <= 0) return ModelRefs(null, null)
+        val m = runCatching { JSONObject(cachedGet("/community/model?game=iracing&trackId=$trackId&carId=$carId").data) }.getOrNull() ?: return ModelRefs(null, null)
+        // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
+        val cards = m.optJSONArray("corners")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
+            CornerCard(o.optDouble("d", 0.0), o.optDouble("apex", 0.0), o.optDouble("b0", 0.0), o.optDouble("b1", 0.0), o.optDouble("v0", 0.0), o.optDouble("v1", 0.0), o.optInt("n", 0)) } } ?: emptyList()
         fun row(b: JSONArray) = doubleArrayOf(b.optDouble(0, 0.0), b.optDouble(2, 0.0), b.optDouble(3, 0.0), b.optDouble(4, 0.0), 0.0, b.optDouble(1, 0.0))
         fun xy(o: JSONObject?, n: Int): Pair<List<Double>, List<Double>>? {
             if (o == null) return null
@@ -567,7 +573,14 @@ class AccountRepository(context: Context) {
                 lvl = Trace(5.0, cut, px, py) to t
             }
         }
-        return rec to lvl
+        return ModelRefs(rec, lvl, cards)
+    }
+
+    /** A thumb on one of the coach's tips (1 up, -1 down, 0 takes it back), kept with the account on the server (coachtips.js). */
+    fun rateTip(trackId: Long, carId: Long, sid: String, started: Long, n: Int, apexM: Int, kind: String, cls: String, up: Int) {
+        if (demo || trackId <= 0 || carId <= 0) return
+        call("POST", "/community/coach/rate", JSONObject().put("game", "iracing").put("trackId", trackId).put("carId", carId).put("sid", sid).put("started", started)
+            .put("n", n).put("apex", apexM).put("kind", kind).put("cls", cls).put("up", up))
     }
 
     fun lapTrace(lapId: String): Trace? {

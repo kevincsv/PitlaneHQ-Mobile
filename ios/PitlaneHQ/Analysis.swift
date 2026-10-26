@@ -15,6 +15,12 @@ struct LapAnalysis {
     var turns: [Double] = []      // the official turn numbers of this track, when an admin placed them
     var fastest = false           // nobody known is faster here: lap B is your own best
     var layout: ([Double], [Double])?  // the track's layout drawn by the community: the map's road when the lap has no path
+    // the session, its car and track as the community knows them, and the model's corner card (where the fastest drivers
+    // here brake and how fast they take each corner): the thumbs on a tip and the hint beside it
+    var session: CloudSession?
+    var trackId: Int64 = 0
+    var carId: Int64 = 0
+    var corners: [CornerCard] = []
 }
 
 private func fillArgs(_ s0: String, _ args: [String]) -> String {
@@ -35,6 +41,7 @@ extension Account {
     /// your own best lap.
     func analyse(session: CloudSession, lap: CloudLap, all: [CloudLap], kind: RefKind) async throws -> LapAnalysis {
         var a = LapAnalysis(lap: lap)
+        a.session = session
         a.trace = try await lapTrace(lap.id)
         // the car and track of this session among the ones the community knows, matched by name
         let combos = (try? await self.combos().data) ?? []
@@ -42,12 +49,14 @@ extension Account {
             ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
         // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
         if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { a.car = try? await carCard(carId: cc.carId) }
-        if let tc = c { a.turns = await turns(trackId: tc.trackId) }
+        if let tc = c { a.turns = await turns(trackId: tc.trackId); a.trackId = tc.trackId; a.carId = tc.carId }
         // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
         if let tc = c, !(a.trace?.hasShape ?? false) { a.layout = await trackLayout(trackId: tc.trackId) }
         let own = all.filter { $0.valid && $0.time > 0 && $0.id != lap.id && $0.drv == lap.drv }.min { $0.time < $1.time }
         if kind == .myBest {
             (a.ref, a.refLabel, a.refTime, a.refSectors) = await ownRef(own)
+            // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
+            if let c { a.corners = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time).corners }
         } else {
             var rec: (Trace, Double)? = nil
             var lvl: (Trace, Double)? = nil
@@ -55,6 +64,7 @@ extension Account {
                 let m = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time)
                 rec = m.rec
                 lvl = m.lvl
+                a.corners = m.corners
             }
             let pick = kind == .level ? (lvl ?? rec) : rec
             if let p = pick, p.1 < lap.time - 0.001 {
@@ -106,8 +116,12 @@ struct SectorTable: View {
 }
 
 /// A corner that costs time: its official turn, where, the phase that loses the most, the tip and what the line says.
+/// With the analysis: 👍/👎 on the tip (the coach learns from them, coachtips.js) and the corner card (where the fastest
+/// drivers here brake and how fast they take the corner, a range of real laps).
 struct CornerTipView: View {
     let k: Corner
+    var an: LapAnalysis? = nil
+    @EnvironmentObject var account: Account
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -116,9 +130,37 @@ struct CornerTipView: View {
                 Spacer()
                 Text(String(format: "+%.2f", k.lost)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
             }
-            if let tip = k.tip { Text(fillArgs(t(tip), k.args)).font(.subheadline) }
+            if let tip = k.tip {
+                HStack(alignment: .top, spacing: 6) {
+                    Text(fillArgs(t(tip), k.args)).font(.subheadline)
+                    Spacer(minLength: 0)
+                    if let s = an?.session {
+                        let key = s.id + ":" + String(k.apexM)
+                        let mine = account.tipRatings[key] ?? 0
+                        ForEach([(1, "👍"), (-1, "👎")], id: \.0) { up, g in
+                            Button { rate(s, key: key, up: up, mine: mine) } label: {
+                                Text(g).font(.caption).padding(.horizontal, 5).padding(.vertical, 3)
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(mine == up ? Theme.accent : Theme.line, lineWidth: 1))
+                                    .opacity(mine == up ? 1 : 0.55)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
             if let lt = k.lineTip { Text(fillArgs(t(lt), k.lineArgs)).font(.footnote).foregroundColor(Theme.accent) }
+            if let an, let c = CornerCard.of(an.corners, apexM: k.apexM) {
+                Text(t("corner_fast", Int(c.b0), Int(c.b1), Int(c.v0 * 3.6), Int(c.v1 * 3.6), c.n)).font(.caption2).foregroundColor(Theme.muted)
+            }
         }
+    }
+    /// a thumb on the tip (the same one again takes it back), kept on this device and sent to the account
+    private func rate(_ s: CloudSession, key: String, up: Int, mine: Int) {
+        guard let an else { return }
+        let now = mine == up ? 0 : up
+        if now == 0 { account.tipRatings.removeValue(forKey: key) } else { account.tipRatings[key] = now }
+        let kind = (k.tip ?? "").hasPrefix("tip_") ? String((k.tip ?? "").dropFirst(4)) : (k.tip ?? "")
+        Task { await account.rateTip(trackId: an.trackId, carId: an.carId, sid: s.id, started: s.started, n: k.n, apexM: k.apexM, kind: kind, cls: k.cls, up: now) }
     }
 }
 
@@ -162,7 +204,7 @@ struct CoachGap: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(t("coach_first").uppercased()).font(.system(size: 10, weight: .bold)).tracking(1).foregroundColor(Theme.accent)
-                if let f = first { CornerTipView(k: f) } else { Text(t("all_clean")).font(.subheadline).foregroundColor(Theme.good) }
+                if let f = first { CornerTipView(k: f, an: an) } else { Text(t("all_clean")).font(.subheadline).foregroundColor(Theme.good) }
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -230,7 +272,7 @@ struct CoachBody: View {
         SectionLabel(text: t("corners_cost"))
         CornerStrip(cs: cs, lapLen: lapLen, pick: $pick, title: false)
         let k: Corner? = picked(cs, lapLen)
-        Panel { if let k { CornerTipView(k: k) } else { Text(t("corner_pick")).font(.caption).foregroundColor(Theme.muted) } }
+        Panel { if let k { CornerTipView(k: k, an: an) } else { Text(t("corner_pick")).font(.caption).foregroundColor(Theme.muted) } }
         if !lose.isEmpty {
             Panel {
                 SectionLabel(text: t("coach_plan").uppercased())
@@ -265,7 +307,7 @@ struct CoachBody: View {
             SectionLabel(text: t("coach_top").uppercased())
             ForEach(Array(lose.prefix(3)), id: \.self) { k in
                 Panel {
-                    CornerTipView(k: k)
+                    CornerTipView(k: k, an: an)
                     PhaseRow(k: k)
                     if k.coastA - k.coastB > 10 { Text(t("coasting") + ": \(Int(k.coastA)) m · " + t("ref") + " \(Int(k.coastB)) m").font(.caption2).foregroundColor(Theme.muted) }
                 }

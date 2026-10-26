@@ -88,6 +88,8 @@ final class Account: ObservableObject {
     @Published var syncVersion = 0
     @Published var syncUpdated: Double = 0
     @Published var races: [Race] = []
+    /// the thumbs the driver gave the coach's tips on this device, by session and corner ("sid:apexM" → 1 or -1)
+    @Published var tipRatings: [String: Int] = [:]
     @Published var demo = UserDefaults.standard.bool(forKey: "demo") {
         didSet { UserDefaults.standard.set(demo, forKey: "demo"); loadRaces() }
     }
@@ -728,9 +730,14 @@ final class Account: ObservableObject {
     }
     /// The model's references for a car and track (`/community/model`): the record (the fastest lap really driven) and the
     /// next level for a lap of `lapTime` (the driver just ahead), each a trace every 5 m with its time and, when known, its line.
-    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?) {
-        if demo || trackId <= 0 || carId <= 0 { return (nil, nil) }
-        guard let m = try? await cachedGet("/community/model?game=iracing&trackId=\(trackId)&carId=\(carId)").data as? [String: Any] else { return (nil, nil) }
+    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?, corners: [CornerCard]) {
+        if demo || trackId <= 0 || carId <= 0 { return (nil, nil, []) }
+        guard let m = try? await cachedGet("/community/model?game=iracing&trackId=\(trackId)&carId=\(carId)").data as? [String: Any] else { return (nil, nil, []) }
+        // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
+        let cards: [CornerCard] = ((m["corners"] as? [[String: Any]]) ?? []).map { o in
+            func d(_ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
+            return CornerCard(d: d("d"), apex: d("apex"), b0: d("b0"), b1: d("b1"), v0: d("v0"), v1: d("v1"), n: (o["n"] as? NSNumber)?.intValue ?? 0)
+        }
         // the model's bins are [speed, time, throttle, brake, gear, steering]; a trace row is [speed, throttle, brake, gear, steering, time]
         func row(_ b: [Any]) -> [Double] {
             let v = b.map { ($0 as? NSNumber)?.doubleValue ?? 0 }
@@ -783,7 +790,12 @@ final class Account: ObservableObject {
                 lvl = (tr, tm)
             }
         }
-        return (rec, lvl)
+        return (rec, lvl, cards)
+    }
+    /// A thumb on one of the coach's tips (1 up, -1 down, 0 takes it back), kept with the account on the server (coachtips.js).
+    func rateTip(trackId: Int64, carId: Int64, sid: String, started: Double, n: Int, apexM: Int, kind: String, cls: String, up: Int) async {
+        if demo || trackId <= 0 || carId <= 0 { return }
+        _ = try? await call("POST", "/community/coach/rate", body: ["game": "iracing", "trackId": trackId, "carId": carId, "sid": sid, "started": Int64(started), "n": n, "apex": apexM, "kind": kind, "cls": cls, "up": up])
     }
     /// A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map.
     func turns(trackId: Int64) async -> [Double] {
