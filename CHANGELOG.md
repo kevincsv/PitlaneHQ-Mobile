@@ -4,6 +4,10 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.4.6 beta
+
+- Fixes and improvements.
+
 ## 0.4.5 beta
 
 - **Recent records as cards**: the discipline's colour, the time and who set it, and the lap it beat as a bar;
