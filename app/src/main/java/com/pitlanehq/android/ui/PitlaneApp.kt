@@ -64,6 +64,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import kotlinx.coroutines.flow.first
 import androidx.navigation.compose.*
 import com.pitlanehq.android.BuildConfig
 import com.pitlanehq.android.data.SERVER
@@ -198,10 +199,19 @@ private fun MainApp(vm: PitlaneViewModel) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             Column(Modifier.statusBarsPadding()) {
                 if (!online) Banner(t("showing_saved"), Bad)
-                if (demo) Banner(t("demo_banner"), Accent)
+                if (demo && ShotMode.route == null) Banner(t("demo_banner"), Accent)
                 upd?.let { u -> Banner(t("update_available", u.version), Good) { uri.openUri(u.url) } }
             }
             UpdateNotice(upd)
+            // the screenshot job (debug builds): open the screen it asked for
+            LaunchedEffect(Unit) {
+                val r = ShotMode.route ?: return@LaunchedEffect
+                vm.analysisTab = ShotMode.tab
+                if (r == "race") {
+                    vm.race = vm.races.first { !it.data.isNullOrEmpty() }.data!!.first()
+                }
+                if (r != "home") nav.navigate(r)
+            }
             NavHost(nav, "home", Modifier.weight(1f)) {
                 composable("home") { Home(vm, nav) }
                 composable("race") { RaceDetail(vm, nav) }

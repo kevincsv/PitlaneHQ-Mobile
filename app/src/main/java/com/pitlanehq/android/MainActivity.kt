@@ -7,6 +7,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.pitlanehq.android.ui.PitlaneApp
+import com.pitlanehq.android.ui.ShotMode
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -16,6 +17,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
+        if (BuildConfig.DEBUG) intent?.getStringExtra("shot")?.let { ShotMode.prepare(this, it, intent.getStringExtra("lang") ?: "es") }
         setContent { PitlaneApp() }
     }
 }
