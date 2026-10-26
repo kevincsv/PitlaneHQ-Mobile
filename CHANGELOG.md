@@ -4,6 +4,12 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`): `0.MINOR.PATCH`. A MINOR version is a set of new features; fixes ride along as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.4.5 beta
+
+- **Recent records as cards**: the discipline's colour, the time and who set it, and the lap it beat as a bar;
+  touch one for its leaderboard, its track page and the driver's profile.
+- Fixes and improvements.
+
 ## 0.4.4 beta
 
 - **Valid laps as in iRacing**: only leaving the track or losing the connection makes a lap invalid; a lap through
