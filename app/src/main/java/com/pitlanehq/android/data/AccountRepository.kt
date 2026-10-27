@@ -67,8 +67,16 @@ data class CoachInfo(val off: Set<String>, val conf: Map<String, Pair<Int, Int>>
 /** A kind of tip that repeats across the driver's tracks. */
 data class Habit(val kind: String, val tracks: Int, val sessions: Int)
 
+/** This app and its version for the server ("android/0.6.0"), from version.txt. */
+private val CLIENT = "android/" + com.pitlanehq.android.BuildConfig.VERSION_NAME.removeSuffix("-beta")
+
 class AccountRepository(context: Context) {
-    private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS).build()
+    // every signed-in call says which app and version it is ("android/0.6.0"), for the admin page's Online tab
+    private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val rq = chain.request()
+            chain.proceed(if (rq.header("authorization") == null) rq else rq.newBuilder().header("X-Pitlane-Client", CLIENT).build())
+        }.build()
     private val prefs = context.getSharedPreferences("pitlane-account", Context.MODE_PRIVATE)
     private val app = context.getSharedPreferences("pitlane-app", Context.MODE_PRIVATE)
     private val cacheDir = File(context.filesDir, "saved").apply { mkdirs() }

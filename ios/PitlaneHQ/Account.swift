@@ -361,6 +361,10 @@ final class Account: ObservableObject {
             guard let t = token else { throw AppError.signedOut }
             r.setValue("Bearer " + t, forHTTPHeaderField: "authorization")
         }
+        // every signed-in call says which app and version it is ("ios/0.6.0"), for the admin page's Online tab
+        if bearer != nil || auth {
+            r.setValue("ios/" + ((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"), forHTTPHeaderField: "X-Pitlane-Client")
+        }
         let pair: (Data, URLResponse)
         do {
             pair = try await URLSession.shared.data(for: r)
