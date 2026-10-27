@@ -165,6 +165,19 @@ final class Account: ObservableObject {
         return out
     }
 
+    /// Your Le Mans Ultimate Safety Rating and Driver Rank as the PC last saw them ("lmu" in ratings.json: sr, dr, at), as the game wrote them.
+    func lmuRating() -> (sr: String, dr: String)? {
+        guard !demo, let d = saved("ratings"), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
+              let x = o["lmu"] as? [String: Any] else { return nil }
+        func v(_ k: String) -> String {
+            if let s = x[k] as? String { return s.trimmingCharacters(in: .whitespaces) }
+            if let n = x[k] as? NSNumber { return n.stringValue }
+            return ""
+        }
+        let sr = v("sr"), dr = v("dr")
+        return sr.isEmpty && dr.isEmpty ? nil : (sr, dr)
+    }
+
     // ---------- driver notes: your marks on other drivers (drivers.json in the account) ----------
 
     @Published var driverNotes: [String: DriverNote] = [:]

@@ -9,6 +9,8 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
 - Le Mans Ultimate is here in beta. Its sessions and races carry an LMU tag and show contacts instead of iRating.
 - Choose the game you look at in Home, Analysis and Community. The game your PC is reading live has a dot.
 - Sign in with Steam or Discord, and link them in Account.
+- The app speaks Portuguese (Brazil) too, beside English and Spanish.
+- In Le Mans Ultimate, Home shows your Safety Rating and Driver Rank where the licences go.
 - Fixes and improvements.
 
 ## 0.5.0 beta

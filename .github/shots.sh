@@ -8,7 +8,7 @@ adb shell settings put system screen_off_timeout 600000
 adb shell settings put global hide_error_dialogs 1 || true
 sleep 45
 adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
-for lang in es en; do
+for lang in es en pt; do
   for s in home live analysis:0 analysis:1 analysis:2 analysis:3 race community; do
     adb shell am force-stop com.pitlanehq.android
     adb shell am start -W -n com.pitlanehq.android/.MainActivity --es shot "$s" --es lang "$lang" >/dev/null

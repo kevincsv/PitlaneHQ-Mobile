@@ -439,8 +439,8 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
         races.firstOrNull()?.let { x -> item { HomeLastRace(x, { vm.race = x; nav.navigate("race") }, { toAnalysis(0) }) } }
         item { HomeRecent(races.drop(1), sessions, { x -> vm.race = x; nav.navigate("race") }, { x -> vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) { toAnalysis(2) } }
         if (r.data != null && races.isEmpty() && sessions.isEmpty()) item { Empty(t("no_races")) }
-        // Le Mans Ultimate has no iRating nor licences
-        if (gm == "iracing") item { Licences(vm) }
+        // Le Mans Ultimate has no iRating nor licences: its Safety Rating and Driver Rank in their place
+        if (gm == "iracing") item { Licences(vm) } else if (gm == "lmu") item { LmuRatings(vm) }
         item { DaysDriven(vm, nav, races) }
         // no sync card (the sync is automatic): only what went wrong, when something did
         a.error?.let { e -> item { Text(t(e), color = Bad, fontSize = 12.sp) } }
@@ -2985,7 +2985,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
         item { Section(t("language")) }
         item {
             Panel {
-                listOf("system" to t("lang_system"), "en" to "English", "es" to "Español").forEach { (k, label) ->
+                listOf("system" to t("lang_system"), "en" to "English", "es" to "Español", "pt" to "Português").forEach { (k, label) ->
                     Row(Modifier.fillMaxWidth().clickable { vm.setLanguage(k) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(I18n.choice == k, { vm.setLanguage(k) })
                         Text(label)
@@ -3370,6 +3370,28 @@ private fun Licences(vm: PitlaneViewModel) {
             }
         }
         Text(t("lic_note"), color = Muted, fontSize = 11.sp)
+    }
+}
+
+/** Le Mans Ultimate's Safety Rating and Driver Rank as the PC last saw them ("lmu" in ratings.json, as the game wrote
+ *  them), like the web's Home; "In development" until the PC has written them. */
+@Composable
+private fun LmuRatings(vm: PitlaneViewModel) {
+    val acc by vm.account.collectAsState()
+    val r = remember(acc) { vm.lmuRating() }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Section(t("lmu_ratings"))
+        Panel {
+            if (r == null) Status(t("in_development"), Accent)
+            else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Safety Rating" to r.first, "Driver Rank" to r.second).forEach { (l, v) ->
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(l, color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(v.ifEmpty { "–" }, color = Fg, fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, maxLines = 1)
+                    }
+                }
+            }
+        }
     }
 }
 

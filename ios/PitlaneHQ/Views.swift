@@ -128,6 +128,34 @@ struct Licences: View {
     }
 }
 
+/// Le Mans Ultimate's Safety Rating and Driver Rank as the PC last saw them ("lmu" in ratings.json, as the game wrote
+/// them), like the web's Home; "In development" until the PC has written them.
+struct LmuRatings: View {
+    @EnvironmentObject var account: Account
+    var body: some View {
+        let r = account.lmuRating()
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: t("lmu_ratings"))
+            Panel {
+                if let r {
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(Array([("Safety Rating", r.sr), ("Driver Rank", r.dr)].enumerated()), id: \.offset) { _, m in
+                            let v = m.1
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(m.0).font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted).lineLimit(1)
+                                Text(v.isEmpty ? "–" : v).font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(Theme.fg).lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                } else {
+                    StatusPill(text: t("in_development"), color: Theme.accent)
+                }
+            }
+        }
+    }
+}
+
 /// One discipline's card: its symbol, the iRating (with what your last five races of it gave, like the web) and the
 /// licence pill ("B 3.21" in the licence's colour); dim while the PC has seen nothing of it.
 struct LicCard: View {
@@ -1405,8 +1433,8 @@ struct HomeView: View {
             }
             HomeRecent(races: Array(races.dropFirst()), sessions: sessions) { inbox.analysisTab = 2; inbox.goTab = 1 }
             if races.isEmpty && sessions.isEmpty { EmptyNote(text: t("no_races")) }
-            // Le Mans Ultimate has no iRating nor licences
-            if account.game == "iracing" { Licences() }
+            // Le Mans Ultimate has no iRating nor licences: its Safety Rating and Driver Rank in their place
+            if account.game == "iracing" { Licences() } else if account.game == "lmu" { LmuRatings() }
             DaysDriven(races: races)
             // no sync card (the sync is automatic): only what went wrong, when something did
             if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
@@ -4360,11 +4388,11 @@ struct SettingsView: View {
             SteamPanel()
             SectionLabel(text: t("language"))
             Panel {
-                ForEach(["system", "en", "es"], id: \.self) { k in
+                ForEach(["system", "en", "es", "pt"], id: \.self) { k in
                     Button { i18n.choice = k } label: {
                         HStack {
                             Image(systemName: i18n.choice == k ? "largecircle.fill.circle" : "circle").foregroundColor(Theme.accent)
-                            Text(k == "system" ? t("lang_system") : k == "en" ? "English" : "Español").foregroundColor(Theme.fg)
+                            Text(k == "system" ? t("lang_system") : k == "en" ? "English" : k == "es" ? "Español" : "Português").foregroundColor(Theme.fg)
                             Spacer()
                         }
                         .padding(.vertical, 4)

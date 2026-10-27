@@ -411,6 +411,14 @@ class AccountRepository(context: Context) {
         return o.keys().asSequence().mapNotNull { k -> o.optJSONObject(k)?.takeIf { it.optInt("ir") > 1 }?.let { k to Triple(it.optInt("ir"), it.optString("lic"), it.optLong("at")) } }.toMap() // 1 / "R 0.01": an offline session's placeholder
     }
 
+    /** Your Le Mans Ultimate Safety Rating and Driver Rank as the PC last saw them ("lmu" in ratings.json: sr, dr, at), as the game wrote them. */
+    fun lmuRating(): Pair<String, String>? {
+        val o = (if (demo) null else saved("ratings"))?.let { runCatching { JSONObject(it) }.getOrNull() }?.optJSONObject("lmu") ?: return null
+        fun v(k: String) = o.opt(k)?.takeIf { it != JSONObject.NULL }?.toString()?.trim().orEmpty()
+        val sr = v("sr"); val dr = v("dr")
+        return if (sr.isEmpty() && dr.isEmpty()) null else sr to dr
+    }
+
     /** Your notes on other drivers, by their key (or "n:" and their name for older races). */
     fun driverNotes(): Map<String, DriverNote> {
         val o = (if (demo) prefs.getString("demoDrivers", null) else saved("drivers"))?.let { runCatching { JSONObject(it) }.getOrNull() } ?: return emptyMap()
