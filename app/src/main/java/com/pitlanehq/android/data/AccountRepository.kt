@@ -613,7 +613,7 @@ class AccountRepository(context: Context) {
                 cat = s.optStr("cat"), lic = s.optStr("lic"),
                 drvs = s.optStr("drvs")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(),
                 ai = s.optInt("ai", 0) == 1 || offlineAI(id, kind, s.optStr("game")),
-                game = s.optStr("game") ?: "iracing"
+                game = s.optStr("game") ?: "iracing", cls = s.clsOf()
             )
         }, g.stale)
     }
@@ -788,7 +788,7 @@ class AccountRepository(context: Context) {
         val a = JSONObject(g.data).optJSONArray("combos") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
             val c = a.getJSONObject(i)
-            Combo(c.optLong("trackId"), c.optString("track"), c.optLong("carId"), c.optString("car"), c.optInt("laps"), c.optDouble("best").pos(), c.optStr("cat"))
+            Combo(c.optLong("trackId"), c.optString("track"), c.optLong("carId"), c.optString("car"), c.optInt("laps"), c.optDouble("best").pos(), c.optStr("cat"), c.clsOf())
         }, g.stale)
     }
 
@@ -804,7 +804,7 @@ class AccountRepository(context: Context) {
         val p = r.optJSONObject("prev")
         return RecordItem(r.optString("id"), if (r.has("trackId")) r.optLong("trackId") else trackId, r.optStr("track") ?: track, r.optLong("carId"), r.optStr("car") ?: "", r.optStr("cat"),
             r.optDouble("time"), r.optLong("created"), r.optStr("alias") ?: "Driver", r.optInt("n"), r.optBoolean("hasTrace"), r.optBoolean("mine"), r.optBoolean("prof"), r.optBoolean("sup"),
-            p?.optDouble("time")?.takeIf { it > 0 }, p?.optStr("alias"))
+            p?.optDouble("time")?.takeIf { it > 0 }, p?.optStr("alias"), r.clsOf())
     }
 
     /** One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it. */
@@ -840,6 +840,8 @@ class AccountRepository(context: Context) {
     }
 
     private fun JSONObject.optStr(k: String): String? = optString(k, "").takeUnless { it.isEmpty() || it == "null" }
+    /** The car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…). */
+    private fun JSONObject.clsOf(): String? = optStr("cls") ?: optStr("carClass") ?: optStr("class")
 
     /** A driver's profile, from one of their laps on a leaderboard, or yours (lapId null). */
     fun profile(lapId: String?): DriverProfile {
@@ -869,7 +871,8 @@ class AccountRepository(context: Context) {
     /** Leagues (in development: admins only for now): post one with a Discord invite, edit or remove yours. */
     @Volatile var leagueLimit = LeagueLimit()
     fun leagues(): List<League> {
-        val r = JSONObject(call("GET", "/community/leagues"))
+        val gm = game
+        val r = JSONObject(call("GET", "/community/leagues?game=$gm"))
         val lim = r.optJSONObject("limits")
         leagueLimit = LeagueLimit(r.optInt("limit", 3), r.optBoolean("supporter"), lim?.optInt("free", 3) ?: 3, lim?.optInt("supporter", 10) ?: 10)
         val a = r.optJSONArray("leagues") ?: JSONArray()
@@ -878,13 +881,13 @@ class AccountRepository(context: Context) {
             val strs = { k: String -> x.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.optString(it) } } ?: emptyList() }
             League(x.optString("id"), fixTxt(x.optString("name")), fixTxt(x.optString("about")), x.optStr("cat"), x.optString("discord"), x.optString("web"), x.optString("schedule"), fixTxt(x.optString("cars")), x.optString("lang"), x.optBoolean("mine"), x.optString("by"),
                 cats = strs("cats"), days = ints("days"), time = x.optString("time"), tz = x.optString("tz"), open = x.optBoolean("open", true), views = if (x.has("views")) x.optInt("views") else -1, clicks = if (x.has("clicks")) x.optInt("clicks") else -1,
-                created = x.optLong("created"), updated = x.optLong("updated"))
+                created = x.optLong("created"), updated = x.optLong("updated"), game = x.optStr("game") ?: gm)
         }
     }
     fun saveLeague(id: String?, l: League) {
         call("POST", "/community/leagues" + (id?.let { "/" + URLEncoder.encode(it, "UTF-8") } ?: ""), JSONObject().put("name", l.name).put("about", l.about).put("cats", JSONArray(l.cats))
             .put("days", JSONArray(l.days)).put("time", l.time).put("tz", l.tz).put("open", l.open)
-            .put("discord", l.discord).put("web", l.web).put("schedule", l.schedule).put("cars", l.cars).put("lang", l.lang))
+            .put("discord", l.discord).put("web", l.web).put("schedule", l.schedule).put("cars", l.cars).put("lang", l.lang).put("game", l.game))
     }
     fun deleteLeague(id: String) { call("POST", "/community/leagues/" + URLEncoder.encode(id, "UTF-8"), JSONObject().put("delete", true)) }
     /** A post opened (view) or one of its links pressed (discord, web): the server counts it once per driver and day. */

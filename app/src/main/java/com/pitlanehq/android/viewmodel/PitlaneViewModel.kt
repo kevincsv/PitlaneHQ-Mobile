@@ -114,6 +114,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         listOf(board, reports, setups, trackPage).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         if (combos.value.data != null || combos.value.loading) loadCombos() else combos.value = Loadable()
         if (records.value.data != null || records.value.loading) loadRecords() else records.value = Loadable()
+        // each game has its own leagues
+        if (leagues.value.data != null || leagues.value.loading) loadLeagues() else leagues.value = Loadable()
     }
 
     private fun noteStats() {

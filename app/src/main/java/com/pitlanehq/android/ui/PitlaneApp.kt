@@ -1081,8 +1081,13 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                     val carOf = { x: CloudSession -> nameKey(carFam(x.car)) }
                     val zone = java.time.ZoneId.systemDefault()
                     val dayOf = { x: CloudSession -> java.time.Instant.ofEpochMilli(x.started).atZone(zone).toLocalDate().let { "${it.year}-${it.monthValue}-${it.dayOfMonth}" } }
+                    // iRacing's disciplines, or Le Mans Ultimate's classes (no filter with one class only)
+                    val gm = vm.game
+                    val catKey = { x: CloudSession -> catOf(x.game, x.cat, x.cls, x.car) }
+                    val cats = catKeys(gm, all.map(catKey).toSet()).filter { k -> all.any { catKey(it) == k } }
+                    val fc = fCat.takeIf { it in cats } ?: ""
                     val match = { x: CloudSession, skip: String ->
-                        (skip == "cat" || fCat.isEmpty() || x.cat == fCat) && (skip == "car" || fCar.isEmpty() || carOf(x) == fCar) && (skip == "track" || fTrack.isEmpty() || trackOf(x) == fTrack) &&
+                        (skip == "cat" || fc.isEmpty() || catKey(x) == fc) && (skip == "car" || fCar.isEmpty() || carOf(x) == fCar) && (skip == "track" || fTrack.isEmpty() || trackOf(x) == fTrack) &&
                             (skip == "kind" || fKind.isEmpty() || kindOf(x.kind) == fKind) && (skip == "day" || fDay.isEmpty() || dayOf(x) == fDay)
                     }
                     val forCat = all.filter { match(it, "cat") }
@@ -1096,7 +1101,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                     if (all.size > 1) item {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                FilterMenu(t("lic_all_full"), forCat.size, DISCS.filter { k -> all.any { it.cat == k } }.map { k -> Triple(k, discName(k), forCat.count { it.cat == k }) }, fCat, Modifier.weight(1f)) { fCat = it }
+                                if (gm != "lmu" || cats.isNotEmpty()) FilterMenu(t(if (gm == "lmu") "class_all" else "lic_all_full"), forCat.size, cats.map { k -> Triple(k, catName(gm, k), forCat.count { catKey(it) == k }) }, fc, Modifier.weight(1f)) { fCat = it }
                                 FilterMenu(t("kind_all"), forKind.size, listOf("race", "qual", "prac", "test").map { k -> Triple(k, t("filt_$k"), forKind.count { kindOf(it.kind) == k }) }.filter { it.third > 0 || it.first == fKind }, fKind, Modifier.weight(1f)) { fKind = it }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1106,7 +1111,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 TextButton({ showDays = !showDays }) { Text((if (fDay.isEmpty()) t("days_drove") else t("days_drove") + " · " + fDay) + if (showDays) " ▴" else " ▾", color = Accent, fontSize = 13.sp) }
                                 Spacer(Modifier.weight(1f))
-                                if ((fCat + fCar + fTrack + fKind + fDay).isNotEmpty()) TextButton({ fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }) {
+                                if ((fc + fCar + fTrack + fKind + fDay).isNotEmpty()) TextButton({ fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }) {
                                     Text(t("clear_filters") + " · " + all.count { match(it, "") } + "/" + all.size, color = Accent, fontSize = 13.sp)
                                 }
                             }
@@ -1168,7 +1173,7 @@ private fun SessionHead(x: CloudSession, onChoose: () -> Unit) {
         SessionBadges(x)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
-                Text(listOf(kindText(x.kind), day(x.started), discName(x.cat)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(listOf(kindText(x.kind), day(x.started), sessCat(x)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 LicBadge(x.lic)
             }
             TextButton(onChoose) { Text(t("choose_session") + " ▾", color = Accent, fontSize = 12.sp, maxLines = 1) }
@@ -1384,9 +1389,9 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val l by vm.laps.collectAsState()
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
         state(l) { vm.loadLaps(x.id) }
-        if (x.cat != null) item {
+        if (sessCat(x).isNotEmpty()) item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(t("viewing", x.car, discName(x.cat)), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f, fill = false))
+                Text(t("viewing", x.car, sessCat(x)), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f, fill = false))
                 LicBadge(x.lic)
             }
         }
@@ -1613,6 +1618,20 @@ private val DISC_PATHS = mapOf(
 private fun kindOf(k: String): String { val x = k.lowercase(); return if ("race" in x) "race" else if ("qual" in x) "qual" else if ("test" in x) "test" else if ("prac" in x || "warm" in x || "offline" in x) "prac" else "" }
 private val LICS = listOf("R", "D", "C", "B", "A", "P")
 private fun discName(k: String?) = if (k in DISCS) t("disc_$k") else ""
+/** The category of a session, a leaderboard or a record in its game: iRacing's discipline, or Le Mans Ultimate's
+ *  class (Hypercar, LMP2, LMP3, LMGT3, GTE: the server's, else from the car's name). */
+private fun catOf(game: String, cat: String?, cls: String?, car: String): String = if (game == "lmu") lmuClass(cls, car) else cat ?: ""
+/** Its name: the discipline's in the app's language, or the class itself (a proper name). */
+private fun catName(game: String, k: String?): String = if (game == "lmu") k ?: "" else discName(k)
+/** The categories a filter offers: every discipline, or the classes of Le Mans Ultimate the list has (none with one only). */
+private fun catKeys(game: String, have: Collection<String>): List<String> =
+    if (game != "lmu") DISCS else (LMU_CLASSES + have.filter { it.isNotEmpty() && it !in LMU_CLASSES }.distinct().sorted()).filter { it in have }.takeIf { it.size > 1 } ?: emptyList()
+/** A class's colour (Le Mans Ultimate), else the discipline's. */
+private fun catColor(game: String, k: String): Color = if (game != "lmu") discColor(k) else when (k) {
+    "Hypercar" -> Color(0xFFFF6363); "LMP2" -> Color(0xFF5AA9FF); "LMP3" -> Color(0xFFB98CFF); "LMGT3" -> Color(0xFF38C97C); "GTE" -> Color(0xFFFFB02E); else -> Muted
+}
+/** A session's category as its name: the discipline, or its Le Mans Ultimate class. */
+private fun sessCat(x: CloudSession): String = catName(x.game, catOf(x.game, x.cat, x.cls, x.car))
 /** Each discipline's colour, the same as the web's Community cards. */
 private fun discColor(k: String) = when (k) { "oval" -> Color(0xFFFFB02E); "sports_car" -> Color(0xFF5AA9FF); "formula_car" -> Color(0xFFB98CFF); "dirt_oval" -> Color(0xFFC99A5B); "dirt_road" -> Color(0xFF8FBF6A); else -> Fg }
 private fun licColor(k: String) = when (k) { "R" -> Color(0xFFFF6363); "D" -> Color(0xFFFF8F45); "C" -> Color(0xFFF2C94C); "B" -> Color(0xFF38C97C); "A" -> Color(0xFF5C9DFF); else -> Color(0xFFC9D1DC) }
@@ -1877,6 +1896,8 @@ private fun LeagueHub(vm: PitlaneViewModel, acc: AccountState) {
     var edit by remember { mutableStateOf<League?>(null) }
     val closed = lg.error == "leagues are in development"
     val all = lg.data ?: emptyList()
+    // Le Mans Ultimate's leagues have no disciplines: no filter by them
+    val lmu = vm.game == "lmu"
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (closed) Panel {
             Row(verticalAlignment = Alignment.CenterVertically) { Text(t("leagues"), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f)); Status(t("in_development"), Accent) }
@@ -1890,7 +1911,7 @@ private fun LeagueHub(vm: PitlaneViewModel, acc: AccountState) {
                 if (lg.loading && lg.data == null) Text("…", color = Muted)
                 lg.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
                 if (tab == 0) {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (!lmu) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Chip(t("disc_all") + " (" + all.size + ")", cat.isEmpty()) { cat = "" }
                         DISCS.forEach { k -> Chip(discName(k) + " (" + all.count { k in leagueDiscs(it) } + ")", cat == k) { cat = if (cat == k) "" else k } }
                     }
@@ -1907,7 +1928,7 @@ private fun LeagueHub(vm: PitlaneViewModel, acc: AccountState) {
                     OutlinedTextField(q, { q = it }, label = { Text(t("league_search")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }
                 val shown = run {
-                    val l = if (tab == 2) all.filter { it.mine } else all.filter { x -> (cat.isEmpty() || cat in leagueDiscs(x)) && (day < 0 || day in x.days) && (!onlyOpen || x.open) && (q.isBlank() || listOf(x.name, x.about, x.cars, x.lang, x.by).any { it.contains(q, true) }) }
+                    val l = if (tab == 2) all.filter { it.mine } else all.filter { x -> (lmu || cat.isEmpty() || cat in leagueDiscs(x)) && (day < 0 || day in x.days) && (!onlyOpen || x.open) && (q.isBlank() || listOf(x.name, x.about, x.cars, x.lang, x.by).any { it.contains(q, true) }) }
                     if (tab == 0 && sortNext) l.map { it to leagueNext(it)?.toInstant()?.toEpochMilli() }.sortedWith(compareBy<Pair<League, Long?>> { it.second == null }.thenBy { it.second ?: 0L }.thenByDescending { it.first.updated }).map { it.first }
                     else l.sortedByDescending { it.created }
                 }
@@ -1960,7 +1981,9 @@ private fun leagueNextText(x: League): Pair<String, Boolean>? {
 /** One post in the hub; a tap opens it. */
 @Composable
 private fun LeagueCard(x: League, onOpen: () -> Unit) {
-    val cs = leagueDiscs(x)
+    // a Le Mans Ultimate league has no disciplines: the game's name instead
+    val lmu = x.game == "lmu"
+    val cs = if (lmu) emptyList() else leagueDiscs(x)
     Card(
         Modifier.fillMaxWidth().clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = Surface),
         border = BorderStroke(1.dp, if (x.open) Good.copy(alpha = .5f) else Line), shape = MaterialTheme.shapes.small
@@ -1970,7 +1993,7 @@ private fun LeagueCard(x: League, onOpen: () -> Unit) {
                 cs.forEach { DiscIcon(it, 26.dp) }
                 Column(Modifier.weight(1f)) {
                     Text(x.name, fontWeight = FontWeight.Black)
-                    Text(listOf(if (cs.size > 1) t("league_mixed") else "", x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                    Text(listOf(if (lmu) gameName(x.game) else if (cs.size > 1) t("league_mixed") else "", x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
                 }
             }
             if (x.open) Status(t("league_open"), Good)
@@ -1995,7 +2018,8 @@ private fun LeagueDetail(vm: PitlaneViewModel, x: League, acc: AccountState, onC
     var days by remember(x.id) { mutableStateOf<List<LeagueDay>?>(null) }
     var copied by remember { mutableStateOf(false) }
     LaunchedEffect(x.id) { if (!x.mine) vm.hitLeague(x.id, "view"); if (x.views >= 0) vm.leagueDays(x.id) { days = it } }
-    val cs = leagueDiscs(x)
+    val lmu = x.game == "lmu"
+    val cs = if (lmu) emptyList() else leagueDiscs(x)
     AlertDialog(
         onDismissRequest = onClose,
         confirmButton = { TextButton(onClose) { Text(t("close"), color = Accent) } },
@@ -2004,7 +2028,7 @@ private fun LeagueDetail(vm: PitlaneViewModel, x: League, acc: AccountState, onC
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     cs.forEach { DiscIcon(it, 24.dp) }
-                    Text(listOf(cs.joinToString(" + ") { discName(it) }, x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                    Text(listOf(if (lmu) gameName(x.game) else cs.joinToString(" + ") { discName(it) }, x.lang, t("by_name", x.by)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
                 }
                 if (x.open) Status(t("league_open"), Good)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2069,14 +2093,19 @@ private fun LeagueForm(vm: PitlaneViewModel, edit: League?, onDone: () -> Unit) 
     var open by rememberSaveable(edit) { mutableStateOf(edit?.open ?: true) }
     var err by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
-    val catList = cats.split(",").filter { it.isNotBlank() }
+    // the game the league races in: the one shown (an edited post keeps its own); Le Mans Ultimate has no disciplines
+    val gm = edit?.game ?: vm.game
+    val lmu = gm == "lmu"
+    val catList = if (lmu) listOf("sports_car") else cats.split(",").filter { it.isNotBlank() }
     val dayList = days.split(",").filter { it.isNotBlank() }.map { it.toInt() }
     Panel {
         OutlinedTextField(name, { name = it }, label = { Text(t("league_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        Text(t("league_discs"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            DISCS.forEach { k -> Chip(discName(k), k in catList) { cats = (if (k in catList) catList - k else catList + k).joinToString(",") } }
-        }
+        if (!lmu) {
+            Text(t("league_discs"), color = Muted, fontSize = 11.sp, modifier = Modifier.padding(top = 8.dp))
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                DISCS.forEach { k -> Chip(discName(k), k in catList) { cats = (if (k in catList) catList - k else catList + k).joinToString(",") } }
+            }
+        } else Spacer(Modifier.height(6.dp))
         Text(t("league_days"), color = Muted, fontSize = 11.sp)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (0..6).forEach { d -> Chip(t("wd_$d"), d in dayList) { days = (if (d in dayList) dayList - d else dayList + d).sorted().joinToString(",") } }
@@ -2110,7 +2139,7 @@ private fun LeagueForm(vm: PitlaneViewModel, edit: League?, onDone: () -> Unit) 
             }
             if (err == null) {
                 busy = true
-                vm.saveLeague(edit?.id, League(edit?.id ?: "", name.trim(), about.trim(), null, discord.trim(), web.trim(), "", cars.trim(), lang.trim(), cats = catList, days = dayList, time = time.trim(), tz = tz, open = open)) { e ->
+                vm.saveLeague(edit?.id, League(edit?.id ?: "", name.trim(), about.trim(), null, discord.trim(), web.trim(), "", cars.trim(), lang.trim(), cats = catList, days = dayList, time = time.trim(), tz = tz, open = open, game = gm)) { e ->
                     busy = false
                     if (e == null) onDone() else err = e
                 }
@@ -2165,27 +2194,32 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
             item { LeagueHub(vm, acc) }
             return@Screen
         }
+        // iRacing's disciplines, or Le Mans Ultimate's classes (no filter with one class only)
+        val gm = vm.game
+        val comboCat = { x: Combo -> catOf(gm, x.cat, x.cls, x.car) }
+        val cats = catKeys(gm, (c.data ?: emptyList()).map(comboCat).toSet())
+        val fc = (if (gm == "lmu") cat.takeIf { it in cats } else cat.takeIf { it in DISCS }) ?: ""
         item { WebNote(t("community_web")) }
-        item { RecentRecords(vm, nav, cat) }
+        item { RecentRecords(vm, nav, fc) }
         // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
-        item {
+        if (cats.isNotEmpty()) item {
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Chip(t("disc_all"), cat.isEmpty()) { cat = "" }
-                DISCS.forEach { k -> Chip(discName(k) + " (" + (c.data ?: emptyList()).count { it.cat == k } + ")", cat == k) { cat = if (cat == k) "" else k } }
+                Chip(t("disc_all"), fc.isEmpty()) { cat = "" }
+                cats.forEach { k -> Chip(catName(gm, k) + " (" + (c.data ?: emptyList()).count { comboCat(it) == k } + ")", fc == k) { cat = if (fc == k) "" else k } }
             }
         }
         item { OutlinedTextField(q, { q = it }, label = { Text(t("search")) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }
         when (tab) {
             0 -> {
                 state(c) { vm.loadCombos() }
-                val list = (c.data ?: emptyList()).filter { match(it.track, it.car) && (cat.isEmpty() || it.cat == cat) }
+                val list = (c.data ?: emptyList()).filter { match(it.track, it.car) && (fc.isEmpty() || comboCat(it) == fc) }
                 if (c.data != null && list.isEmpty()) item { Empty(t("nothing_found")) }
                 items(list, key = { "${it.trackId}-${it.carId}" }) { x ->
                     Panel(Modifier.clickable { vm.combo = x; vm.loadBoard(x); nav.navigate("combo") }) {
                         Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(listOf(discName(x.cat), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                            Text(listOf(catName(gm, comboCat(x)), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
                             Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                         }
                     }
@@ -2236,7 +2270,9 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
     LaunchedEffect(Unit) { if (r.data == null && !r.loading) vm.loadRecords() }
     var all by rememberSaveable { mutableStateOf(false) }
     var open by rememberSaveable { mutableStateOf("") }
-    val list = (r.data ?: emptyList()).filter { cat.isEmpty() || it.cat == cat }
+    val gm = vm.game
+    val recCat = { x: RecordItem -> catOf(gm, x.cat, x.cls, x.car) }
+    val list = (r.data ?: emptyList()).filter { cat.isEmpty() || recCat(it) == cat }
     fun name(a: String?) = if (a == null || a == "Anonymous") t("anonymous") else a
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2256,7 +2292,7 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
         val most = list.mapNotNull { x -> x.prevTime?.let { it - x.time } }.maxOrNull()?.coerceAtLeast(0.001) ?: 1.0
         (if (all) list else list.take(6)).forEach { x ->
             val on = open == x.id
-            val col = discColor(x.cat ?: "")
+            val col = catColor(gm, recCat(x))
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp).clip(RoundedCornerShape(12.dp)).background(Ink)
                     .border(1.dp, if (on) Accent.copy(alpha = 0.45f) else Line, RoundedCornerShape(12.dp))
@@ -2266,7 +2302,7 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
                 Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(col))
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Text(day(x.created) + (x.cat?.let { " · " + discName(it) } ?: ""), color = Muted, fontSize = 11.sp, maxLines = 1)
+                        Text(listOf(day(x.created), catName(gm, recCat(x))).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp, maxLines = 1)
                         Text(x.car, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(x.track, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -2314,7 +2350,7 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(x.car, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(listOf(discName(x.cat), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                 }
@@ -2392,7 +2428,7 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(t("you_fastest_sub", all.size, lapTime(all[0].time)), color = Muted, fontSize = 12.sp)
                 } else if (mineAll >= 0) Text(t("your_position", mineAll + 1, all.size, lapTime(all[mineAll].time)), color = Accent, fontWeight = FontWeight.Bold)
                 else Text(t("not_on_board"), color = Muted, fontSize = 12.sp)
-                Text(listOf(discName(x.cat), t("drivers", all.size)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
+                Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), t("drivers", all.size)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
             }
         }
         item { Section(t("fastest_drivers")) }

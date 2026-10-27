@@ -59,7 +59,8 @@ data class CloudSession(
     val lic: String? = null,   // your license class in it: R, D, C, B, A, P
     val drvs: List<String> = emptyList(),  // the friends who drove laps of it in DRINKS mode
     val ai: Boolean = false,   // a session against iRacing's AI
-    val game: String = "iracing"  // the sim it was driven in: iracing or lmu (Le Mans Ultimate)
+    val game: String = "iracing",  // the sim it was driven in: iracing or lmu (Le Mans Ultimate)
+    val cls: String? = null       // the car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…)
 )
 
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0, val drv: String = "")  // drv: a friend's lap (DRINKS mode)
@@ -91,13 +92,13 @@ data class PersonalBest(
 )
 
 /** A track and car the community has laps for (GET /community/combos). */
-data class Combo(val trackId: Long, val track: String, val carId: Long, val car: String, val laps: Int, val best: Double?, val cat: String? = null)
+data class Combo(val trackId: Long, val track: String, val carId: Long, val car: String, val laps: Int, val best: Double?, val cat: String? = null, val cls: String? = null)
 
 /** A record of the leaderboards: the fastest lap of a car and track, and the lap it beat (the second fastest), for
  *  Community's "Recent records" and the track page. */
 data class RecordItem(val id: String, val trackId: Long, val track: String, val carId: Long, val car: String, val cat: String?, val time: Double, val created: Long,
-    val alias: String, val n: Int, val hasTrace: Boolean, val mine: Boolean, val prof: Boolean, val sup: Boolean, val prevTime: Double?, val prevAlias: String?) {
-    val combo get() = Combo(trackId, track, carId, car, n, time, cat)
+    val alias: String, val n: Int, val hasTrace: Boolean, val mine: Boolean, val prof: Boolean, val sup: Boolean, val prevTime: Double?, val prevAlias: String?, val cls: String? = null) {
+    val combo get() = Combo(trackId, track, carId, car, n, time, cat, cls)
 }
 
 /** A track's page (in development): its layout and official turns, how many drivers and laps it has, the record of every car on it. */
@@ -123,7 +124,7 @@ data class ProfileLap(val track: String, val car: String, val time: Double, val 
 data class LeagueLimit(val limit: Int = 3, val supporter: Boolean = false, val free: Int = 3, val supporterLimit: Int = 10)
 data class League(val id: String, val name: String, val about: String, val cat: String?, val discord: String, val web: String, val schedule: String, val cars: String, val lang: String, val mine: Boolean = false, val by: String = "",
     val cats: List<String> = emptyList(), val days: List<Int> = emptyList(), val time: String = "", val tz: String = "", val open: Boolean = true, val views: Int = -1, val clicks: Int = -1,
-    val created: Long = 0, val updated: Long = 0)
+    val created: Long = 0, val updated: Long = 0, val game: String = "iracing")
 
 /** One day of a league post's views and clicks, for its creator's chart. */
 data class LeagueDay(val day: String, val views: Int, val clicks: Int)
@@ -158,6 +159,27 @@ data class SteamLink(val linked: Boolean, val id: String, val persona: String, v
 
 /** The sims the phones show, one at a time (Home, Analysis, Community): iRacing and Le Mans Ultimate (in beta). */
 val GAMES = listOf("iracing", "lmu")
+
+/** Le Mans Ultimate's classes, its categories where iRacing has its disciplines (proper names, the same in every language). */
+val LMU_CLASSES = listOf("Hypercar", "LMP2", "LMP3", "LMGT3", "GTE")
+
+/** The Le Mans Ultimate class of a car: the server's when it sends one, else from the car's name ("" when unknown). */
+fun lmuClass(cls: String?, car: String): String {
+    val c = (cls ?: "").trim()
+    if (c.isNotEmpty()) {
+        val l = c.lowercase()
+        return when { "hyper" in l || l == "lmh" || l == "lmdh" -> "Hypercar"; "lmp2" in l -> "LMP2"; "lmp3" in l -> "LMP3"; "gt3" in l -> "LMGT3"; "gte" in l -> "GTE"; else -> c }
+    }
+    val rx = { p: String -> Regex(p, RegexOption.IGNORE_CASE).containsMatchIn(car) }
+    return when {
+        rx("\\blmp2\\b|oreca 07|alpine a470") -> "LMP2"
+        rx("\\blmp3\\b|ligier js p3|js p325|ginetta g61|duqueine d0[89]") -> "LMP3"
+        rx("gt3") -> "LMGT3"
+        rx("\\bgte\\b|488 gte|911 rsr|c8\\.r|vantage amr") -> "GTE"
+        rx("hypercar|\\blmdh\\b|\\blmh\\b|499p|\\b963\\b|gr010|9x8|v-series|a424|sc63|m hybrid|vanwall|\\b680\\b|glickenhaus|scg 007|isotta|tipo 6|valkyrie") -> "Hypercar"
+        else -> ""
+    }
+}
 
 /** A race the PC recorded (races.json in the account sync). */
 data class Race(

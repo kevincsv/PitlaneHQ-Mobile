@@ -1959,16 +1959,20 @@ struct AnalysisView: View {
         let c = Calendar.current.dateComponents([.year, .month, .day], from: Date(timeIntervalSince1970: x.started / 1000))
         return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
     }
+    /// its discipline (iRacing) or its class (Le Mans Ultimate)
+    private func catKey(_ x: CloudSession) -> String { catOf(x.game, x.cat, x.cls, x.car) }
     /// every filter but one (what that one can still choose)
     private func match(_ x: CloudSession, skip: String = "") -> Bool {
-        (skip == "cat" || fCat.isEmpty || x.cat == fCat) && (skip == "car" || fCar.isEmpty || carKey(x) == fCar) && (skip == "track" || fTrack.isEmpty || trackKey(x) == fTrack) &&
+        (skip == "cat" || fCat.isEmpty || catKey(x) == fCat) && (skip == "car" || fCar.isEmpty || carKey(x) == fCar) && (skip == "track" || fTrack.isEmpty || trackKey(x) == fTrack) &&
             (skip == "kind" || fKind.isEmpty || kindOf(x.kind) == fKind) && (skip == "day" || fDay.isEmpty || dayKey(x) == fDay)
     }
 
     /// four small menus (discipline, kind of session, car, track) and the days you drove behind one button,
     /// like the web's "Choose a session"
     @ViewBuilder private func filters(_ all: [CloudSession], _ forCat: [CloudSession], _ forKind: [CloudSession], _ forCar: [CloudSession], _ forTrack: [CloudSession], _ forDay: [CloudSession], _ shown: Int) -> some View {
-        let cats: [(String, String, Int)] = DISCS.filter { k in all.contains { $0.cat == k } }.map { k in (k, discName(k), forCat.filter { $0.cat == k }.count) }
+        // iRacing's disciplines, or Le Mans Ultimate's classes (no filter with one class only)
+        let gm = account.game
+        let cats: [(String, String, Int)] = catKeys(gm, Set(all.map { catKey($0) })).filter { k in all.contains { catKey($0) == k } }.map { k in (k, catName(gm, k), forCat.filter { catKey($0) == k }.count) }
         let kinds: [(String, String, Int)] = ["race", "qual", "prac", "test"].map { k in (k, t("filt_" + k), forKind.filter { kindOf($0.kind) == k }.count) }.filter { $0.2 > 0 || $0.0 == fKind }
         let cars = group(forCar, carKey) { carFam($0.car) }
         let tracks = group(forTrack, trackKey, trackName)
@@ -1976,7 +1980,7 @@ struct AnalysisView: View {
         let dayLabel: String = (fDay.isEmpty ? t("days_drove") : t("days_drove") + " · " + fDay) + (showDays ? " ▴" : " ▾")
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                FilterMenu(all: t("lic_all_full"), total: forCat.count, items: cats, value: $fCat)
+                if gm != "lmu" || !cats.isEmpty { FilterMenu(all: t(gm == "lmu" ? "class_all" : "lic_all_full"), total: forCat.count, items: cats, value: $fCat) }
                 FilterMenu(all: t("kind_all"), total: forKind.count, items: kinds, value: $fKind)
             }
             HStack(spacing: 6) {
@@ -2077,7 +2081,7 @@ struct AnalysisView: View {
         .refreshable { await load() }
         .task(id: "\(tab)-\(onlyBest)-\(account.demo)-\(account.game)") {
             if account.demo != lastDemo || account.game != lastGame {
-                lastDemo = account.demo; lastGame = account.game; cur = nil; sessions.data = nil; bests.data = nil; laps.data = nil; coach = nil; coachKey = ""
+                lastDemo = account.demo; lastGame = account.game; fCat = ""; cur = nil; sessions.data = nil; bests.data = nil; laps.data = nil; coach = nil; coachKey = ""
             }
             if tab < 2 { pickFor = tab }
             if tab == 1 && laps.data != nil { await loadCoach() }
@@ -2097,8 +2101,8 @@ struct SessionView: View {
     var body: some View {
         Screen(title: session.track, sub: session.car) {
             LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await laps.load { try await account.laps(session.id) } } }
-            if session.cat != nil {
-                HStack(spacing: 6) { Text(t("viewing", session.car, discName(session.cat))).font(.caption).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
+            if !sessCat(session).isEmpty {
+                HStack(spacing: 6) { Text(t("viewing", session.car, sessCat(session))).font(.caption).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
             }
             SessionBadges(x: session)
             if let ls = laps.data { SessionLaps(session: session, laps: ls) }
@@ -2956,6 +2960,31 @@ func kindOf(_ k: String) -> String {
 }
 let LICS = ["R", "D", "C", "B", "A", "P"]
 func discName(_ k: String?) -> String { k.map { DISCS.contains($0) ? t("disc_" + $0) : "" } ?? "" }
+/// The category of a session, a leaderboard or a record in its game: iRacing's discipline, or Le Mans Ultimate's
+/// class (Hypercar, LMP2, LMP3, LMGT3, GTE: the server's, else from the car's name).
+func catOf(_ game: String, _ cat: String?, _ cls: String?, _ car: String) -> String { game == "lmu" ? lmuClass(cls, car) : (cat ?? "") }
+/// Its name: the discipline's in the app's language, or the class itself (a proper name).
+func catName(_ game: String, _ k: String?) -> String { game == "lmu" ? (k ?? "") : discName(k) }
+/// The categories a filter offers: every discipline, or the classes of Le Mans Ultimate the list has (none with one only).
+func catKeys(_ game: String, _ have: Set<String>) -> [String] {
+    if game != "lmu" { return DISCS }
+    let k = (LMU_CLASSES + have.filter { !$0.isEmpty && !LMU_CLASSES.contains($0) }.sorted()).filter { have.contains($0) }
+    return k.count > 1 ? k : []
+}
+/// A class's colour (Le Mans Ultimate), else the discipline's.
+func catColor(_ game: String, _ k: String) -> Color {
+    if game != "lmu" { return discColor(k) }
+    switch k {
+    case "Hypercar": return Color(red: 1, green: 0x63 / 255, blue: 0x63 / 255)
+    case "LMP2": return Color(red: 0.35, green: 0.66, blue: 1)
+    case "LMP3": return Color(red: 0.73, green: 0.55, blue: 1)
+    case "LMGT3": return Color(red: 0x38 / 255, green: 0xC9 / 255, blue: 0x7C / 255)
+    case "GTE": return Color(red: 1, green: 0.69, blue: 0.18)
+    default: return Theme.muted
+    }
+}
+/// A session's category as its name: the discipline, or its Le Mans Ultimate class.
+func sessCat(_ x: CloudSession) -> String { catName(x.game, catOf(x.game, x.cat, x.cls, x.car)) }
 private func licColor(_ k: String) -> Color {
     switch k {
     case "R": return Color(red: 1, green: 0x63 / 255, blue: 0x63 / 255)
@@ -3068,10 +3097,12 @@ struct LeagueHub: View {
         catch { err = (error as? AppError)?.key ?? error.localizedDescription; list = list ?? [] }
     }
     private var closed: Bool { err == "leagues are in development" }
+    /// Le Mans Ultimate's leagues have no disciplines: no filter by them
+    private var lmu: Bool { account.game == "lmu" }
     private var shown: [League] {
         let all = list ?? []
         var l = tab == 2 ? all.filter { $0.mine } : all.filter { x in
-            (cat.isEmpty || leagueDiscs(x).contains(cat)) && (day < 0 || x.days.contains(day)) && (!onlyOpen || x.open)
+            (lmu || cat.isEmpty || leagueDiscs(x).contains(cat)) && (day < 0 || x.days.contains(day)) && (!onlyOpen || x.open)
                 && (q.isEmpty || [x.name, x.about, x.cars, x.lang, x.by].contains { $0.localizedCaseInsensitiveContains(q) })
         }
         if tab == 0 && sortNext {
@@ -3107,7 +3138,7 @@ struct LeagueHub: View {
                     LeagueForm(edit: edit, mine: (list ?? []).filter { $0.mine }.count) { edit = nil; tab = 2; Task { await load() } }
                 } else {
                     if tab == 0 {
-                        Pills(items: [("", t("disc_all") + " (\(all.count))")] + DISCS.map { k in (k, discName(k) + " (\(all.filter { leagueDiscs($0).contains(k) }.count))") }, selected: $cat)
+                        if !lmu { Pills(items: [("", t("disc_all") + " (\(all.count))")] + DISCS.map { k in (k, discName(k) + " (\(all.filter { leagueDiscs($0).contains(k) }.count))") }, selected: $cat) }
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 6) {
                                 TogglePill(text: t("league_any_day"), on: day < 0) { day = -1 }
@@ -3129,6 +3160,8 @@ struct LeagueHub: View {
             }
         }
         .task { if list == nil { await load() } }
+        // each game has its own leagues
+        .onChange(of: account.game) { _ in list = nil; openId = nil; edit = nil; if tab == 1 { tab = 0 }; Task { await load() } }
         .onChange(of: tab) { v in if v != 1 { edit = nil } }
         .sheet(item: opened) { x in
             LeagueDetail(x: x, onEdit: { edit = x; tab = 1; openId = nil }, onChanged: { openId = nil; Task { await load() } })
@@ -3194,13 +3227,15 @@ func leagueNextText(_ x: League) -> (String, Bool)? {
 struct LeagueCard: View {
     let x: League
     var body: some View {
-        let cs = leagueDiscs(x)
+        // a Le Mans Ultimate league has no disciplines: the game's name instead
+        let lmu = x.game == "lmu"
+        let cs: [String] = lmu ? [] : leagueDiscs(x)
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 ForEach(cs, id: \.self) { DiscIcon(k: $0, size: 26) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(x.name).font(.headline.weight(.black)).foregroundColor(Theme.fg)
-                    Text([cs.count > 1 ? t("league_mixed") : "", x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                    Text([lmu ? gameName(x.game) : cs.count > 1 ? t("league_mixed") : "", x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
                 }
                 Spacer(minLength: 0)
             }
@@ -3232,14 +3267,15 @@ struct LeagueDetail: View {
     @State private var days: [LeagueDay]?
     @State private var copied = false
     var body: some View {
-        let cs = leagueDiscs(x)
+        let lmu = x.game == "lmu"
+        let cs: [String] = lmu ? [] : leagueDiscs(x)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     Group {
                         HStack(spacing: 6) {
                             ForEach(cs, id: \.self) { DiscIcon(k: $0, size: 24) }
-                            Text([cs.map { discName($0) }.joined(separator: " + "), x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                            Text([lmu ? gameName(x.game) : cs.map { discName($0) }.joined(separator: " + "), x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
                         }
                         if x.open { StatusPill(text: t("league_open"), color: Theme.good) }
                         HStack(spacing: 8) {
@@ -3330,6 +3366,8 @@ struct LeagueForm: View {
     @State private var err: String?
     @State private var busy = false
     private var tz: String { edit.flatMap { $0.tz.isEmpty ? nil : $0.tz } ?? TimeZone.current.identifier }
+    /// the game the league races in: the one shown (an edited post keeps its own); Le Mans Ultimate has no disciplines
+    private var gm: String { edit?.game ?? account.game }
     private func field(_ label: String, _ v: Binding<String>) -> some View {
         TextField(label, text: v).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
     }
@@ -3340,7 +3378,7 @@ struct LeagueForm: View {
         if !w.isEmpty && w.range(of: "^https://[^\\s\"'<>]{4,190}$", options: .regularExpression) == nil { err = "league_need_web"; return }
         if d.isEmpty && w.isEmpty { err = "league_need_link"; return }
         if !tm.isEmpty && tm.range(of: "^([01]\\d|2[0-3]):[0-5]\\d$", options: .regularExpression) == nil { err = "league_bad_time"; return }
-        let l = League(id: edit?.id ?? "", name: n, about: about, cat: nil, discord: d, web: w, schedule: "", cars: cars, lang: lang, cats: cats, days: days, time: tm, tz: tz, open: open)
+        let l = League(id: edit?.id ?? "", name: n, about: about, cat: nil, discord: d, web: w, schedule: "", cars: cars, lang: lang, cats: gm == "lmu" ? ["sports_car"] : cats, days: days, time: tm, tz: tz, open: open, game: gm)
         busy = true
         Task {
             do { try await account.saveLeague(edit?.id, l); busy = false; err = nil; onDone() }
@@ -3363,10 +3401,12 @@ struct LeagueForm: View {
         Panel {
             Group {
                 field(t("league_name"), $name)
-                Text(t("league_discs")).font(.caption2).foregroundColor(Theme.muted)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(DISCS, id: \.self) { k in TogglePill(text: discName(k), on: cats.contains(k)) { if let i = cats.firstIndex(of: k) { cats.remove(at: i) } else { cats.append(k) } } }
+                if gm != "lmu" {
+                    Text(t("league_discs")).font(.caption2).foregroundColor(Theme.muted)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(DISCS, id: \.self) { k in TogglePill(text: discName(k), on: cats.contains(k)) { if let i = cats.firstIndex(of: k) { cats.remove(at: i) } else { cats.append(k) } } }
+                        }
                     }
                 }
                 Text(t("league_days")).font(.caption2).foregroundColor(Theme.muted)
@@ -3434,14 +3474,20 @@ struct CommunityView: View {
             if sec == 1 {
                 LeagueHub()
             } else {
+            // iRacing's disciplines, or Le Mans Ultimate's classes (no filter with one class only)
+            let gm = account.game
+            let cats = catKeys(gm, Set((combos.data ?? []).map { catOf(gm, $0.cat, $0.cls, $0.car) }))
+            let fc = gm == "lmu" ? (cats.contains(cat) ? cat : "") : cat
             WebNote(text: t("community_web"))
-            RecentRecords(cat: cat)
+            RecentRecords(cat: fc)
             // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
-            Pills(items: [("", t("disc_all"))] + DISCS.map { k in (k, discName(k) + " (\((combos.data ?? []).filter { $0.cat == k }.count))") }, selected: $cat)
+            if !cats.isEmpty {
+                Pills(items: [("", t("disc_all"))] + cats.map { k in (k, catName(gm, k) + " (\((combos.data ?? []).filter { catOf(gm, $0.cat, $0.cls, $0.car) == k }.count))") }, selected: $cat)
+            }
             TextField(t("search"), text: $q).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
             switch tab {
             case 0:
-                let list = (combos.data ?? []).filter { match($0.track, $0.car) && (cat.isEmpty || $0.cat == cat) }
+                let list = (combos.data ?? []).filter { match($0.track, $0.car) && (fc.isEmpty || catOf(gm, $0.cat, $0.cls, $0.car) == fc) }
                 LoadState(loading: combos.loading, error: combos.error, stale: combos.stale) { Task { await load() } }
                 if combos.data != nil && list.isEmpty { EmptyNote(text: t("nothing_found")) }
                 ForEach(list) { x in
@@ -3450,7 +3496,7 @@ struct CommunityView: View {
                             Text(x.track).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
                             Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                             HStack {
-                                Text([discName(x.cat), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                                Text([catName(gm, catOf(gm, x.cat, x.cls, x.car)), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
                                 Spacer()
                                 Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
                             }
@@ -3496,7 +3542,7 @@ struct CommunityView: View {
         }
         .refreshable { await load() }
         .task(id: "\(tab)-\(account.demo)-\(account.game)") {
-            if empty || account.demo != lastDemo || account.game != lastGame { lastDemo = account.demo; lastGame = account.game; await load() }
+            if empty || account.demo != lastDemo || account.game != lastGame { if account.game != lastGame { cat = "" }; lastDemo = account.demo; lastGame = account.game; await load() }
         }
         .onChange(of: net.cameBack) { _ in Task { await load() } }
     }
@@ -3514,7 +3560,8 @@ struct RecentRecords: View {
     private func name(_ a: String?) -> String { a == nil || a == "Anonymous" ? t("anonymous") : a! }
 
     var body: some View {
-        let list = (recs.data ?? []).filter { cat.isEmpty || $0.cat == cat }
+        let gm = account.game
+        let list = (recs.data ?? []).filter { cat.isEmpty || catOf(gm, $0.cat, $0.cls, $0.car) == cat }
         Panel {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -3545,6 +3592,7 @@ struct RecentRecords: View {
 
 /// One recent record as a card (Community → Recent records).
 struct RecordCard: View {
+    @EnvironmentObject var account: Account
     let x: RecordItem
     let most: Double
     @Binding var open: String
@@ -3567,9 +3615,11 @@ struct RecordCard: View {
 
     private var head: some View {
         HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2).fill(discColor(x.cat ?? "")).frame(width: 4)
+            let gm = account.game
+            let k = catOf(gm, x.cat, x.cls, x.car)
+            RoundedRectangle(cornerRadius: 2).fill(catColor(gm, k)).frame(width: 4)
             VStack(alignment: .leading, spacing: 2) {
-                Text(day(x.created) + (x.cat.map { " · " + discName($0) } ?? "")).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+                Text([day(x.created), catName(gm, k)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
                 Text(x.car).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1)
                 Text(x.track).font(.system(size: 12)).foregroundColor(Theme.muted).lineLimit(1)
             }
@@ -3646,7 +3696,7 @@ struct TrackPageView: View {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(x.car).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                                        Text([discName(x.cat), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                                        Text([catName(account.game, catOf(account.game, x.cat, x.cls, x.car)), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
                                     }
                                     Spacer()
                                     Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
@@ -3727,7 +3777,7 @@ struct ComboView: View {
                         Text(t("you_fastest_sub", laps.count, lapTime(laps[0].time))).font(.caption).foregroundColor(Theme.muted)
                     } else if let mine { Text(t("your_position", mine + 1, laps.count, lapTime(laps[mine].time))).font(.subheadline.bold()).foregroundColor(Theme.accent) }
                     else { Text(t("not_on_board")).font(.caption).foregroundColor(Theme.muted) }
-                    Text([discName(combo.cat), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
+                    Text([catName(account.game, catOf(account.game, combo.cat, combo.cls, combo.car)), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
                 }
             }
             SectionLabel(text: t("fastest_drivers"))

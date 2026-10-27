@@ -381,7 +381,7 @@ struct SessionHead: View {
             Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
             SessionBadges(x: x)
             HStack(spacing: 6) {
-                Text([kindText(x.kind), day(x.started), discName(x.cat)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                Text([kindText(x.kind), day(x.started), sessCat(x)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                 LicBadge(k: x.lic)
                 Spacer()
                 Button(t("choose_session") + " ▾", action: choose).font(.caption.bold()).foregroundColor(Theme.accent).lineLimit(1)

@@ -19,6 +19,8 @@ struct CloudSession: Identifiable, Hashable {
     var ai = false
     /// the sim it was driven in: iracing or lmu (Le Mans Ultimate)
     var game = "iracing"
+    /// the car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…)
+    var cls: String? = nil
 }
 
 struct CloudLap: Identifiable, Hashable {
@@ -76,6 +78,7 @@ struct Combo: Identifiable, Hashable {
     let laps: Int
     let best: Double?
     var cat: String? = nil
+    var cls: String? = nil
 }
 
 /// A record of the leaderboards: the fastest lap of a car and track, and the lap it beat (the second fastest), for
@@ -97,7 +100,8 @@ struct RecordItem: Identifiable, Hashable {
     let sup: Bool
     let prevTime: Double?
     let prevAlias: String?
-    var combo: Combo { Combo(trackId: trackId, track: track, carId: carId, car: car, laps: n, best: time, cat: cat) }
+    var cls: String? = nil
+    var combo: Combo { Combo(trackId: trackId, track: track, carId: carId, car: car, laps: n, best: time, cat: cat, cls: cls) }
 }
 
 /// A track's page (in development): its layout and official turns, how many drivers and laps it has, the record of every car on it.
@@ -180,6 +184,7 @@ struct League: Identifiable {
     var clicks: Int = -1
     var created: Double = 0
     var updated: Double = 0
+    var game = "iracing"
 }
 
 /// One day of a league post's views and clicks, for its creator's chart.
@@ -284,6 +289,30 @@ struct SteamLink {
 let games = ["iracing", "lmu"]
 func gameShort(_ g: String) -> String { g == "lmu" ? "LMU" : "iRacing" }
 func gameName(_ g: String) -> String { g == "lmu" ? "Le Mans Ultimate" : "iRacing" }
+
+/// Le Mans Ultimate's classes, its categories where iRacing has its disciplines (proper names, the same in every language).
+let LMU_CLASSES = ["Hypercar", "LMP2", "LMP3", "LMGT3", "GTE"]
+
+/// The Le Mans Ultimate class of a car: the server's when it sends one, else from the car's name ("" when unknown).
+func lmuClass(_ cls: String?, _ car: String) -> String {
+    let c = (cls ?? "").trimmingCharacters(in: .whitespaces)
+    if !c.isEmpty {
+        let l = c.lowercased()
+        if l.contains("hyper") || l == "lmh" || l == "lmdh" { return "Hypercar" }
+        if l.contains("lmp2") { return "LMP2" }
+        if l.contains("lmp3") { return "LMP3" }
+        if l.contains("gt3") { return "LMGT3" }
+        if l.contains("gte") { return "GTE" }
+        return c
+    }
+    let rx = { (p: String) -> Bool in car.range(of: p, options: [.regularExpression, .caseInsensitive]) != nil }
+    if rx("\\blmp2\\b|oreca 07|alpine a470") { return "LMP2" }
+    if rx("\\blmp3\\b|ligier js p3|js p325|ginetta g61|duqueine d0[89]") { return "LMP3" }
+    if rx("gt3") { return "LMGT3" }
+    if rx("\\bgte\\b|488 gte|911 rsr|c8\\.r|vantage amr") { return "GTE" }
+    if rx("hypercar|\\blmdh\\b|\\blmh\\b|499p|\\b963\\b|gr010|9x8|v-series|a424|sc63|m hybrid|vanwall|\\b680\\b|glickenhaus|scg 007|isotta|tipo 6|valkyrie") { return "Hypercar" }
+    return ""
+}
 
 struct DiscordLink {
     let linked: Bool

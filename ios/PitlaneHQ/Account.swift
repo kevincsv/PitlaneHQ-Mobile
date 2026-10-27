@@ -54,6 +54,8 @@ enum Vault {
 private func num(_ v: Any?) -> Double? { (v as? NSNumber)?.doubleValue }
 private func int(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
 private func str(_ v: Any?) -> String { v as? String ?? "" }
+/// The car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…).
+private func clsOf(_ o: [String: Any]) -> String? { ["cls", "carClass", "class"].map { str(o[$0]) }.first { !$0.isEmpty && $0 != "null" } }
 private func orNull(_ v: Any?) -> Any { v ?? NSNull() }
 private func pos(_ v: Any?) -> Double? { num(v).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
 private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.doubleValue) }
@@ -859,7 +861,7 @@ final class Account: ObservableObject {
             return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: kind, laps: int(s["laps"]), best: pos(s["best"]),
                                 cat: s["cat"] as? String, lic: s["lic"] as? String,
                                 drvs: str(s["drvs"]).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, ai: int(s["ai"]) == 1 || offlineAI,
-                                game: (game ?? "").isEmpty ? "iracing" : game!)
+                                game: (game ?? "").isEmpty ? "iracing" : game!, cls: clsOf(s))
         }
         noteStats(all)
         return Got(data: all.filter { $0.game == self.game }, stale: g.stale)
@@ -911,7 +913,7 @@ final class Account: ObservableObject {
         let g = try await cachedGet("/community/combos?game=\(gm ?? game)")
         let a = (g.data as? [String: Any])?["combos"] as? [[String: Any]] ?? []
         return Got(data: a.map { c in
-            Combo(trackId: (c["trackId"] as? NSNumber)?.int64Value ?? 0, track: str(c["track"]), carId: (c["carId"] as? NSNumber)?.int64Value ?? 0, car: str(c["car"]), laps: int(c["laps"]), best: pos(c["best"]), cat: c["cat"] as? String)
+            Combo(trackId: (c["trackId"] as? NSNumber)?.int64Value ?? 0, track: str(c["track"]), carId: (c["carId"] as? NSNumber)?.int64Value ?? 0, car: str(c["car"]), laps: int(c["laps"]), best: pos(c["best"]), cat: c["cat"] as? String, cls: clsOf(c))
         }, stale: g.stale)
     }
 
@@ -930,7 +932,7 @@ final class Account: ObservableObject {
                           carId: (r["carId"] as? NSNumber)?.int64Value ?? 0, car: str(r["car"]), cat: r["cat"] as? String,
                           time: num(r["time"]) ?? 0, created: num(r["created"]) ?? 0, alias: (r["alias"] as? String) ?? "Driver", n: int(r["n"]),
                           hasTrace: r["hasTrace"] as? Bool ?? false, mine: r["mine"] as? Bool ?? false, prof: r["prof"] as? Bool ?? false, sup: r["sup"] as? Bool ?? false,
-                          prevTime: p.flatMap { pos($0["time"]) }, prevAlias: p?["alias"] as? String)
+                          prevTime: p.flatMap { pos($0["time"]) }, prevAlias: p?["alias"] as? String, cls: clsOf(r))
     }
 
     /// One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it.
@@ -1128,7 +1130,8 @@ final class Account: ObservableObject {
     /// The league hub: the posts (with the views and clicks of yours), post one or edit yours, remove yours.
     @Published var leagueLimit = LeagueLimit()
     func leagues() async throws -> [League] {
-        let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/leagues")) as? [String: Any]) ?? [:]
+        let gm = game
+        let j = (try JSONSerialization.jsonObject(with: await call("GET", "/community/leagues?game=\(gm)")) as? [String: Any]) ?? [:]
         let lim = j["limits"] as? [String: Any] ?? [:]
         leagueLimit = LeagueLimit(limit: j["limit"] == nil ? 3 : int(j["limit"]), supporter: j["supporter"] as? Bool ?? false,
                                   free: lim["free"] == nil ? 3 : int(lim["free"]), supporterLimit: lim["supporter"] == nil ? 10 : int(lim["supporter"]))
@@ -1136,13 +1139,14 @@ final class Account: ObservableObject {
             League(id: str(x["id"]), name: fixTxt(str(x["name"])), about: fixTxt(str(x["about"])), cat: x["cat"] as? String, discord: str(x["discord"]), web: str(x["web"]), schedule: str(x["schedule"]),
                    cars: fixTxt(str(x["cars"])), lang: str(x["lang"]), mine: x["mine"] as? Bool ?? false, by: str(x["by"]),
                    cats: x["cats"] as? [String] ?? [], days: (x["days"] as? [NSNumber] ?? []).map { $0.intValue }, time: str(x["time"]), tz: str(x["tz"]), open: x["open"] as? Bool ?? true,
-                   views: x["views"] == nil ? -1 : int(x["views"]), clicks: x["clicks"] == nil ? -1 : int(x["clicks"]), created: num(x["created"]) ?? 0, updated: num(x["updated"]) ?? 0)
+                   views: x["views"] == nil ? -1 : int(x["views"]), clicks: x["clicks"] == nil ? -1 : int(x["clicks"]), created: num(x["created"]) ?? 0, updated: num(x["updated"]) ?? 0,
+                   game: str(x["game"]).isEmpty ? gm : str(x["game"]))
         }
     }
     func saveLeague(_ id: String?, _ l: League) async throws {
         let path = "/community/leagues" + (id.map { "/" + ($0.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? $0) } ?? "")
         _ = try await call("POST", path, body: ["name": l.name, "about": l.about, "cats": l.cats, "days": l.days, "time": l.time, "tz": l.tz, "open": l.open,
-                                              "discord": l.discord, "web": l.web, "schedule": l.schedule, "cars": l.cars, "lang": l.lang])
+                                              "discord": l.discord, "web": l.web, "schedule": l.schedule, "cars": l.cars, "lang": l.lang, "game": l.game])
     }
     func deleteLeague(_ id: String) async throws {
         _ = try await call("POST", "/community/leagues/" + (id.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? id), body: ["delete": true])
