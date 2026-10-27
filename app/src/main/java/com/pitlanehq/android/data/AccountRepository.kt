@@ -84,6 +84,12 @@ class AccountRepository(context: Context) {
     var language: String
         get() = app.getString("lang", "system") ?: "system"
         set(v) = app.edit().putString("lang", v).apply()
+    /** The sim Home, Analysis and Community show (iracing or lmu), chosen on this phone; "" until chosen. */
+    var gameChoice: String
+        get() = app.getString("game", "")?.takeIf { it in GAMES } ?: ""
+        set(v) = app.edit().putString("game", v).apply()
+    /** What the community's lists ask the server for (every list is one game). */
+    @Volatile var game = "iracing"
 
     fun storedState() = AccountState(
         signedIn = prefs.getString("token", null) != null,
@@ -154,9 +160,11 @@ class AccountRepository(context: Context) {
     }
 
     // ---------- server ----------
-    private fun call(method: String, path: String, body: JSONObject? = null, auth: Boolean = true): String {
+    /** [bearer]: a session of its own (a Steam sign-in waiting for the password); [pass]: the call checks the password
+     *  (or a code), so a 401 is a wrong one and never signs this phone out. */
+    private fun call(method: String, path: String, body: JSONObject? = null, auth: Boolean = true, bearer: String? = null, pass: Boolean = false): String {
         val q = Request.Builder().url(SERVER + path).method(method, body?.toString()?.toRequestBody("application/json".toMediaType()))
-        if (auth) q.header("Authorization", "Bearer " + token())
+        if (bearer != null) q.header("Authorization", "Bearer $bearer") else if (auth) q.header("Authorization", "Bearer " + token())
         val r = try {
             client.newCall(q.build()).execute()
         } catch (e: IOException) {
@@ -164,6 +172,7 @@ class AccountRepository(context: Context) {
         }
         r.use {
             val txt = it.body.string()
+            if (it.code == 401 && (pass || bearer != null)) throw AppError(runCatching { JSONObject(txt).optString("error") }.getOrNull()?.ifBlank { null } ?: "wrong_pw")
             if (it.code == 401 && auth) {
                 clearAll()
                 throw SignedOut()
@@ -209,8 +218,10 @@ class AccountRepository(context: Context) {
         return signedIn(j, p.second, p.third)
     }
 
-    private fun signedIn(j: JSONObject, email: String, wrap: ByteArray): AccountState {
-        val key = Crypto.open(wrap, j.getString("wrappedKey"), Crypto.ACCOUNT_AAD)
+    private fun signedIn(j: JSONObject, email: String, wrap: ByteArray): AccountState =
+        signedInKey(j, email, Crypto.open(wrap, j.getString("wrappedKey"), Crypto.ACCOUNT_AAD))
+
+    private fun signedInKey(j: JSONObject, email: String, key: ByteArray): AccountState {
         require(key.size == 32) { "The account key is damaged" }
         prefs.edit()
             .putString("token", protect(j.getString("token").toByteArray()))
@@ -224,16 +235,111 @@ class AccountRepository(context: Context) {
         return runCatching { sync() }.getOrElse { storedState() }
     }
 
+    // ---------- Sign in with Steam (steam.js): the browser goes to Steam and comes back to this phone ----------
+    // The code the start gives stays here, in memory: a grant is only good with it. Steam says who; the data key still
+    // comes from the password, asked once on this phone (POST /account/key).
+    private var steamCode: String? = null
+    private var steamPending: String? = null      // the authenticator code comes next (a Steam sign-in with two-step on)
+    private var steamSession: JSONObject? = null  // signed in by Steam, waiting for the password
+
+    /** The address of Steam's sign-in; [port]: where Steam's answer comes back on this phone (SteamCatcher). */
+    fun steamLoginStart(port: Int): String {
+        val j = JSONObject(call("POST", "/account/steam/login/start", JSONObject().put("device", "Android").put("port", port), auth = false))
+        steamCode = j.optString("code").ifEmpty { null }
+        return j.getString("url")
+    }
+
+    /** The grant Steam came back with: "key" (the password comes next) or "code" (the authenticator's code first). */
+    fun steamLogin(grant: String): String {
+        val code = steamCode ?: throw AppError("steam_again")
+        val j = JSONObject(call("POST", "/account/login/steam", JSONObject().put("grant", grant).put("code", code).put("device", "Android"), auth = false))
+        steamCode = null
+        if (j.optBoolean("twoFactor") && j.has("pending")) { steamPending = j.getString("pending"); return "code" }
+        steamSession = j
+        return "key"
+    }
+
+    /** A Steam sign-in with two-step sign-in on: the authenticator's code, then the password. */
+    fun steamLoginCode(code: String) {
+        val p = steamPending ?: throw AppError("sign_in_again")
+        steamSession = JSONObject(call("POST", "/account/login/2fa", JSONObject().put("pending", p).put("code", code.trim()), auth = false))
+        steamPending = null
+    }
+
+    /** The password once on this phone: the server hands the data key wrapped with it, and it opens here. */
+    fun steamKey(email0: String, password: String): AccountState {
+        val s = steamSession ?: throw AppError("sign_in_again")
+        val email = email0.trim().lowercase()
+        if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(email)) throw AppError("bad_email")
+        if (password.isEmpty()) throw AppError("enter_pw")
+        val k = Crypto.derive(email, password)
+        val r = try { JSONObject(call("POST", "/account/key", JSONObject().put("auth", k.auth), bearer = s.getString("token"))) }
+            catch (e: AppError) { throw if (e.message == "the password is wrong") AppError("wrong_email_pw") else e }
+        val key = runCatching { Crypto.open(k.wrap, r.getString("wrappedKey"), Crypto.ACCOUNT_AAD) }.getOrElse { throw AppError("wrong_email_pw") }
+        steamSession = null
+        return signedInKey(s, email, key)
+    }
+
+    /** The Steam sign-in left halfway: its session (if any) is closed on the server. */
+    fun steamCancel() {
+        steamSession?.optString("token")?.takeIf { it.isNotEmpty() }?.let { t -> runCatching { call("POST", "/account/logout", JSONObject(), bearer = t) } }
+        steamSession = null; steamPending = null; steamCode = null
+    }
+
+    /** A new account, like the web's: a new data key wrapped with the password; [sid]: made from a Steam sign-in, which
+     *  links that Steam to it at once. Null: the server sent the email to confirm first (then the driver signs in). */
+    fun register(email0: String, password: String, display: String, sid: String, lang: String): AccountState? {
+        val email = email0.trim().lowercase()
+        if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(email)) throw AppError("bad_email")
+        if (password.length < 10) throw AppError("pw_short")
+        val name = display.trim().take(32)
+        if (name.isEmpty()) throw AppError("choose_name")
+        val k = Crypto.derive(email, password)
+        val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
+        val body = JSONObject().put("email", email).put("auth", k.auth).put("wrappedKey", Crypto.seal(k.wrap, key, Crypto.ACCOUNT_AAD))
+            .put("display", name).put("nameKind", "nick").put("device", "Android").put("lang", lang)
+        if (sid.isNotEmpty()) body.put("sid", sid).put("code", steamCode ?: throw AppError("steam_again"))
+        val j = JSONObject(call("POST", "/account/register", body, auth = false))
+        if (sid.isNotEmpty()) steamCode = null
+        if (j.optBoolean("verifyFirst") || !j.has("token")) return null
+        return signedInKey(j, email, key)
+    }
+
+    // ---------- Account → Steam: link it (Steam's sign-in, in the browser), show it on your profile, unlink it ----------
+    fun steam(): SteamLink = JSONObject(call("GET", "/account/steam")).let {
+        SteamLink(it.optBoolean("linked"), it.optStr("id") ?: "", it.optStr("persona") ?: "", it.optBoolean("shown"))
+    }
+
+    /** Linking asks the password first; the address of Steam's sign-in, its answer back on this phone at [port]. */
+    fun steamLinkStart(password: String, port: Int): String {
+        val k = Crypto.derive(email(), password)
+        val j = JSONObject(call("POST", "/account/steam/start", JSONObject().put("auth", k.auth).put("device", "Android").put("port", port), pass = true))
+        steamCode = j.optString("code").ifEmpty { null }
+        return j.getString("url")
+    }
+
+    fun steamLink(grant: String) {
+        val code = steamCode ?: throw AppError("steam_again")
+        try { call("POST", "/account/steam/link", JSONObject().put("grant", grant).put("code", code)) } finally { steamCode = null }
+    }
+
+    fun steamShow(shown: Boolean) { call("POST", "/account/steam/shown", JSONObject().put("shown", shown)) }
+
+    fun steamUnlink(password: String) {
+        val k = Crypto.derive(email(), password)
+        call("POST", "/account/steam/unlink", JSONObject().put("auth", k.auth), pass = true)
+    }
+
     // ---------- two-step sign-in (optional, recommended) ----------
     fun setup2fa(password: String): TwoFactorSetup {
         val k = Crypto.derive(email(), password)
-        val j = JSONObject(call("POST", "/account/2fa/setup", JSONObject().put("auth", k.auth)))
+        val j = JSONObject(call("POST", "/account/2fa/setup", JSONObject().put("auth", k.auth), pass = true))
         return TwoFactorSetup(j.getString("secret"), j.getString("url"))
     }
 
     /** Confirms the first code; gives the recovery codes (shown once). */
     fun enable2fa(code: String): List<String> {
-        val j = JSONObject(call("POST", "/account/2fa/enable", JSONObject().put("code", code.trim())))
+        val j = JSONObject(call("POST", "/account/2fa/enable", JSONObject().put("code", code.trim()), pass = true))
         val a = j.optJSONArray("codes") ?: JSONArray()
         prefs.edit().putBoolean("twoFactor", true).putInt("recoveryLeft", a.length()).apply()
         return List(a.length()) { a.getString(it) }
@@ -241,7 +347,7 @@ class AccountRepository(context: Context) {
 
     fun disable2fa(password: String, code: String) {
         val k = Crypto.derive(email(), password)
-        call("POST", "/account/2fa/disable", JSONObject().put("auth", k.auth).put("code", code.trim()))
+        call("POST", "/account/2fa/disable", JSONObject().put("auth", k.auth).put("code", code.trim()), pass = true)
         prefs.edit().putBoolean("twoFactor", false).putInt("recoveryLeft", 0).apply()
     }
 
@@ -390,7 +496,6 @@ class AccountRepository(context: Context) {
     // only what the phone shows, newest first: races.json also has braking points and more
     private fun trimRaces(a: JSONArray): String {
         val out = (0 until a.length()).mapNotNull { a.optJSONObject(it) }
-            .filter { it.optString("game", "").let { g -> g.isEmpty() || g == "iracing" } }
             .sortedByDescending { it.optLong("when") }
             .take(60)
             .map { r ->
@@ -425,7 +530,7 @@ class AccountRepository(context: Context) {
                 fuelUsed = r.optDouble("fuelUsed").pos(), ir = r.optInt("ir"), irChange = r.optInt("irChange"), sof = r.optInt("sof"),
                 dnf = r.optBoolean("dnf"), cat = r.optStr("cat"),
                 drinks = r.optJSONArray("drinks")?.let { d -> (0 until d.length()).map { fixTxt(d.optString(it)) }.filter { it.isNotBlank() } } ?: emptyList(),
-                ai = isAIRace(r),
+                ai = isAIRace(r), game = r.optString("game", "").ifEmpty { "iracing" },
                 laps = (0 until laps.length()).map { k -> laps.getJSONObject(k).let { RaceLap(it.optInt("n"), it.optDouble("t"), it.optInt("p"), it.optInt("i"), it.optBoolean("pit"), it.optBoolean("cut"), fixTxt(it.optString("drv"))) } },
                 results = (0 until res.length()).map { k ->
                     // an offline race has only you as a real driver: everyone else there is an AI driver
@@ -446,7 +551,7 @@ class AccountRepository(context: Context) {
     }
 
     fun logout() {
-        runCatching { call("POST", "/account/logout") }
+        runCatching { call("POST", "/account/logout", JSONObject()) }
         clearAll()
     }
 
@@ -486,7 +591,8 @@ class AccountRepository(context: Context) {
                 kind = kind, laps = s.optInt("laps"), best = s.optDouble("best").pos(),
                 cat = s.optStr("cat"), lic = s.optStr("lic"),
                 drvs = s.optStr("drvs")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(),
-                ai = s.optInt("ai", 0) == 1 || offlineAI(id, kind, s.optStr("game"))
+                ai = s.optInt("ai", 0) == 1 || offlineAI(id, kind, s.optStr("game")),
+                game = s.optStr("game") ?: "iracing"
             )
         }, g.stale)
     }
@@ -527,9 +633,9 @@ class AccountRepository(context: Context) {
      * driven) and the next level (the real lap of the driver just ahead, 0.3–3 % faster). Their points come every 5 m
      * (the record) or every 10 m (the next level, put back to 5 m like the web's up()); null when there is none.
      */
-    fun modelRefs(trackId: Long, carId: Long, lapTime: Double): ModelRefs {
+    fun modelRefs(trackId: Long, carId: Long, lapTime: Double, g: String = game): ModelRefs {
         if (demo || trackId <= 0 || carId <= 0) return ModelRefs(null, null)
-        val m = runCatching { JSONObject(cachedGet("/community/model?game=iracing&trackId=$trackId&carId=$carId").data) }.getOrNull() ?: return ModelRefs(null, null)
+        val m = runCatching { JSONObject(cachedGet("/community/model?game=$g&trackId=$trackId&carId=$carId").data) }.getOrNull() ?: return ModelRefs(null, null)
         // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
         val cards = m.optJSONArray("corners")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
             CornerCard(o.optDouble("d", 0.0), o.optDouble("apex", 0.0), o.optDouble("b0", 0.0), o.optDouble("b1", 0.0), o.optDouble("v0", 0.0), o.optDouble("v1", 0.0), o.optInt("n", 0)) } } ?: emptyList()
@@ -584,9 +690,9 @@ class AccountRepository(context: Context) {
     }
 
     /** A thumb on one of the coach's tips (1 up, -1 down, 0 takes it back), kept with the account on the server (coachtips.js). */
-    fun rateTip(trackId: Long, carId: Long, sid: String, started: Long, n: Int, apexM: Int, kind: String, cls: String, up: Int) {
+    fun rateTip(trackId: Long, carId: Long, sid: String, started: Long, n: Int, apexM: Int, kind: String, cls: String, up: Int, g: String = game) {
         if (demo || trackId <= 0 || carId <= 0) return
-        call("POST", "/community/coach/rate", JSONObject().put("game", "iracing").put("trackId", trackId).put("carId", carId).put("sid", sid).put("started", started)
+        call("POST", "/community/coach/rate", JSONObject().put("game", g).put("trackId", trackId).put("carId", carId).put("sid", sid).put("started", started)
             .put("n", n).put("apex", apexM).put("kind", kind).put("cls", cls).put("up", up))
     }
 
@@ -601,11 +707,11 @@ class AccountRepository(context: Context) {
         val a = JSONArray(g.data)
         return Got((0 until a.length()).mapNotNull { i ->
             val b = a.getJSONObject(i)
-            if (b.optString("game", "iracing") != "iracing") return@mapNotNull null
             PersonalBest(
                 b.optString("track"), b.optString("track_config").takeUnless { it == "null" } ?: "", b.optString("car"),
                 b.optDouble("best"), b.optInt("laps"), b.optLong("last"),
-                b.optString("bestLapId").takeUnless { it.isEmpty() || it == "null" }, b.optString("bestSessionId").takeUnless { it.isEmpty() || it == "null" }
+                b.optString("bestLapId").takeUnless { it.isEmpty() || it == "null" }, b.optString("bestSessionId").takeUnless { it.isEmpty() || it == "null" },
+                b.optStr("game") ?: "iracing"
             )
         }.sortedByDescending { it.last }, g.stale)
     }
@@ -613,14 +719,14 @@ class AccountRepository(context: Context) {
     // ---------- community ----------
     /** The card of a car: what it does on every track it was driven on (its hardest braking, where the fast drivers
      *  shift up, its top speed), learnt by the server from its laps; null when the server has no laps of it. */
-    fun carCard(carId: Long): JSONObject? {
+    fun carCard(carId: Long, g: String = game): JSONObject? {
         if (demo) return null
-        return runCatching { JSONObject(cachedGet("/community/car?game=iracing&carId=$carId").data) }.getOrNull()?.takeIf { it.optInt("n") > 0 }
+        return runCatching { JSONObject(cachedGet("/community/car?game=$g&carId=$carId").data) }.getOrNull()?.takeIf { it.optInt("n") > 0 }
     }
     /** A track's layout drawn by the community from clean laps (x/y of n points along the lap), null when none yet. */
-    fun trackLayout(trackId: Long): Pair<List<Double>, List<Double>>? {
+    fun trackLayout(trackId: Long, g: String = game): Pair<List<Double>, List<Double>>? {
         if (demo || trackId <= 0) return null
-        val j = runCatching { JSONObject(cachedGet("/community/trackmaps?game=iracing&trackId=$trackId").data) }.getOrNull() ?: return null
+        val j = runCatching { JSONObject(cachedGet("/community/trackmaps?game=$g&trackId=$trackId").data) }.getOrNull() ?: return null
         val x = j.optJSONArray("x") ?: return null; val y = j.optJSONArray("y") ?: return null
         if (x.length() < 20 || x.length() != y.length()) return null
         return (0 until x.length()).map { x.optDouble(it) } to (0 until y.length()).map { y.optDouble(it) }
@@ -642,22 +748,22 @@ class AccountRepository(context: Context) {
         val a = runCatching { JSONObject(cachedGet("/community/coach/me").data) }.getOrNull()?.optJSONArray("habits") ?: return emptyList()
         return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { Habit(it.optString("kind"), it.optInt("tracks"), it.optInt("sessions")) }
     }
-    fun turns(trackId: Long): List<Double> {
+    fun turns(trackId: Long, g: String = game): List<Double> {
         if (demo || trackId <= 0) return emptyList()
-        val a = JSONObject(cachedGet("/community/turns?game=iracing&trackId=$trackId").data).optJSONArray("turns") ?: return emptyList()
+        val a = JSONObject(cachedGet("/community/turns?game=$g&trackId=$trackId").data).optJSONArray("turns") ?: return emptyList()
         return (0 until a.length()).map { a.optDouble(it) }.filter { it >= 0 && it < 1 }
     }
     /** The pit lane of a track, learnt from laps through the pits (null until someone has driven through them). */
-    fun pitLane(trackId: Long): com.pitlanehq.android.viewmodel.PitLane? {
+    fun pitLane(trackId: Long, g: String = game): com.pitlanehq.android.viewmodel.PitLane? {
         if (demo || trackId <= 0) return null
-        val j = JSONObject(cachedGet("/community/pitlane?game=iracing&trackId=$trackId").data)
+        val j = JSONObject(cachedGet("/community/pitlane?game=$g&trackId=$trackId").data)
         val a = j.optJSONArray("pts") ?: return null
         val pts = (0 until a.length()).mapNotNull { a.optJSONArray(it)?.let { q -> q.optInt(0) to q.optDouble(1) } }
         return if (pts.size >= 10 && j.optInt("n") > 0) com.pitlanehq.android.viewmodel.PitLane(j.optInt("n"), pts) else null
     }
-    fun combos(): Got<List<Combo>> {
+    fun combos(gm: String = game): Got<List<Combo>> {
         if (demo) return Got(Demo.combos())
-        val g = cachedGet("/community/combos?game=iracing")
+        val g = cachedGet("/community/combos?game=$gm")
         val a = JSONObject(g.data).optJSONArray("combos") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
             val c = a.getJSONObject(i)
@@ -668,7 +774,7 @@ class AccountRepository(context: Context) {
     /** The records: the fastest lap of every car and track, the newest first, with the lap it beat. */
     fun records(): Got<List<RecordItem>> {
         if (demo) return Got(emptyList())
-        val g = cachedGet("/community/records?game=iracing&limit=40")
+        val g = cachedGet("/community/records?game=$game&limit=40")
         val a = JSONObject(g.data).optJSONArray("records") ?: JSONArray()
         return Got((0 until a.length()).map { recordOf(a.getJSONObject(it), 0L, "") }, g.stale)
     }
@@ -683,7 +789,7 @@ class AccountRepository(context: Context) {
     /** One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it. */
     fun trackPage(trackId: Long): Got<TrackPage> {
         if (demo || trackId <= 0) return Got(TrackPage(trackId, "", 0, 0, null, emptyList(), emptyList()))
-        val g = cachedGet("/community/track?game=iracing&trackId=$trackId")
+        val g = cachedGet("/community/track?game=$game&trackId=$trackId")
         val j = JSONObject(g.data)
         val lay = j.optJSONObject("layout")?.let { l ->
             val x = l.optJSONArray("x"); val y = l.optJSONArray("y")
@@ -698,7 +804,7 @@ class AccountRepository(context: Context) {
     /** One line per driver: their best lap. */
     fun leaderboard(trackId: Long, carId: Long): Got<List<CommunityLap>> {
         if (demo) return Got(Demo.board(trackId, carId))
-        val g = cachedGet("/community/laps?game=iracing&trackId=$trackId&carId=$carId")
+        val g = cachedGet("/community/laps?game=$game&trackId=$trackId&carId=$carId")
         val a = JSONObject(g.data).optJSONArray("laps") ?: JSONArray()
         val seen = HashSet<String>()
         val out = ArrayList<CommunityLap>()
@@ -825,7 +931,7 @@ class AccountRepository(context: Context) {
 
     fun reports(): Got<List<SharedReport>> {
         if (demo) return Got(Demo.reports())
-        val g = cachedGet("/community/reports?game=iracing")
+        val g = cachedGet("/community/reports?game=$game")
         val a = JSONObject(g.data).optJSONArray("reports") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
             a.getJSONObject(i).let { SharedReport(it.optString("id"), it.optString("alias"), it.optString("track"), it.optString("car"), it.optLong("created"), it.optInt("finish"), it.optInt("field"), it.optDouble("best").pos(), it.optBoolean("mine")) }
@@ -834,7 +940,7 @@ class AccountRepository(context: Context) {
 
     fun setups(): Got<List<SharedSetup>> {
         if (demo) return Got(Demo.setups())
-        val g = cachedGet("/community/setups?game=iracing")
+        val g = cachedGet("/community/setups?game=$game")
         val a = JSONObject(g.data).optJSONArray("setups") ?: JSONArray()
         return Got((0 until a.length()).map { i ->
             a.getJSONObject(i).let {
@@ -847,3 +953,66 @@ class AccountRepository(context: Context) {
 
 /** A race against iRacing's AI: the PC says so, or an offline race (no subsession, its id "t-…") */
 fun isAIRace(r: JSONObject): Boolean = r.optBoolean("ai") || (r.optString("game", "iracing").ifEmpty { "iracing" } == "iracing" && r.optInt("subsession") == 0 && r.optString("id").startsWith("t-"))
+
+/**
+ * Steam's answer, back on this phone: the server sends the browser on to http://127.0.0.1:<port>/steam/done?state=…&…
+ * (the same way it reaches the PC's agent), this phone listens there only while a Steam sign-in or link is under way,
+ * reads the parameters and answers the browser with a page that leads back to the app (pitlanehq://steam). The grant in
+ * it is good only with the code this phone kept, so nothing else that reaches the port can use it.
+ */
+class SteamCatcher {
+    private val server = java.net.ServerSocket(0, 4, java.net.InetAddress.getByName("127.0.0.1"))
+    val port: Int get() = server.localPort
+
+    /** Waits up to [ms] for the browser; the answer's parameters, or null (timed out or cancelled). */
+    fun await(ms: Long, page: String): Map<String, String>? {
+        server.soTimeout = ms.toInt()
+        val until = System.currentTimeMillis() + ms
+        try {
+            while (System.currentTimeMillis() < until) {
+                val sock = server.accept()
+                try {
+                    sock.soTimeout = 5000
+                    val line = sock.getInputStream().bufferedReader().readLine().orEmpty() // "GET /steam/done?… HTTP/1.1"
+                    val target = line.split(' ').getOrNull(1).orEmpty()
+                    val out = sock.getOutputStream()
+                    if (!target.startsWith("/steam/done")) {
+                        out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()); out.flush()
+                        continue
+                    }
+                    val q = target.substringAfter('?', "").split('&').filter { it.isNotEmpty() }.associate { kv ->
+                        val k = kv.substringBefore('='); val v = kv.substringAfter('=', "")
+                        java.net.URLDecoder.decode(k, "UTF-8") to java.net.URLDecoder.decode(v, "UTF-8")
+                    }
+                    val body = page.toByteArray()
+                    out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n").toByteArray())
+                    out.write(body); out.flush()
+                    return q
+                } catch (e: java.io.IOException) {
+                    // a connection that went wrong: wait for the next one
+                } finally {
+                    runCatching { sock.close() }
+                }
+            }
+            return null
+        } catch (e: java.io.IOException) {
+            return null // timed out, or closed by cancel()
+        } finally {
+            runCatching { server.close() }
+        }
+    }
+
+    fun cancel() { runCatching { server.close() } }
+
+    companion object {
+        /** The page the browser shows once Steam answered: one button back to the app (it also opens by itself). */
+        fun page(title: String, button: String): String {
+            fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Pitlane HQ</title></head>" +
+                "<body style=\"margin:0;background:#0D1116;color:#E7EBF1;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center\">" +
+                "<div style=\"padding:24px\"><p style=\"font-size:18px;font-weight:700;margin:0 0 18px\">${esc(title)}</p>" +
+                "<a href=\"pitlanehq://steam\" style=\"display:inline-block;background:#FFB02E;color:#0D1116;font-weight:800;text-decoration:none;padding:12px 22px;border-radius:10px\">${esc(button)}</a></div>" +
+                "<script>setTimeout(function(){location.href='pitlanehq://steam'},300)</script></body></html>"
+        }
+    }
+}

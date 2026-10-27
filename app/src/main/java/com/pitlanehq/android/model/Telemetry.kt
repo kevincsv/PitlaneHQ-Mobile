@@ -20,7 +20,8 @@ data class LiveState(
     val ownDelta: Double? = null,         // DRINKS mode: the current lap against this driver's own best (LiveLaps)
     val ownBest: Double? = null,
     val rec: LiveRec? = null,            // the laps this phone saw (Full and Compare laps)
-    val recVer: Int = 0
+    val recVer: Int = 0,
+    val source: String = ""               // the sim your PC is reading ("iracing", "lmu"), from its status
 ) {
     fun num(name: String): Double? = when (val v = values[name]) { is Number -> v.toDouble(); is Boolean -> if (v) 1.0 else 0.0; else -> null }
 }
@@ -57,7 +58,8 @@ data class CloudSession(
     val cat: String? = null,   // the discipline: oval, sports_car, formula_car, dirt_oval, dirt_road
     val lic: String? = null,   // your license class in it: R, D, C, B, A, P
     val drvs: List<String> = emptyList(),  // the friends who drove laps of it in DRINKS mode
-    val ai: Boolean = false    // a session against iRacing's AI
+    val ai: Boolean = false,   // a session against iRacing's AI
+    val game: String = "iracing"  // the sim it was driven in: iracing or lmu (Le Mans Ultimate)
 )
 
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0, val drv: String = "")  // drv: a friend's lap (DRINKS mode)
@@ -85,7 +87,7 @@ data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Doubl
 /** Your best lap per track and car (GET /api/bests). */
 data class PersonalBest(
     val track: String, val trackConfig: String, val car: String, val best: Double, val laps: Int, val last: Long,
-    val bestLapId: String?, val bestSessionId: String?
+    val bestLapId: String?, val bestSessionId: String?, val game: String = "iracing"
 )
 
 /** A track and car the community has laps for (GET /community/combos). */
@@ -150,6 +152,12 @@ data class Device(val id: String, val device: String, val lastSeen: Long, val cu
 /** Your Discord account linked to this one (`oauth`: the server can link it with Discord's sign-in). */
 data class DiscordLink(val linked: Boolean, val id: String, val handle: String, val shown: Boolean, val oauth: Boolean)
 
+/** Your Steam account linked to this one (Account → Steam): its persona name and whether your profile shows it. */
+data class SteamLink(val linked: Boolean, val id: String, val persona: String, val shown: Boolean)
+
+/** The sims the phones show, one at a time (Home, Analysis, Community): iRacing and Le Mans Ultimate (in beta). */
+val GAMES = listOf("iracing", "lmu")
+
 /** A race the PC recorded (races.json in the account sync). */
 data class Race(
     val id: String, val whenMs: Long, val track: String, val car: String, val official: Boolean,
@@ -159,7 +167,8 @@ data class Race(
     val laps: List<RaceLap>, val results: List<RaceResult>,
     val cat: String? = null,  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
     val drinks: List<String> = emptyList(),  // DRINKS mode: who drove it when a friend drove any lap (the PC's report)
-    val ai: Boolean = false  // a race against iRacing's AI drivers (an offline race)
+    val ai: Boolean = false,  // a race against iRacing's AI drivers (an offline race)
+    val game: String = "iracing"  // the sim: Le Mans Ultimate (lmu) has no iRating and counts contacts, not incidents
 ) {
     /** DRINKS mode: who drove the race, with their laps and best lap, in the order they first drove ([] when you alone) */
     fun drivers(): List<Triple<String, Int, Double?>> {
@@ -169,6 +178,10 @@ data class Race(
         laps.forEach { l -> val n = l.drv.ifEmpty { own }; out.getOrPut(n.lowercase()) { n to mutableListOf() }.second.add(l) }
         return out.values.map { (n, ls) -> Triple(n, ls.size, ls.filter { it.time > 0 && !it.cut && !it.pit }.minOfOrNull { it.time }) }
     }
+    /** no iRating at all: a race against the AI, or one in another sim (Le Mans Ultimate has none) */
+    val noIr: Boolean get() = ai || game != "iracing"
+    /** Le Mans Ultimate counts contacts, not iRacing's incident points */
+    val contacts: Boolean get() = game == "lmu"
     /** who drove a lap: the friend's name, or yours */
     fun driverOf(l: RaceLap): String = l.drv.ifEmpty { drinks.firstOrNull { n -> laps.none { it.drv.equals(n, true) } } ?: "Me" }
 }

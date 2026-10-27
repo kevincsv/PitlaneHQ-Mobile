@@ -25,6 +25,11 @@ final class Live: ObservableObject {
     @Published var link = Link.off
     @Published var pcOnline = false
     @Published var simConnected = false
+    /// the sim your PC is reading ("iracing", "lmu"), from its status
+    @Published var source = ""
+    /// the sim your PC is reading right now (nil: not live): Home, Analysis and Community mark it in their game selector.
+    /// It stays while the link moves between presence and Telemetry, and goes when the PC leaves the sim or goes offline
+    @Published var pcGame: String?
     @Published var values: [String: Double] = [:]
     @Published var arrays: [String: [Double]] = [:]   // the per-car values (CarIdx…)
     @Published var session: LiveSession?             // the session YAML the PC sends: drivers, track
@@ -275,6 +280,7 @@ final class Live: ObservableObject {
             guard o["ctl"] as? String == "pc" else { return }
             let on = o["on"] as? Bool ?? false
             pcOnline = on
+            if !on { pcGame = nil }
             if mode == .idle || presence { return }
             if on {
                 if mode == .own { hello(ws, key, fresh: true) } else { want(ws, key) } // a PC that just started is asked again
@@ -307,8 +313,12 @@ final class Live: ObservableObject {
         case "share":
             myCode = (a[1] as? [String: Any])?["code"] as? String ?? ""
         case "status":
+            let st = a[1] as? [String: Any] ?? [:]
+            let src = st["source"] as? String ?? ""
             pcOnline = true
-            simConnected = (a[1] as? [String: Any])?["connected"] as? Bool ?? false
+            simConnected = st["connected"] as? Bool ?? false
+            source = games.contains(src) ? src : ""
+            pcGame = simConnected && !(st["demo"] as? Bool ?? false) && !source.isEmpty ? source : nil
         case "drinks":
             if let d = a[1] as? [String: Any] {
                 pcOnline = true

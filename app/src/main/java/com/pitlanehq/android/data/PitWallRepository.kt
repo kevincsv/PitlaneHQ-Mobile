@@ -46,6 +46,11 @@ class PitWallRepository(private val account: AccountRepository) {
     // the server says another device uploaded the account (its version): the app reads it again at once
     private val _syncNudges = MutableSharedFlow<Long>(extraBufferCapacity = 8)
     val syncNudges = _syncNudges.asSharedFlow()
+    // the sim your PC is reading right now ("iracing", "lmu"; null when it is not live): Home, Analysis and Community
+    // mark it in their game selector. It stays while the link moves between presence and Telemetry, and goes when
+    // the PC says it left the sim or went offline
+    private val _pcGame = MutableStateFlow<String?>(null)
+    val pcGame = _pcGame.asStateFlow()
     // what is watched: kept for your own PC (Connect stays on), never for someone's code
     private var mode = if (account.liveOwn) LiveMode.OWN else LiveMode.IDLE
     private var code = ""
@@ -244,6 +249,7 @@ class PitWallRepository(private val account: AccountRepository) {
             if (o.optString("ctl") == "sync") { _syncNudges.tryEmit(o.optLong("version")); return }
             if (o.optString("ctl") == "pc") {
                 val on = o.optBoolean("on")
+                if (!on) _pcGame.value = null
                 if (mode == LiveMode.IDLE) { _state.update { it.copy(pcOnline = on) }; return }
                 _state.update { if (on) it.copy(pcOnline = true) else it.copy(pcOnline = false, simConnected = false, values = emptyMap(), ask = "") }
                 if (on) { if (mode == LiveMode.OWN) hello(ws, key, true) else want(ws, key) } // a PC that just started is asked again
@@ -271,7 +277,9 @@ class PitWallRepository(private val account: AccountRepository) {
             "share" -> _state.update { it.copy(myCode = a.optJSONObject(1)?.optString("code").orEmpty()) }
             "status" -> {
                 val s = a.getJSONObject(1)
-                _state.update { it.copy(pcOnline = true, simConnected = s.optBoolean("connected")) }
+                val src = s.optString("source").takeIf { it in com.pitlanehq.android.model.GAMES } ?: ""
+                _pcGame.value = if (s.optBoolean("connected") && !s.optBoolean("demo") && src.isNotEmpty()) src else null
+                _state.update { it.copy(pcOnline = true, simConnected = s.optBoolean("connected"), source = src) }
             }
             "drinks" -> {
                 val d = a.getJSONObject(1)

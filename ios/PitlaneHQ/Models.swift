@@ -17,6 +17,8 @@ struct CloudSession: Identifiable, Hashable {
     /// the friends who drove laps of it in DRINKS mode, and a session against iRacing's AI
     var drvs: [String] = []
     var ai = false
+    /// the sim it was driven in: iracing or lmu (Le Mans Ultimate)
+    var game = "iracing"
 }
 
 struct CloudLap: Identifiable, Hashable {
@@ -62,6 +64,7 @@ struct PersonalBest: Identifiable, Hashable {
     let last: Double
     let bestLapId: String?
     let bestSessionId: String?
+    var game = "iracing"
 }
 
 struct Combo: Identifiable, Hashable {
@@ -269,6 +272,19 @@ struct Device: Identifiable, Hashable {
 }
 
 /// Your Discord account linked to this one (`oauth`: the server can link it with Discord's sign-in).
+/// Your Steam account linked to this one (Account → Steam): its persona name and whether your profile shows it.
+struct SteamLink {
+    let linked: Bool
+    let id: String
+    let persona: String
+    let shown: Bool
+}
+
+/// The sims the phones show, one at a time (Home, Analysis, Community): iRacing and Le Mans Ultimate (in beta).
+let games = ["iracing", "lmu"]
+func gameShort(_ g: String) -> String { g == "lmu" ? "LMU" : "iRacing" }
+func gameName(_ g: String) -> String { g == "lmu" ? "Le Mans Ultimate" : "iRacing" }
+
 struct DiscordLink {
     let linked: Bool
     let id: String
@@ -313,6 +329,15 @@ struct Race: Identifiable, Hashable {
     var cat: String? = nil  // the discipline as iRacing names it (Oval, Road, DirtOval…); raceDisc tells which of ours
     var drinks: [String] = []  // DRINKS mode: who drove it when a friend drove any lap (the PC's report)
     var ai = false  // a race against iRacing's AI drivers (an offline race)
+    var game = "iracing"  // the sim: Le Mans Ultimate (lmu) has no iRating and counts contacts, not incidents
+
+    /// no iRating at all: a race against the AI, or one in another sim (Le Mans Ultimate has none)
+    var noIr: Bool { ai || game != "iracing" }
+    /// Le Mans Ultimate counts contacts, not iRacing's incident points
+    var contacts: Bool { game == "lmu" }
+    /// the incidents as the game counts them: "3x" in iRacing, "3" contacts in Le Mans Ultimate
+    var incText: String { contacts ? "\(inc)" : "\(inc)x" }
+    var incLabel: String { contacts ? t("contacts") : t("incidents") }
 
     /// DRINKS mode: your name in the race (the one of its drivers that is no lap's friend)
     var ownName: String { drinks.first(where: { n in !laps.contains(where: { $0.drv.caseInsensitiveCompare(n) == .orderedSame }) }) ?? "Me" }

@@ -137,7 +137,7 @@ struct LicCard: View {
     @State var sel: Int?
     var body: some View {
         let col = discColor(k)
-        let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.ai && $0.ir != 1 }.prefix(5) // races against the AI give no iRating
+        let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.noIr && $0.ir != 1 }.prefix(5) // races against the AI give no iRating
         let chg = last.reduce(0) { $0 + $1.irChange }
         let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
         let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
@@ -379,6 +379,8 @@ struct Banners: View {
 struct Screen<Content: View>: View {
     let title: String
     var sub = ""
+    /// iRacing | LMU under the title (Home, Analysis, Community)
+    var gameSeg = false
     @ViewBuilder var content: Content
     var body: some View {
         VStack(spacing: 0) {
@@ -390,6 +392,7 @@ struct Screen<Content: View>: View {
                         if !sub.isEmpty { Text(sub).font(.caption).foregroundColor(Theme.muted).lineLimit(2) }
                     }
                     .padding(.vertical, 4)
+                    if gameSeg { GameSeg() }
                     content
                 }
                 .padding(.horizontal, 14)
@@ -422,6 +425,79 @@ final class Loader<T>: ObservableObject {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
         loading = false
+    }
+}
+
+// ---------- the game you look at ----------
+
+/// "Beta" beside Le Mans Ultimate wherever it is offered.
+struct BetaPill: View {
+    var on = false
+    var body: some View {
+        Text(t("beta")).font(.system(size: 9, weight: .bold)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.accent)
+            .padding(.horizontal, 5).overlay(Capsule().stroke((on ? Theme.ink : Theme.accent).opacity(0.6), lineWidth: 1))
+    }
+}
+
+/// A session or race of Le Mans Ultimate, like the vs AI and DRINKS pills.
+struct LmuPill: View {
+    var body: some View {
+        Text("LMU").font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Theme.purple)
+            .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.purple.opacity(0.55), lineWidth: 1))
+    }
+}
+
+/// iRacing | LMU in the header of Home, Analysis and Community: what this phone shows, never what your PC reads.
+/// The game your PC is reading live is marked ●.
+struct GameSeg: View {
+    @EnvironmentObject var account: Account
+    @EnvironmentObject var live: Live
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(games, id: \.self) { g in
+                let on = account.game == g
+                Button { account.setGame(g) } label: {
+                    HStack(spacing: 5) {
+                        Text(gameShort(g) + (live.pcGame == g ? " ●" : "")).font(.system(size: 13, weight: .bold)).lineLimit(1)
+                        if g == "lmu" { BetaPill(on: on) }
+                    }
+                    .foregroundColor(on ? Theme.ink : Theme.muted)
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    .background(on ? Theme.accent : Color.clear).clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(3).background(Theme.surface).overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+}
+
+/// When the app opens, your PC is not live and you drove both games: which one to see (remembered on this phone).
+struct GameSheet: View {
+    @EnvironmentObject var account: Account
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(t("gs_title")).font(.title3.weight(.black)).foregroundColor(Theme.fg)
+            ForEach(games, id: \.self) { g in
+                let st = account.gameStats[g] ?? (n: 0, last: 0)
+                let on = account.game == g
+                Button { account.setGame(g) } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 4) { Text(gameName(g)).font(.headline.weight(.black)).foregroundColor(Theme.fg); if g == "lmu" { BetaPill() } }
+                        Text([t("gs_sessions", st.n), st.last > 0 ? t("gs_last", day(st.last)) : ""].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                        Text(t("gs_see", gameName(g))).font(.subheadline.bold()).padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(on ? Theme.accent : Theme.surface2).foregroundColor(on ? Theme.ink : Theme.fg).clipShape(RoundedRectangle(cornerRadius: 8)).padding(.top, 4)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                    .background(Theme.ink).overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? Theme.accent : Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(Theme.surface.ignoresSafeArea())
+        .presentationDetents([.medium])
     }
 }
 
@@ -486,6 +562,7 @@ struct LoginView: View {
                 Panel {
                     Text(t("sign_in").uppercased()).font(.system(size: 22, weight: .black))
                     Text(t("same_account")).font(.caption).foregroundColor(Theme.muted)
+                    SteamSignIn(email: email)
                     TextField(t("email"), text: $email)
                         .textContentType(.username).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6)).padding(.top, 10)
@@ -513,6 +590,154 @@ struct LoginView: View {
         }
         .background(Theme.ink.ignoresSafeArea())
         .sheet(isPresented: $account.needCode) { CodeSheet() }
+    }
+}
+
+/// "Continue with Steam", above the email form: Steam's sign-in opens in the system's sign-in sheet and comes back to
+/// this phone. Then the authenticator's code when two-step sign-in is on, and the password once on this phone (the data
+/// key comes from it). A Steam with no account yet opens the new account's form with its persona as the public name.
+struct SteamSignIn: View {
+    @EnvironmentObject var account: Account
+    let email: String
+    @State private var em = ""
+    @State private var pw = ""
+    @State private var code = ""
+    @State private var name = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { Task { await account.steamSignIn() } } label: {
+                Text(t("steam_continue")).font(.subheadline.bold()).frame(maxWidth: .infinity).padding(11)
+                    .foregroundColor(Theme.fg).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
+            }
+            .disabled(account.steamBusy)
+            if !account.steamNeedCode && !account.steamNeedKey && account.steamNew == nil, let e = account.steamError {
+                Text(t(e)).font(.caption).foregroundColor(Theme.bad)
+            }
+            HStack {
+                Rectangle().fill(Theme.line).frame(height: 1)
+                Text(t("or")).font(.caption2).foregroundColor(Theme.muted)
+                Rectangle().fill(Theme.line).frame(height: 1)
+            }
+            .padding(.vertical, 6)
+        }
+        .padding(.top, 10)
+        .sheet(isPresented: Binding(get: { account.steamNeedCode || account.steamNeedKey }, set: { if !$0 && (account.steamNeedCode || account.steamNeedKey) { account.steamCancel() } })) {
+            form(title: account.steamNeedCode ? t("two_factor") : t("steam_sign_in")) {
+                if account.steamNeedCode {
+                    Text(t("two_factor_code")).font(.caption).foregroundColor(Theme.muted)
+                    TextField("123 456", text: $code).textContentType(.oneTimeCode).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
+                        .font(.system(size: 24, weight: .semibold, design: .monospaced)).multilineTextAlignment(.center)
+                        .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+                    go(t("continue"), enabled: !code.isEmpty) { await account.steamLoginCode(code) }
+                } else {
+                    Text(t("steam_pw_once")).font(.caption).foregroundColor(Theme.muted)
+                    field(t("email"), $em)
+                    SecureField(t("password"), text: $pw).textContentType(.password).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+                    go(account.steamBusy ? t("signing_in") : t("sign_in"), enabled: !em.isEmpty && !pw.isEmpty) { await account.steamKey(email: em, password: pw) }
+                }
+            }
+        }
+        .sheet(item: Binding(get: { account.steamNew }, set: { if $0 == nil && account.steamNew != nil { account.steamCancel() } })) { n in
+            form(title: t("create_account")) {
+                Text(t("steam_no_account")).font(.caption).foregroundColor(Theme.accent)
+                field(t("email"), $em)
+                SecureField(t("password"), text: $pw).textContentType(.newPassword).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(t("pw_short")).font(.caption2).foregroundColor(Theme.muted)
+                TextField(t("public_name"), text: $name).autocorrectionDisabled().padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+                go(t("create_account"), enabled: !em.isEmpty && pw.count >= 10 && !name.trimmingCharacters(in: .whitespaces).isEmpty) { await account.register(email: em, password: pw, name: name) }
+            }
+            .onAppear { if name.isEmpty { name = String(n.persona.prefix(32)) } }
+        }
+        .onAppear { if em.isEmpty { em = email } }
+    }
+
+    private func field(_ label: String, _ v: Binding<String>) -> some View {
+        TextField(label, text: v).textContentType(.username).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
+            .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func go(_ label: String, enabled: Bool, _ run: @escaping () async -> Void) -> some View {
+        Button { Task { await run() } } label: {
+            Text(label.uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
+                .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .disabled(account.steamBusy || !enabled)
+    }
+
+    private func form<C: View>(title: String, @ViewBuilder _ c: () -> C) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    c()
+                    if let e = account.steamError { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                }
+                .padding(20)
+            }
+            .background(Theme.ink.ignoresSafeArea())
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { account.steamCancel() } } }
+        }
+    }
+}
+
+/// Account → Steam, beside Discord: link it (the password first, then Steam's sign-in), show it on your profile, or
+/// unlink it (the password again). Once linked, Steam signs you in on every device.
+struct SteamPanel: View {
+    @EnvironmentObject var account: Account
+    @Environment(\.scenePhase) private var phase
+    @StateObject private var steam = Loader<SteamLink>()
+    @State private var ask = ""   // "", "link", "unlink"
+    @State private var pw = ""
+    @State private var busy = false
+
+    var body: some View {
+        Panel {
+            if let d = steam.data {
+                if !d.linked {
+                    Text(t("steam_intro")).font(.caption).foregroundColor(Theme.muted)
+                    Button { pw = ""; ask = "link" } label: {
+                        Text(t("steam_link").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .disabled(busy)
+                    .padding(.top, 4)
+                } else {
+                    HStack(spacing: 8) {
+                        Text(d.persona.isEmpty ? t("steam_linked") : d.persona).font(.subheadline.bold()).lineLimit(1)
+                        Text(t("discord_linked_pill")).font(.system(size: 10, weight: .bold)).lineLimit(1).foregroundColor(Theme.good)
+                            .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.good.opacity(0.55), lineWidth: 1))
+                    }
+                    Toggle(t("steam_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.steamShow(v) } })).font(.subheadline)
+                    Button(t("steam_unlink")) { pw = ""; ask = "unlink" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+                }
+            } else if steam.error == nil {
+                Text(t("loading")).font(.caption).foregroundColor(Theme.muted)
+            }
+            if let e = steam.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+        }
+        .task { await load() }
+        .onChange(of: phase) { p in if p == .active && !busy { Task { await load() } } }
+        .alert(t(ask == "unlink" ? "steam_unlink_ask" : "steam_link"), isPresented: Binding(get: { !ask.isEmpty }, set: { if !$0 { ask = "" } })) {
+            SecureField(t("password"), text: $pw)
+            Button(ask == "unlink" ? t("steam_unlink") : t("continue"), role: ask == "unlink" ? ButtonRole.destructive : nil) {
+                let p = pw, a = ask
+                ask = ""
+                if a == "link" { act { try await account.steamLinkStart(password: p) } } else { act { try await account.steamUnlink(password: p) } }
+            }
+            Button(t("cancel"), role: .cancel) { ask = "" }
+        }
+    }
+
+    private func load() async { await steam.load { try await account.steam() } }
+
+    // a change, then the card read again (an error stays on the card)
+    private func act(_ f: @escaping () async throws -> Void) {
+        busy = true
+        Task {
+            do { try await f(); await load() } catch { steam.error = (error as? AppError)?.key ?? error.localizedDescription }
+            busy = false
+        }
     }
 }
 
@@ -726,7 +951,13 @@ struct MainView: View {
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
+        // "What do you want to see?": when the app opens, your PC is not live and you drove both games
+        .sheet(isPresented: Binding(get: { account.askGame && live.pcGame == nil }, set: { if !$0 { account.askGame = false } })) { GameSheet() }
+        // nothing chosen on this phone yet: the selector follows the game your PC reads live
+        .onChange(of: live.pcGame) { g in if let g, !account.gameChosen, g != account.game { account.setGame(g, remember: false) } }
     }
+    @EnvironmentObject private var account: Account
+    @EnvironmentObject private var live: Live
 
     // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
     private var bar: some View {
@@ -881,10 +1112,10 @@ struct LastRaceCard: View {
                 if !race.dnf { Text("/\(race.field)").font(.system(size: 14)).foregroundColor(Theme.muted).padding(.top, 12) }
             }
             HStack(spacing: 8) {
-                // a race against the AI has no iRating
-                stat(t("lr_ir"), race.ai ? "—" : signed(race.irChange), irTint)
+                // a race against the AI has no iRating; Le Mans Ultimate none at all, and contacts instead of incident points
+                if !race.contacts { stat(t("lr_ir"), race.noIr ? "—" : signed(race.irChange), irTint) }
                 stat(t("lr_best"), lapTime(race.best), Theme.purple)
-                stat(t("lr_inc"), "\(race.inc)x", race.inc >= 8 ? Theme.bad : Theme.fg)
+                stat(race.incLabel.uppercased(), race.incText, race.inc >= 8 ? Theme.bad : Theme.fg)
             }
             .fixedSize(horizontal: false, vertical: true)
             Text(t("see_summary")).font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.accent)
@@ -897,7 +1128,7 @@ struct LastRaceCard: View {
     }
 
     private var irTint: Color {
-        if race.ai { return Theme.muted }
+        if race.noIr { return Theme.muted }
         return race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.fg
     }
     private var placeTint: Color { !race.dnf && (1...3).contains(race.finish) ? Theme.accent : Theme.fg }
@@ -915,7 +1146,7 @@ struct LastRaceCard: View {
 
 /// Your rated races of one discipline, oldest first (an offline race's placeholder iRating 1 is none).
 func irRaces(_ races: [Race], _ k: String, _ n: Int) -> [Race] {
-    Array(races.filter { !$0.ai && $0.ir != 1 && raceDisc($0.cat, $0.car) == k }.prefix(n).reversed())
+    Array(races.filter { !$0.noIr && $0.ir != 1 && raceDisc($0.cat, $0.car) == k }.prefix(n).reversed())
 }
 
 /// The iRating each of those races left you at: the race's own when it has one, else counted back from the newest
@@ -1001,7 +1232,7 @@ struct IrTrend: View {
     private var disc: String {
         let ds = discs
         if ds.contains(k) { return k }
-        if let r = races.first(where: { !$0.ai && $0.ir != 1 }) {
+        if let r = races.first(where: { !$0.noIr && $0.ir != 1 }) {
             let d = raceDisc(r.cat, r.car)
             if ds.contains(d) { return d }
         }
@@ -1076,11 +1307,11 @@ struct RaceRow: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(race.dnf ? t("dnf") : "P\(race.finish)/\(race.field)").font(.system(.headline, design: .monospaced).weight(.black)).foregroundColor(race.finish == 1 ? Theme.purple : Theme.fg)
                     // a race against the AI has no iRating
-                    if !race.ai {
+                    if !race.noIr {
                         Text("iR " + signed(race.irChange)).font(.system(.caption, design: .monospaced).bold())
                             .foregroundColor(race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.muted)
                     }
-                    Text("\(race.inc)x").font(.system(.caption2, design: .monospaced)).foregroundColor(race.inc >= 8 ? Theme.bad : Theme.muted)
+                    Text(race.incText).font(.system(.caption2, design: .monospaced)).foregroundColor(race.inc >= 8 ? Theme.bad : Theme.muted)
                 }
             }
         }
@@ -1122,6 +1353,7 @@ struct DrinksBadge: View {
 struct AiBadge: View {
     let race: Race
     var body: some View {
+        if race.game == "lmu" { LmuPill() }
         if race.ai {
             Text(t("vs_ai")).font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Theme.blue)
                 .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.blue.opacity(0.55), lineWidth: 1))
@@ -1141,7 +1373,7 @@ struct HomeView: View {
         let hi = t(hr < 6 || hr >= 21 ? "hm_evening" : hr < 13 ? "hm_morning" : "hm_afternoon")
         // like the web and the PC: the greeting and your PC, four numbers of the month, your last race, the recent
         // sessions, the licence summary and the days you drove, each on its card
-        Screen(title: account.display.isEmpty ? hi : hi + ", " + account.display) {
+        Screen(title: account.display.isEmpty ? hi : hi + ", " + account.display, gameSeg: true) {
             HStack(spacing: 8) {
                 if account.admin || (account.supporter && !account.supporterHidden) { MyBadges() }
                 Text("●").font(.caption).foregroundColor(live.pcOnline ? Theme.good : Theme.muted)
@@ -1168,12 +1400,13 @@ struct HomeView: View {
             }
             HomeRecent(races: Array(races.dropFirst()), sessions: sessions) { inbox.analysisTab = 2; inbox.goTab = 1 }
             if races.isEmpty && sessions.isEmpty { EmptyNote(text: t("no_races")) }
-            Licences()
+            // Le Mans Ultimate has no iRating nor licences
+            if account.game == "iracing" { Licences() }
             DaysDriven(races: races)
             // no sync card (the sync is automatic): only what went wrong, when something did
             if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
         }
-        .task { if sessions.isEmpty, let g = try? await account.sessions() { sessions = g.data } }
+        .task(id: account.game) { if let g = try? await account.sessions() { sessions = g.data } }
         .refreshable { await account.sync(); if let g = try? await account.sessions() { sessions = g.data } }
     }
 }
@@ -1238,7 +1471,7 @@ struct HomeLastRace: View {
         let x = race
         let gain = x.start > 0 && x.finish > 0 && !x.dnf ? x.start - x.finish : 0
         let pos = x.laps.map { $0.pos }.filter { $0 > 0 }
-        let ir: Int? = x.ai || x.irChange == 0 ? nil : x.irChange
+        let ir: Int? = x.noIr || x.irChange == 0 ? nil : x.irChange
         Panel {
             HStack {
                 SectionLabel(text: t("hm_last_race"))
@@ -1276,8 +1509,9 @@ struct HomeLastRace: View {
             }
             .buttonStyle(.plain)
             HStack(spacing: 8) {
-                stat(t("lr_ir"), ir.map { signed($0) } ?? "–", ir == nil ? Theme.muted : ir! > 0 ? Theme.good : Theme.bad)
-                stat(t("lr_inc"), "\(x.inc)x", x.inc >= 8 ? Theme.bad : Theme.fg)
+                // Le Mans Ultimate: no iRating, and contacts instead of incident points
+                if !x.contacts { stat(t("lr_ir"), ir.map { signed($0) } ?? "–", ir == nil ? Theme.muted : ir! > 0 ? Theme.good : Theme.bad) }
+                stat(x.incLabel.uppercased(), x.incText, x.inc >= 8 ? Theme.bad : Theme.fg)
                 stat(t("lr_best"), lapTime(x.best), Theme.purple)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -1319,7 +1553,7 @@ struct HomeRecent: View {
                     if k > 0 { Divider().background(Theme.line) }
                     switch e.1 {
                     case .race(let r):
-                        let ir: Int? = r.ai || r.irChange == 0 ? nil : r.irChange
+                        let ir: Int? = r.noIr || r.irChange == 0 ? nil : r.irChange
                         NavigationLink(value: Route.race(r)) {
                             row(r.dnf ? t("dnf") : "P\(r.finish)", r.dnf ? Theme.bad : Theme.fg, r.track, "race", raceDisc(r.cat, r.car), r.car + " · " + agoText(r.when), ir, r.laps.count, r.best) {
                                 HStack(spacing: 6) { DrinksBadge(race: r); AiBadge(race: r) }
@@ -1400,12 +1634,12 @@ struct DaysDriven: View {
                 }
             }
         }
-        .task { if sessions.isEmpty, let g = try? await account.sessions() { sessions = g.data } }
+        .task(id: account.game) { if let g = try? await account.sessions() { sessions = g.data } }
         .sheet(item: Binding(get: { open.map { DayRef(day: $0) } }, set: { open = $0?.day })) { ref in
             NavigationStack {
                 List {
                     ForEach(byRace[ref.day] ?? []) { x in
-                        NavigationLink(value: Route.race(x)) { Text("\(x.track) · P\(x.finish)/\(x.field) · \(x.inc)x").bold() }
+                        NavigationLink(value: Route.race(x)) { Text("\(x.track) · P\(x.finish)/\(x.field) · \(x.incText)").bold() }
                     }
                     ForEach(bySes[ref.day] ?? []) { x in
                         NavigationLink(value: Route.session(x)) { Text("\(kindText(x.kind)) · \(x.track) · \(x.car) · \(lapTime(x.best))") }
@@ -1437,16 +1671,16 @@ struct RaceView: View {
         let x = race
         let best = x.laps.filter { $0.time > 0 && !$0.cut }.map(\.time).min()
         Screen(title: x.track, sub: x.car + " · " + dayTime(x.when)) {
-            if !x.drinks.isEmpty || x.ai { HStack(spacing: 6) { DrinksBadge(race: x, names: true); AiBadge(race: x) } }
-            MetricGrid(items: [
+            if !x.drinks.isEmpty || x.ai || x.game == "lmu" { HStack(spacing: 6) { DrinksBadge(race: x, names: true); AiBadge(race: x) } }
+            MetricGrid(items: ([
                 MetricData(label: t("start"), value: "P\(x.start)"),
                 MetricData(label: t("finish"), value: x.dnf ? t("dnf") : "P\(x.finish)", color: x.finish == 1 ? Theme.purple : Theme.fg),
-                // a race against the AI has no iRating
-                x.ai ? MetricData(label: "iRating", value: "—", color: Theme.muted, sub: t("vs_ai")) : MetricData(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil),
-                MetricData(label: t("incidents"), value: "\(x.inc)x", color: x.inc >= 8 ? Theme.bad : Theme.fg),
+                // a race against the AI has no iRating; Le Mans Ultimate none at all (nor a strength of field), its contacts instead
+                x.contacts ? nil : x.ai ? MetricData(label: "iRating", value: "—", color: Theme.muted, sub: t("vs_ai")) : MetricData(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil),
+                MetricData(label: x.incLabel, value: x.incText, color: x.inc >= 8 ? Theme.bad : Theme.fg),
                 MetricData(label: t("pos_gain"), value: signed(x.start - x.finish), color: x.start > x.finish ? Theme.good : x.start < x.finish ? Theme.bad : Theme.fg),
-                MetricData(label: t("sof"), value: x.sof > 0 ? "\(x.sof)" : "—"),
-            ], columns: 3)
+                x.contacts ? nil : MetricData(label: t("sof"), value: x.sof > 0 ? "\(x.sof)" : "—"),
+            ] as [MetricData?]).compactMap { $0 }, columns: 3)
             Panel {
                 InfoRow(label: t("best_lap"), value: lapTime(x.best), color: Theme.purple)
                 InfoRow(label: t("field_best"), value: lapTime(x.fieldBest))
@@ -1468,7 +1702,7 @@ struct RaceView: View {
                             Text(lapTime(l.time)).foregroundColor(l.cut ? Theme.muted : l.time == best ? Theme.purple : Theme.fg).strikethrough(l.cut).opacity(l.cut ? 0.6 : 1)
                             Spacer()
                             Text("P\(l.pos)").foregroundColor(Theme.muted).strikethrough(l.cut).frame(width: 44, alignment: .leading)
-                            Text([l.cut ? t("invalid").lowercased() : nil, l.pit ? t("pit") : nil, l.inc > 0 ? "\(l.inc)x" : nil].compactMap { $0 }.joined(separator: " · "))
+                            Text([l.cut ? t("invalid").lowercased() : nil, l.pit ? t("pit") : nil, l.inc > 0 ? (x.contacts ? "\(l.inc)" : "\(l.inc)x") : nil].compactMap { $0 }.joined(separator: " · "))
                                 .font(.system(size: 11, design: .monospaced)).foregroundColor(l.pit && !l.cut ? Theme.blue : Theme.bad).frame(minWidth: 40, alignment: .leading)
                         }
                         .font(.system(size: 12, design: .monospaced))
@@ -1494,9 +1728,9 @@ struct RaceView: View {
                             let dl = !me && p.laps > 0 && myLaps > 0 ? p.laps - myLaps : 0
                             if dl != 0 { Text((dl > 0 ? "+" : "−") + "\(abs(dl))L").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(dl > 0 ? Theme.bad : Theme.blue) }
                             Spacer()
-                            Text(p.ir > 0 && !x.ai ? "\(p.ir)" : "").foregroundColor(Theme.muted).frame(width: 44, alignment: .trailing)
+                            Text(p.ir > 0 && !x.noIr ? "\(p.ir)" : "").foregroundColor(Theme.muted).frame(width: 44, alignment: .trailing)
                             Text(lapTime(p.best)).frame(width: 66, alignment: .trailing)
-                            Text("\(p.inc)x").foregroundColor(Theme.muted).frame(width: 30, alignment: .trailing)
+                            Text(x.contacts ? "\(p.inc)" : "\(p.inc)x").foregroundColor(Theme.muted).frame(width: 30, alignment: .trailing)
                         }
                         .font(.system(size: 12, design: .monospaced))
                         .contentShape(Rectangle())
@@ -1635,6 +1869,7 @@ struct AnalysisView: View {
     @State private var fDay = ""
     @State private var showDays = false
     @State private var lastDemo = false
+    @State private var lastGame = ""
 
     private func load() async {
         if tab == 3 { await account.sync(quiet: true); return }
@@ -1760,7 +1995,7 @@ struct AnalysisView: View {
             LoadState(loading: bests.loading, error: bests.error, stale: bests.stale) { Task { await load() } }
             if let b = bests.data, b.isEmpty { EmptyNote(text: t("no_sessions")) }
             ForEach(bests.data ?? []) { x in
-                let s = x.bestSessionId.map { CloudSession(id: $0, started: x.last, track: x.track, trackConfig: x.trackConfig, car: x.car, kind: "", laps: x.laps, best: x.best) }
+                let s = x.bestSessionId.map { CloudSession(id: $0, started: x.last, track: x.track, trackConfig: x.trackConfig, car: x.car, kind: "", laps: x.laps, best: x.best, game: x.game) }
                 Button { if let s { Task { await open(s) } } } label: {
                     Panel {
                         Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
@@ -1793,7 +2028,7 @@ struct AnalysisView: View {
     }
 
     var body: some View {
-        Screen(title: t("analysis")) {
+        Screen(title: t("analysis"), gameSeg: true) {
             Tabs(labels: [t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")], selected: $tab)
             switch tab {
             case 0, 1: lapsAndCoach
@@ -1807,8 +2042,10 @@ struct AnalysisView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: "\(tab)-\(onlyBest)-\(account.demo)") {
-            if account.demo != lastDemo { lastDemo = account.demo; cur = nil; sessions.data = nil; bests.data = nil }
+        .task(id: "\(tab)-\(onlyBest)-\(account.demo)-\(account.game)") {
+            if account.demo != lastDemo || account.game != lastGame {
+                lastDemo = account.demo; lastGame = account.game; cur = nil; sessions.data = nil; bests.data = nil; laps.data = nil; coach = nil; coachKey = ""
+            }
             if tab < 2 { pickFor = tab }
             if tab == 1 && laps.data != nil { await loadCoach() }
             if tab == 3 { return }
@@ -3142,6 +3379,7 @@ struct CommunityView: View {
     @State private var tab = 0
     @State private var q = ""
     @State private var lastDemo = false
+    @State private var lastGame = ""
     @State private var sec = 0
     @State private var cat = ""
 
@@ -3158,7 +3396,7 @@ struct CommunityView: View {
     private var empty: Bool { tab == 0 ? combos.data == nil : tab == 1 ? reports.data == nil : setups.data == nil }
 
     var body: some View {
-        Screen(title: t("community")) {
+        Screen(title: t("community"), gameSeg: true) {
             Tabs(labels: [t("leaderboards"), t("leagues")], selected: $sec)
             if sec == 1 {
                 LeagueHub()
@@ -3224,8 +3462,8 @@ struct CommunityView: View {
             }
         }
         .refreshable { await load() }
-        .task(id: "\(tab)-\(account.demo)") {
-            if empty || account.demo != lastDemo { lastDemo = account.demo; await load() }
+        .task(id: "\(tab)-\(account.demo)-\(account.game)") {
+            if empty || account.demo != lastDemo || account.game != lastGame { lastDemo = account.demo; lastGame = account.game; await load() }
         }
         .onChange(of: net.cameBack) { _ in Task { await load() } }
     }
@@ -3268,7 +3506,7 @@ struct RecentRecords: View {
                 Button(all ? t("fewer") : t("show_all_n", list.count)) { all.toggle() }.font(.subheadline.bold()).foregroundColor(Theme.accent)
             }
         }
-        .task(id: account.demo) { await recs.load { try await account.records() } }
+        .task(id: "\(account.demo)-\(account.game)") { await recs.load { try await account.records() } }
     }
 }
 
@@ -4113,6 +4351,8 @@ struct SettingsView: View {
             }
             SectionLabel(text: "DISCORD")
             DiscordPanel()
+            SectionLabel(text: "STEAM")
+            SteamPanel()
             SectionLabel(text: t("language"))
             Panel {
                 ForEach(["system", "en", "es"], id: \.self) { k in

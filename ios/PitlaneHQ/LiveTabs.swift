@@ -315,11 +315,13 @@ struct LiveMapView: View {
                 Text(tid > 0 ? t("lt_map_none") : t("lt_no_cars")).font(.caption).foregroundColor(Theme.muted)
             }
         }
-        .task(id: tid) {
-            guard tid > 0, tid != key else { return }
+        // the layouts and turns are per game: the one your PC reads
+        .task(id: "\(tid)-\(live.source)") {
+            guard tid > 0 else { return }
+            let g = live.source.isEmpty ? "iracing" : live.source
+            layout = await account.trackLayout(trackId: tid, game: g)
+            turns = await account.turns(trackId: tid, game: g)
             key = tid
-            layout = await account.trackLayout(trackId: tid)
-            turns = await account.turns(trackId: tid)
         }
     }
 
@@ -610,9 +612,9 @@ struct LiveCompareView: View {
                 Text(t("lm_wait_cmp")).font(.caption).foregroundColor(Theme.muted)
             }
         }
-        .task(id: live.session?.trackId ?? 0) {
+        .task(id: "\(live.session?.trackId ?? 0)-\(live.source)") {
             let tid = live.session?.trackId ?? 0
-            if tid > 0 { turns = await account.turns(trackId: tid) }
+            if tid > 0 { turns = await account.turns(trackId: tid, game: live.source.isEmpty ? "iracing" : live.source) }
         }
     }
 }

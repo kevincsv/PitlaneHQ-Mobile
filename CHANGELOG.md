@@ -4,6 +4,13 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.6.0 beta
+
+- Le Mans Ultimate is here in beta. Its sessions and races carry an LMU tag and show contacts instead of iRating.
+- Choose the game you look at in Home, Analysis and Community. The game your PC is reading live has a dot.
+- Sign in with Steam, and link your Steam account in Account.
+- Fixes and improvements.
+
 ## 0.5.0 beta
 
 - The coach tells you first the habits you repeat across tracks, you can rate every tip with 👍 or 👎 and under it you

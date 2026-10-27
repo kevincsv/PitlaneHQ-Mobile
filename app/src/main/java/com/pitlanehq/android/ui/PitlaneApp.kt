@@ -163,6 +163,7 @@ private fun LoginScreen(vm: PitlaneViewModel, error: String?, busy: Boolean) {
                 Text(t("sign_in").uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text(t("same_account"), color = Muted, fontSize = 12.sp)
                 Spacer(Modifier.height(12.dp))
+                SteamSignIn(vm, email)
                 OutlinedTextField(
                     email, { email = it }, label = { Text(t("email")) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth()
@@ -204,6 +205,7 @@ private fun MainApp(vm: PitlaneViewModel) {
                 upd?.let { u -> Banner(t("update_available", u.version), Good) { uri.openUri(u.url) } }
             }
             UpdateNotice(upd)
+            if (vm.askGame) GameSheet(vm)
             // the screenshot job (debug builds): open the screen it asked for
             LaunchedEffect(Unit) {
                 val r = ShotMode.route ?: return@LaunchedEffect
@@ -361,7 +363,7 @@ private fun BottomBar(nav: NavHostController) {
 }
 
 @Composable
-private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, content: LazyListScope.() -> Unit) {
+private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, head: (@Composable () -> Unit)? = null, content: LazyListScope.() -> Unit) {
     LazyColumn(
         Modifier.fillMaxSize().background(Ink),
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 20.dp),
@@ -377,6 +379,7 @@ private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, 
                 InfoButton()
             }
         }
+        if (head != null) item { head() }
         content()
     }
 }
@@ -405,13 +408,14 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(Unit) { if (sl.data == null && !sl.loading) vm.loadSessions() }
     val races = r.data ?: emptyList()
     val sessions = sl.data ?: emptyList()
+    val gm = vm.game
     val hr = java.time.LocalTime.now().hour
     val hi = t(if (hr < 6 || hr >= 21) "hm_evening" else if (hr < 13) "hm_morning" else "hm_afternoon")
     val name = a.display.ifBlank { "" }
     val toAnalysis = { tab: Int -> vm.analysisTab = tab; nav.navigate("analysis") { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } }
     // like the web and the PC: the greeting and your PC, four numbers of the month, your last race, the recent
     // sessions, the licence summary and the days you drove, each on its card
-    Screen(if (name.isNotBlank()) "$hi, $name" else hi) {
+    Screen(if (name.isNotBlank()) "$hi, $name" else hi, head = { GameSeg(vm) }) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (a.admin || (a.supporter && !a.supporterHidden)) MyBadges(a)
@@ -435,7 +439,8 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
         races.firstOrNull()?.let { x -> item { HomeLastRace(x, { vm.race = x; nav.navigate("race") }, { toAnalysis(0) }) } }
         item { HomeRecent(races.drop(1), sessions, { x -> vm.race = x; nav.navigate("race") }, { x -> vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) { toAnalysis(2) } }
         if (r.data != null && races.isEmpty() && sessions.isEmpty()) item { Empty(t("no_races")) }
-        item { Licences(vm) }
+        // Le Mans Ultimate has no iRating nor licences
+        if (gm == "iracing") item { Licences(vm) }
         item { DaysDriven(vm, nav, races) }
         // no sync card (the sync is automatic): only what went wrong, when something did
         a.error?.let { e -> item { Text(t(e), color = Bad, fontSize = 12.sp) } }
@@ -499,7 +504,7 @@ private fun KindTag(kind: String) {
 private fun HomeLastRace(x: Race, onSummary: () -> Unit, onLaps: () -> Unit) {
     val gain = if (x.start > 0 && x.finish > 0 && !x.dnf) x.start - x.finish else 0
     val pos = x.laps.map { it.pos }.filter { it > 0 }
-    val ir = if (x.ai || x.irChange == 0) null else x.irChange
+    val ir = if (x.noIr || x.irChange == 0) null else x.irChange
     Panel(Modifier.clickable(onClick = onSummary)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Section(t("hm_last_race"))
@@ -538,8 +543,9 @@ private fun HomeLastRace(x: Race, onSummary: () -> Unit, onLaps: () -> Unit) {
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            LastStat(t("lr_ir"), ir?.let { signed(it) } ?: "–", if (ir == null) Muted else if (ir > 0) Good else Bad, Modifier.weight(1f).fillMaxHeight())
-            LastStat(t("lr_inc"), "${x.inc}x", if (x.inc >= 8) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
+            // Le Mans Ultimate: no iRating, and contacts instead of incident points
+            if (!x.contacts) LastStat(t("lr_ir"), ir?.let { signed(it) } ?: "–", if (ir == null) Muted else if (ir > 0) Good else Bad, Modifier.weight(1f).fillMaxHeight())
+            LastStat(incLabel(x).uppercase(), incText(x), if (x.inc >= 8) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
             LastStat(t("lr_best"), lapTime(x.best), Purple, Modifier.weight(1f).fillMaxHeight())
         }
         Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -565,11 +571,11 @@ private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: 
             if (k > 0) HorizontalDivider(color = Line)
             when (o) {
                 is Race -> {
-                    val ir = if (o.ai || o.irChange == 0) null else o.irChange
+                    val ir = if (o.noIr || o.irChange == 0) null else o.irChange
                     HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.track, "race", raceDisc(o.cat, o.car), o.car + " · " + agoText(o.whenMs), ir, o.laps.size, o.best, { onRace(o) }) { DrinksBadge(o); AiBadge(o) }
                 }
                 is CloudSession -> HomeRow("–", Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + agoText(o.started), null, o.laps, o.best, { onSession(o) }) {
-                    if (o.drvs.isNotEmpty() || o.ai) SessionBadges(o)
+                    if (o.drvs.isNotEmpty() || o.ai || o.game == "lmu") SessionBadges(o)
                 }
             }
         }
@@ -646,7 +652,7 @@ private fun DaysDriven(vm: PitlaneViewModel, nav: NavHostController, races: List
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     byRace[d]?.forEach { x ->
-                        Text("${x.track} · P${x.finish}/${x.field} · ${x.inc}x", fontWeight = FontWeight.Bold,
+                        Text("${x.track} · P${x.finish}/${x.field} · ${incText(x)}", fontWeight = FontWeight.Bold,
                             modifier = Modifier.fillMaxWidth().clickable { open = null; vm.race = x; nav.navigate("race") }.padding(vertical = 6.dp))
                     }
                     bySes[d]?.forEach { x ->
@@ -682,9 +688,9 @@ private fun LastRace(x: Race, onClick: () -> Unit) {
             }
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // a race against the AI has no iRating
-                LastStat(t("lr_ir"), if (x.ai) "—" else signed(x.irChange), if (x.ai) Muted else if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
+                if (!x.contacts) LastStat(t("lr_ir"), if (x.noIr) "—" else signed(x.irChange), if (x.noIr) Muted else if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
                 LastStat(t("lr_best"), lapTime(x.best), Purple, Modifier.weight(1f).fillMaxHeight())
-                LastStat(t("lr_inc"), "${x.inc}x", if (x.inc >= 8) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
+                LastStat(incLabel(x).uppercase(), incText(x), if (x.inc >= 8) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
             }
             Text(t("see_summary"), color = Accent, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
         }
@@ -701,7 +707,7 @@ private fun LastStat(l: String, v: String, c: Color, m: Modifier) {
 
 /** Your rated races of one discipline, oldest first (an offline race's placeholder iRating 1 is none). */
 private fun irRaces(races: List<Race>, k: String, n: Int) =
-    races.filter { !it.ai && it.ir != 1 && raceDisc(it.cat, it.car) == k }.take(n).reversed()
+    races.filter { !it.noIr && it.ir != 1 && raceDisc(it.cat, it.car) == k }.take(n).reversed()
 
 /** The iRating each of those races left you at: the race's own when it has one, else counted back from the newest
  *  known (a race's, or the discipline's rating) with the changes in between. */
@@ -745,7 +751,7 @@ private fun IrTrend(races: List<Race>, now: Map<String, Triple<Int, String, Long
     val discs = DISCS.filter { k -> irRaces(races, k, 2).size >= 2 }
     if (discs.isEmpty()) return
     var k by rememberSaveable { mutableStateOf("") }
-    val disc = k.takeIf { it in discs } ?: races.firstOrNull { !it.ai && it.ir != 1 }?.let { raceDisc(it.cat, it.car) }?.takeIf { it in discs } ?: discs[0]
+    val disc = k.takeIf { it in discs } ?: races.firstOrNull { !it.noIr && it.ir != 1 }?.let { raceDisc(it.cat, it.car) }?.takeIf { it in discs } ?: discs[0]
     val rs = irRaces(races, disc, 12)
     val vals = irVals(rs, now[disc]?.first)
     var sel by remember(disc) { mutableStateOf<Int?>(null) }
@@ -785,8 +791,8 @@ private fun RaceRow(x: Race, onClick: () -> Unit) {
             Column(horizontalAlignment = Alignment.End) {
                 Text(if (x.dnf) t("dnf") else "P${x.finish}/${x.field}", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = if (x.finish == 1) Purple else Fg)
                 // a race against the AI has no iRating
-                if (!x.ai) Text("iR " + signed(x.irChange), color = if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text("${x.inc}x", color = if (x.inc >= 8) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                if (!x.noIr) Text("iR " + signed(x.irChange), color = if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(incText(x), color = if (x.inc >= 8) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
         }
     }
@@ -822,6 +828,7 @@ private fun DrinksBadge(x: Race, names: Boolean = false) {
 /** A race against iRacing's AI drivers */
 @Composable
 private fun AiBadge(x: Race) {
+    if (x.game == "lmu") LmuPill()
     if (!x.ai) return
     Text(t("vs_ai"), color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
         modifier = Modifier.padding(vertical = 2.dp).border(1.dp, Blue.copy(alpha = 0.55f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
@@ -835,17 +842,19 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(Unit) { vm.loadDriverNotes() }
     val anyMe = x.results.any { it.me }
     Screen(x.track, x.car + " · " + dayTime(x.whenMs), back = { nav.popBackStack() }) {
-        if (x.drinks.isNotEmpty() || x.ai) item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { DrinksBadge(x, names = true); AiBadge(x) } }
+        if (x.drinks.isNotEmpty() || x.ai || x.game == "lmu") item { Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) { DrinksBadge(x, names = true); AiBadge(x) } }
         item {
             Grid(
-                listOf(
+                listOfNotNull(
                     MetricData(t("start"), "P${x.start}"),
                     MetricData(t("finish"), if (x.dnf) t("dnf") else "P${x.finish}", if (x.finish == 1) Purple else Fg),
-                    if (x.ai) MetricData("iRating", "—", Muted, t("vs_ai")) // a race against the AI has none
+                    // Le Mans Ultimate has no iRating (nor a strength of field): its contacts instead
+                    if (x.contacts) null
+                    else if (x.ai) MetricData("iRating", "—", Muted, t("vs_ai")) // a race against the AI has none
                     else MetricData("iRating", signed(x.irChange), if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, if (x.ir > 0) "${x.ir} → ${x.ir + x.irChange}" else null),
-                    MetricData(t("incidents"), "${x.inc}x", if (x.inc >= 8) Bad else Fg),
+                    MetricData(incLabel(x), incText(x), if (x.inc >= 8) Bad else Fg),
                     MetricData(t("pos_gain"), signed(x.start - x.finish), if (x.start > x.finish) Good else if (x.start < x.finish) Bad else Fg),
-                    MetricData(t("sof"), if (x.sof > 0) "${x.sof}" else "—")
+                    if (x.contacts) null else MetricData(t("sof"), if (x.sof > 0) "${x.sof}" else "—")
                 ), columns = 3
             )
         }
@@ -874,7 +883,7 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             val strike = if (l.cut) TextDecoration.LineThrough else TextDecoration.None
                             Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (l.cut) Muted else if (l.time == best) Purple else Fg, textDecoration = strike, modifier = Modifier.weight(1f).alpha(if (l.cut) .6f else 1f))
                             Text("P${l.pos}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, textDecoration = strike, modifier = Modifier.width(44.dp).alpha(if (l.cut) .6f else 1f))
-                            Text(listOfNotNull(if (l.cut) t("invalid").lowercase() else null, if (l.pit) t("pit") else null, if (l.inc > 0) "${l.inc}x" else null).joinToString(" · "), color = if (l.pit && !l.cut) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.widthIn(min = 40.dp))
+                            Text(listOfNotNull(if (l.cut) t("invalid").lowercase() else null, if (l.pit) t("pit") else null, if (l.inc > 0) (if (x.contacts) "${l.inc}" else "${l.inc}x") else null).joinToString(" · "), color = if (l.pit && !l.cut) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.widthIn(min = 40.dp))
                         }
                     }
                 }
@@ -901,9 +910,9 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             val dl = if (!me && p.laps > 0 && myLaps > 0) p.laps - myLaps else 0
                             if (dl != 0) Text((if (dl > 0) " +" else " −") + kotlin.math.abs(dl) + "L", color = if (dl > 0) Bad else Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                             Spacer(Modifier.weight(1f))
-                            Text(if (p.ir > 0 && !x.ai) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+                            Text(if (p.ir > 0 && !x.noIr) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
                             Text(lapTime(p.best), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(66.dp))
-                            Text("${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
+                            Text(if (x.contacts) "${p.inc}" else "${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
                         }
                     }
                 }
@@ -1020,7 +1029,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(s.data) { if (vm.session == null) s.data?.firstOrNull()?.let { vm.session = it; vm.loadLaps(it.id) } }
     LaunchedEffect(tab, cur?.id, l.data) { val x = vm.session; val ls = l.data; if (tab == 1 && x != null && ls != null && !l.loading) vm.coachFor(x, ls) }
     val open = { x: CloudSession -> vm.session = x; vm.loadLaps(x.id); tab = pickFor }
-    Screen(t("analysis")) {
+    Screen(t("analysis"), head = { GameSeg(vm) }) {
         item { Tabs(listOf(t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")), tab) { tab = it; if (it < 2) pickFor = it } }
         when (tab) {
             0, 1 -> {
@@ -1051,7 +1060,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                     if (list != null && list.isEmpty()) item { Empty(t("no_sessions")) }
                     items(list ?: emptyList()) { x ->
                         Panel(Modifier.clickable(enabled = x.bestSessionId != null) {
-                            open(CloudSession(x.bestSessionId!!, x.last, x.track, x.trackConfig, x.car, "", x.laps, x.best))
+                            open(CloudSession(x.bestSessionId!!, x.last, x.track, x.trackConfig, x.car, "", x.laps, x.best, game = x.game))
                         }) {
                             Text(x.track + if (x.trackConfig.isNotBlank()) " · " + x.trackConfig else "", fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1140,8 +1149,9 @@ private fun SessionRow(x: CloudSession, on: Boolean, onClick: () -> Unit) {
 /** "DRINKS · Ana" (or "Multiple drivers") when friends drove laps of it, and "vs AI" for a session against iRacing's AI. */
 @Composable
 private fun SessionBadges(x: CloudSession) {
-    if (x.drvs.isEmpty() && !x.ai) return
+    if (x.drvs.isEmpty() && !x.ai && x.game != "lmu") return
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 2.dp)) {
+        if (x.game == "lmu") LmuPill()
         if (x.drvs.isNotEmpty()) Text("DRINKS · " + (if (x.drvs.size > 1) t("drinks_multiple") else x.drvs[0]), color = Color(0xFFFFE2A8), fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
             modifier = Modifier.background(Accent.copy(alpha = 0.22f), RoundedCornerShape(50)).border(1.dp, Accent.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
         if (x.ai) Text(t("vs_ai"), color = Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
@@ -1380,7 +1390,7 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 LicBadge(x.lic)
             }
         }
-        if (x.drvs.isNotEmpty() || x.ai) item { SessionBadges(x) }
+        if (x.drvs.isNotEmpty() || x.ai || x.game == "lmu") item { SessionBadges(x) }
         l.data?.let { lapItems(vm, nav, x, it) }
     }
 }
@@ -2149,7 +2159,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     var cat by rememberSaveable { mutableStateOf("") }
     val acc by vm.account.collectAsState()
     val uri = LocalUriHandler.current
-    Screen(t("community")) {
+    Screen(t("community"), head = { GameSeg(vm) }) {
         item { Tabs(listOf(t("leaderboards"), t("leagues")), sec) { sec = it } }
         if (sec == 1) {
             item { LeagueHub(vm, acc) }
@@ -2932,7 +2942,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
     val uri = LocalUriHandler.current
     LaunchedEffect(Unit) { if (d.data == null && !d.loading) vm.loadDevices() }
     // the Discord card is read when the screen shows and when the app comes back (from Discord's sign-in in the browser)
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.loadDiscord() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.loadDiscord(); vm.loadSteam() }
     Screen(t("account_tab")) {
         item { Section(t("account")) }
         item {
@@ -2970,6 +2980,8 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
         if ((d.data?.size ?: 0) > 1) item { TextButton({ vm.revoke("others") }) { Text(t("sign_out_others"), color = Bad) } }
         item { Section("DISCORD") }
         item { DiscordPanel(vm) }
+        item { Section("STEAM") }
+        item { SteamPanel(vm) }
         item { Section(t("language")) }
         item {
             Panel {
@@ -3055,6 +3067,193 @@ private fun DiscordPanel(vm: PitlaneViewModel) {
         confirmButton = { TextButton({ unlinking = false; vm.discordUnlink() }) { Text(t("discord_unlink"), color = Bad) } },
         dismissButton = { TextButton({ unlinking = false }) { Text(t("cancel"), color = Muted) } }
     )
+}
+
+/** The same password field everywhere it is asked again. */
+@Composable
+private fun PassField(v: String, label: String, onChange: (String) -> Unit) {
+    OutlinedTextField(v, onChange, label = { Text(label) }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+}
+
+/**
+ * "Continue with Steam", above the email form: Steam's sign-in opens in the browser and comes back to this phone. Then the
+ * authenticator's code when two-step sign-in is on, and the password once on this phone (the data key comes from it).
+ * A Steam with no account yet opens the new account's form with its persona as the public name, linked once created.
+ */
+@Composable
+private fun SteamSignIn(vm: PitlaneViewModel, email0: String) {
+    val st by vm.steamUi.collectAsState()
+    val uri = LocalUriHandler.current
+    var email by remember { mutableStateOf(email0) }
+    var pw by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var name by remember(st.newPersona) { mutableStateOf(st.newPersona ?: "") }
+    OutlinedButton({ vm.steamSignIn { uri.openUri(it) } }, enabled = !st.busy && !st.waiting, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) {
+        Text(t("steam_continue"), color = Fg, fontWeight = FontWeight.Bold)
+    }
+    if (st.waiting) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(t("steam_finish"), color = Accent, fontSize = 12.sp, modifier = Modifier.weight(1f))
+        TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted, fontSize = 12.sp) }
+    }
+    if (!st.needCode && !st.needKey && st.newPersona == null) st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        HorizontalDivider(Modifier.weight(1f), color = Line); Text("  " + t("or") + "  ", color = Muted, fontSize = 11.sp); HorizontalDivider(Modifier.weight(1f), color = Line)
+    }
+    val err: @Composable () -> Unit = { st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) } }
+    if (st.needCode) AlertDialog(
+        onDismissRequest = { vm.steamCancel() },
+        title = { Text(t("two_factor"), fontWeight = FontWeight.Black) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(t("two_factor_code"), color = Muted, fontSize = 12.sp)
+            OutlinedTextField(code, { code = it }, label = { Text(t("code")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+            err()
+        } },
+        confirmButton = { TextButton({ vm.steamCode(code) }, enabled = !st.busy && code.isNotBlank()) { Text(t("continue"), color = Accent) } },
+        dismissButton = { TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted) } }
+    )
+    if (st.needKey) AlertDialog(
+        onDismissRequest = { vm.steamCancel() },
+        title = { Text(t("steam_sign_in"), fontWeight = FontWeight.Black) },
+        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(t("steam_pw_once"), color = Muted, fontSize = 12.sp)
+            OutlinedTextField(email, { email = it }, label = { Text(t("email")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
+            PassField(pw, t("password")) { pw = it }
+            err()
+        } },
+        confirmButton = { TextButton({ vm.steamKey(email, pw) }, enabled = !st.busy && email.isNotBlank() && pw.isNotEmpty()) { Text(if (st.busy) t("signing_in") else t("sign_in"), color = Accent) } },
+        dismissButton = { TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted) } }
+    )
+    if (st.newPersona != null) AlertDialog(
+        onDismissRequest = { vm.steamCancel() },
+        title = { Text(t("create_account"), fontWeight = FontWeight.Black) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(t("steam_no_account"), color = Accent, fontSize = 12.sp)
+            OutlinedTextField(email, { email = it }, label = { Text(t("email")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
+            PassField(pw, t("password")) { pw = it }
+            Text(t("pw_short"), color = Muted, fontSize = 11.sp)
+            OutlinedTextField(name, { if (it.length <= 32) name = it }, label = { Text(t("public_name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            err()
+        } },
+        confirmButton = { TextButton({ vm.register(email, pw, name) }, enabled = !st.busy && email.isNotBlank() && pw.length >= 10 && name.isNotBlank()) { Text(t("create_account"), color = Accent) } },
+        dismissButton = { TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted) } }
+    )
+}
+
+/** Account → Steam, beside Discord: link it (the password first, then Steam's sign-in in the browser), show it on your
+ *  profile, or unlink it (the password again). Once linked, Steam signs you in on every device. */
+@Composable
+private fun SteamPanel(vm: PitlaneViewModel) {
+    val st by vm.steam.collectAsState()
+    val waiting by vm.steamLinkWait.collectAsState()
+    val d = st.data
+    val uri = LocalUriHandler.current
+    var ask by remember { mutableStateOf("") } // "", "link", "unlink"
+    var pw by remember { mutableStateOf("") }
+    Panel {
+        if (d == null) { if (st.error == null) Text(t("loading"), color = Muted, fontSize = 12.sp) }
+        else if (!d.linked) {
+            Text(t("steam_intro"), color = Muted, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            Button({ pw = ""; ask = "link" }, enabled = !waiting, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
+                Text(t("steam_link").uppercase(), fontWeight = FontWeight.Black)
+            }
+            if (waiting) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(t("steam_finish"), color = Accent, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                TextButton({ vm.steamLinkCancel() }) { Text(t("cancel"), color = Muted, fontSize = 12.sp) }
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(d.persona.ifBlank { t("steam_linked") }, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(t("discord_linked_pill"), color = Good, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                    modifier = Modifier.border(1.dp, Good.copy(alpha = 0.55f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
+            }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(t("steam_show"), fontSize = 13.sp, modifier = Modifier.weight(1f))
+                Switch(d.shown, { vm.steamShow(it) })
+            }
+            OutlinedButton({ pw = ""; ask = "unlink" }, modifier = Modifier.padding(top = 8.dp)) { Text(t("steam_unlink"), color = Bad) }
+        }
+        st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
+    }
+    if (ask.isNotEmpty()) AlertDialog(
+        onDismissRequest = { ask = "" },
+        title = { Text(t(if (ask == "link") "steam_link" else "steam_unlink_ask"), fontWeight = FontWeight.Black) },
+        text = { PassField(pw, t("password")) { pw = it } },
+        confirmButton = {
+            TextButton({ val p = pw; val a = ask; ask = ""; if (a == "link") vm.steamLinkStart(p) { uri.openUri(it) } else vm.steamUnlink(p) }, enabled = pw.isNotEmpty()) {
+                Text(t(if (ask == "link") "continue" else "steam_unlink"), color = if (ask == "link") Accent else Bad)
+            }
+        },
+        dismissButton = { TextButton({ ask = "" }) { Text(t("cancel"), color = Muted) } }
+    )
+}
+
+// ---------- the game you look at ----------
+private fun gameShort(g: String) = if (g == "lmu") "LMU" else "iRacing"
+private fun gameName(g: String) = if (g == "lmu") "Le Mans Ultimate" else "iRacing"
+
+/** "Beta" beside Le Mans Ultimate wherever it is offered. */
+@Composable
+private fun BetaPill(on: Boolean = false) {
+    val c = if (on) Ink else Accent
+    Text(t("beta"), color = c, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.padding(start = 5.dp).border(1.dp, c.copy(alpha = .6f), RoundedCornerShape(50)).padding(horizontal = 5.dp))
+}
+
+/** A session or race of Le Mans Ultimate, like the vs AI and DRINKS pills. */
+@Composable
+private fun LmuPill() {
+    Text("LMU", color = Purple, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.4.sp, maxLines = 1,
+        modifier = Modifier.padding(vertical = 2.dp).border(1.dp, Purple.copy(alpha = 0.55f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
+}
+
+/** Le Mans Ultimate counts contacts, iRacing incident points. */
+private fun incLabel(x: Race) = if (x.contacts) t("contacts") else t("incidents")
+private fun incText(x: Race) = if (x.contacts) "${x.inc}" else "${x.inc}x"
+
+/** iRacing | LMU in the header of Home, Analysis and Community: what this phone shows, never what your PC reads.
+ *  The game your PC is reading live is marked ●. */
+@Composable
+private fun GameSeg(vm: PitlaneViewModel) {
+    val pc by vm.pcGame.collectAsState()
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface).border(1.dp, Line, RoundedCornerShape(10.dp)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        GAMES.forEach { g ->
+            val on = vm.game == g
+            Row(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(if (on) Accent else Color.Transparent).clickable { vm.setGame(g) }.padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                Text(gameShort(g) + if (pc == g) " ●" else "", color = if (on) Ink else Muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
+                if (g == "lmu") BetaPill(on)
+            }
+        }
+    }
+}
+
+/** When the app opens, your PC is not live and you drove both games: which one to see (remembered on this phone). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GameSheet(vm: PitlaneViewModel) {
+    val stats by vm.gameStats.collectAsState()
+    ModalBottomSheet(onDismissRequest = { vm.askGame = false }, containerColor = Surface) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(t("gs_title"), fontWeight = FontWeight.Black, fontSize = 20.sp)
+            GAMES.forEach { g ->
+                val (n, last) = stats[g] ?: (0 to 0L)
+                val on = vm.game == g
+                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Ink).border(1.dp, if (on) Accent else Line, RoundedCornerShape(12.dp)).clickable { vm.setGame(g) }.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(gameName(g), fontWeight = FontWeight.Black, fontSize = 16.sp)
+                        if (g == "lmu") BetaPill()
+                    }
+                    Text(listOf(t("gs_sessions", n), if (last > 0) t("gs_last", day(last)) else "").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
+                    Button({ vm.setGame(g) }, modifier = Modifier.padding(top = 4.dp), colors = ButtonDefaults.buttonColors(containerColor = if (on) Accent else Surface2, contentColor = if (on) Ink else Fg)) {
+                        Text(t("gs_see", gameName(g)), fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
 }
 
 /** Two-step sign-in with an authenticator app: optional, recommended. Setup: password → link/key → first code → recovery codes once. */
@@ -3174,7 +3373,7 @@ private fun Licences(vm: PitlaneViewModel) {
 @Composable
 private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>, m: Modifier) {
     val col = discColor(k)
-    val last = races.filter { raceDisc(it.cat, it.car) == k && !it.ai && it.ir != 1 }.take(5) // races against the AI give no iRating
+    val last = races.filter { raceDisc(it.cat, it.car) == k && !it.noIr && it.ir != 1 }.take(5) // races against the AI give no iRating
     val chg = last.sumOf { it.irChange }
     val lic = r?.second?.trim()?.uppercase() ?: ""
     val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }
@@ -3604,7 +3803,7 @@ private fun LiveIncidents(s: LiveState) {
 @Composable
 private fun LiveMap(vm: PitlaneViewModel, s: LiveState) {
     val tid = s.session?.trackId ?: 0L
-    LaunchedEffect(tid) { if (tid > 0) vm.loadLiveTrack(tid) }
+    LaunchedEffect(tid, s.source) { if (tid > 0) vm.loadLiveTrack(tid) }
     val lt by vm.liveTrack.collectAsState()
     val lay = lt?.takeIf { it.first == tid }?.second
     val turns = lt?.takeIf { it.first == tid }?.third ?: emptyList()
@@ -3795,7 +3994,7 @@ private fun LiveCompare(vm: PitlaneViewModel, s: LiveState) {
     val rec = s.rec; val a = rec?.cur
     var pick by rememberSaveable { mutableStateOf("best") }
     val tid = s.session?.trackId ?: 0L
-    LaunchedEffect(tid) { if (tid > 0) vm.loadLiveTrack(tid) }
+    LaunchedEffect(tid, s.source) { if (tid > 0) vm.loadLiveTrack(tid) }
     val lt by vm.liveTrack.collectAsState()
     val turns = lt?.takeIf { it.first == tid }?.third ?: emptyList()
     val total = ((s.session?.trackLen ?: 0.0) / 5).toInt()

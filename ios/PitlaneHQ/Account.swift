@@ -1,5 +1,8 @@
+import AuthenticationServices
 import Foundation
+import Network
 import Security
+import UIKit
 
 let server = URL(string: "https://pitlanehq.app")!
 let webApp = URL(string: "https://pitlanehq.app/")!
@@ -92,6 +95,41 @@ final class Account: ObservableObject {
     @Published var tipRatings: [String: Int] = [:]
     @Published var demo = UserDefaults.standard.bool(forKey: "demo") {
         didSet { UserDefaults.standard.set(demo, forKey: "demo"); loadRaces() }
+    }
+
+    // ---------- the game you look at: iRacing or Le Mans Ultimate (Home, Analysis, Community) ----------
+    // Only what this phone shows: never what your PC reads. Telemetry follows the PC's live game.
+    /// the game chosen on this phone (remembered), else the one your PC reads live, else iRacing
+    @Published private(set) var game: String = games.contains(UserDefaults.standard.string(forKey: "game") ?? "") ? UserDefaults.standard.string(forKey: "game")! : "iracing"
+    /// whether the driver chose it on this phone (else it follows the game the PC reads live)
+    var gameChosen: Bool { games.contains(defaults.string(forKey: "game") ?? "") }
+    /// per game: how many sessions you have and the last one's date (the sheet that asks which game to see)
+    @Published var gameStats: [String: (n: Int, last: Double)] = [:]
+    /// "What do you want to see?": once when the app opens, with sessions of both games (MainView adds: the PC not live)
+    @Published var askGame = false
+    private var gameAsked = false
+    private var allRaces: [Race] = []
+
+    func setGame(_ g: String, remember: Bool = true) {
+        guard games.contains(g) else { return }
+        if remember { defaults.set(g, forKey: "game") }
+        askGame = false
+        guard g != game else { return }
+        game = g
+        races = allRaces.filter { $0.game == g }
+    }
+
+    private func noteStats(_ all: [CloudSession]) {
+        var st: [String: (n: Int, last: Double)] = [:]
+        for g in games {
+            let l = all.filter { $0.game == g && $0.laps > 0 }
+            st[g] = (l.count, l.map(\.started).max() ?? 0)
+        }
+        gameStats = st
+        if !gameAsked && !demo {
+            gameAsked = true
+            if st.values.filter({ $0.n > 0 }).count > 1 { askGame = true }
+        }
     }
 
     private let defaults = UserDefaults.standard
@@ -286,11 +324,14 @@ final class Account: ObservableObject {
         syncUpdated = 0
         realAdmin = false
         races = []
+        allRaces = []
     }
 
     // ---------- server ----------
 
-    func call(_ method: String, _ path: String, body: [String: Any]? = nil, auth: Bool = true) async throws -> Data {
+    /// `bearer`: a session of its own (a Steam sign-in waiting for the password); `pass`: the call checks the password
+    /// (or a code), so a 401 is a wrong one and never signs this phone out.
+    func call(_ method: String, _ path: String, body: [String: Any]? = nil, auth: Bool = true, bearer: String? = nil, pass: Bool = false) async throws -> Data {
         guard let url = URL(string: server.absoluteString + path) else { throw AppError.serverDown }
         var r = URLRequest(url: url, timeoutInterval: 20)
         r.httpMethod = method
@@ -298,7 +339,9 @@ final class Account: ObservableObject {
             r.httpBody = try JSONSerialization.data(withJSONObject: body)
             r.setValue("application/json", forHTTPHeaderField: "content-type")
         }
-        if auth {
+        if let bearer {
+            r.setValue("Bearer " + bearer, forHTTPHeaderField: "authorization")
+        } else if auth {
             guard let t = token else { throw AppError.signedOut }
             r.setValue("Bearer " + t, forHTTPHeaderField: "authorization")
         }
@@ -310,6 +353,9 @@ final class Account: ObservableObject {
         }
         let (data, resp) = pair
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 401 && (pass || bearer != nil) {
+            throw AppError(key: ((try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["error"] as? String) ?? "wrong_pw")
+        }
         if code == 401 && auth {
             clear()
             error = AppError.signedOut.key
@@ -379,9 +425,12 @@ final class Account: ObservableObject {
     func cancelCode() { pending = nil; needCode = false; error = nil }
 
     private func finishLogin(_ j: [String: Any], email em: String, wrap: Data) throws {
-        guard let token = j["token"] as? String, let wrapped = j["wrappedKey"] as? String else { throw AppError.serverDown }
-        let key = try PLCrypto.open(key: wrap, sealed: wrapped, aad: PLCrypto.accountAAD)
-        guard key.count == 32 else { throw AppError.serverDown }
+        guard let wrapped = j["wrappedKey"] as? String else { throw AppError.serverDown }
+        try finishLogin(j, email: em, key: PLCrypto.open(key: wrap, sealed: wrapped, aad: PLCrypto.accountAAD))
+    }
+
+    private func finishLogin(_ j: [String: Any], email em: String, key: Data) throws {
+        guard let token = j["token"] as? String, key.count == 32 else { throw AppError.serverDown }
         Vault.set("token", Data(token.utf8))
         Vault.set("dataKey", key)
         email = em
@@ -397,19 +446,189 @@ final class Account: ObservableObject {
         signedIn = true
     }
 
+    // ---------- Sign in with Steam (steam.js): the browser goes to Steam and comes back to this phone ----------
+    // The code the start gives stays here, in memory: a grant is only good with it. Steam says who; the data key still
+    // comes from the password, asked once on this phone (POST /account/key).
+    private var steamCode: String?
+    private var steamPending: String?          // the authenticator's code comes next (a Steam sign-in with two-step on)
+    private var steamSession: [String: Any]?   // signed in by Steam, waiting for the password
+    private var steamAuth: SteamAuth?
+    @Published var steamBusy = false
+    @Published var steamNeedCode = false
+    @Published var steamNeedKey = false
+    @Published var steamNew: SteamNew?
+    @Published var steamError: String?
+
+    private func obj(_ d: Data) throws -> [String: Any] { try JSONSerialization.jsonObject(with: d) as? [String: Any] ?? [:] }
+    private func errKey(_ e: Error) -> String { (e as? AppError)?.key ?? e.localizedDescription }
+
+    /// Steam's sign-in in the system's sign-in sheet; its answer comes back to this phone's listener (the port the start
+    /// was given), which sends it on to pitlanehq://steam where the sheet hands it over. Nil: the driver closed it.
+    private func steamBrowser(_ start: (Int) async throws -> URL) async throws -> [String: String]? {
+        let loop = try SteamLoopback()
+        defer { loop.stop() }
+        let port = try await loop.start()
+        let url = try await start(port)
+        let a = SteamAuth()
+        steamAuth = a
+        defer { steamAuth = nil }
+        return await a.run(url)
+    }
+
+    /// "Continue with Steam": signs in (the code and the password come next), or opens the new account's form.
+    func steamSignIn() async {
+        steamError = nil
+        steamBusy = true
+        defer { steamBusy = false }
+        do {
+            guard let q = try await steamBrowser({ port in
+                let j = try self.obj(await self.call("POST", "/account/steam/login/start", body: ["device": "iPhone", "port": port], auth: false))
+                self.steamCode = str(j["code"]).isEmpty ? nil : str(j["code"])
+                guard let u = URL(string: str(j["url"])) else { throw AppError.serverDown }
+                return u
+            }) else { return }
+            let g = q["steamLogin"] ?? ""
+            if g == "0", q["new"] == "1", let sid = q["sid"], !sid.isEmpty { steamNew = SteamNew(sid: sid, persona: q["persona"] ?? ""); return }
+            guard !g.isEmpty, g != "0" else { steamError = "steam_failed"; return }
+            guard let code = steamCode else { throw AppError(key: "steam_again") }
+            let r = try obj(await call("POST", "/account/login/steam", body: ["grant": g, "code": code, "device": "iPhone"], auth: false))
+            steamCode = nil
+            if r["twoFactor"] as? Bool == true, let p = r["pending"] as? String { steamPending = p; steamNeedCode = true; return }
+            steamSession = r
+            steamNeedKey = true
+        } catch {
+            steamError = errKey(error)
+        }
+    }
+
+    /// A Steam sign-in with two-step sign-in on: the authenticator's code, then the password.
+    func steamLoginCode(_ code: String) async {
+        guard let p = steamPending else { steamCancel(); steamError = "sign_in_again"; return }
+        steamBusy = true
+        steamError = nil
+        defer { steamBusy = false }
+        do {
+            steamSession = try obj(await call("POST", "/account/login/2fa", body: ["pending": p, "code": code.trimmingCharacters(in: .whitespaces)], auth: false))
+            steamPending = nil
+            steamNeedCode = false
+            steamNeedKey = true
+        } catch { steamError = errKey(error) }
+    }
+
+    /// The password once on this phone: the server hands the data key wrapped with it, and it opens here.
+    func steamKey(email e: String, password: String) async {
+        guard let s = steamSession, let tok = s["token"] as? String else { steamCancel(); steamError = "sign_in_again"; return }
+        let em = e.trimmingCharacters(in: .whitespaces).lowercased()
+        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { steamError = "bad_email"; return }
+        guard !password.isEmpty else { steamError = "enter_pw"; return }
+        steamBusy = true
+        steamError = nil
+        defer { steamBusy = false }
+        do {
+            let keys = try await Task.detached { try PLCrypto.derive(email: em, password: password) }.value
+            let r: [String: Any]
+            do { r = try obj(await call("POST", "/account/key", body: ["auth": keys.auth], bearer: tok)) }
+            catch let x as AppError where x.key == "the password is wrong" { throw AppError(key: "wrong_email_pw") }
+            guard let wrapped = r["wrappedKey"] as? String, let key = try? PLCrypto.open(key: keys.wrap, sealed: wrapped, aad: PLCrypto.accountAAD) else { throw AppError(key: "wrong_email_pw") }
+            try finishLogin(s, email: em, key: key)
+            steamSession = nil
+            steamNeedKey = false
+            await sync()
+        } catch { steamError = errKey(error) }
+    }
+
+    /// The Steam sign-in left halfway: its session (if any) is closed on the server.
+    func steamCancel() {
+        if let t = steamSession?["token"] as? String { Task { _ = try? await call("POST", "/account/logout", body: [:], bearer: t) } }
+        steamSession = nil
+        steamPending = nil
+        steamCode = nil
+        steamNeedCode = false
+        steamNeedKey = false
+        steamNew = nil
+        steamError = nil
+    }
+
+    /// A new account, like the web's: a new data key wrapped with the password; made from a Steam sign-in (steamNew), which
+    /// links that Steam to it at once. When the server sent the email to confirm first, the sign-in screen says so.
+    func register(email e: String, password: String, name: String) async {
+        let em = e.trimmingCharacters(in: .whitespaces).lowercased()
+        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { steamError = "bad_email"; return }
+        guard password.count >= 10 else { steamError = "pw_short"; return }
+        let nm = String(name.trimmingCharacters(in: .whitespaces).prefix(32))
+        guard !nm.isEmpty else { steamError = "choose_name"; return }
+        let sid = steamNew?.sid ?? ""
+        steamBusy = true
+        steamError = nil
+        defer { steamBusy = false }
+        do {
+            let keys = try await Task.detached { try PLCrypto.derive(email: em, password: password) }.value
+            var key = Data(count: 32)
+            let ok = key.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }
+            guard ok == errSecSuccess else { throw AppError.serverDown }
+            let wrapped = try PLCrypto.seal(key: keys.wrap, plain: key, aad: PLCrypto.accountAAD)
+            var body: [String: Any] = ["email": em, "auth": keys.auth, "wrappedKey": wrapped, "display": nm, "nameKind": "nick", "device": "iPhone", "lang": I18n.shared.lang]
+            if !sid.isEmpty {
+                guard let code = steamCode else { throw AppError(key: "steam_again") }
+                body["sid"] = sid
+                body["code"] = code
+            }
+            let j = try obj(await call("POST", "/account/register", body: body, auth: false))
+            if !sid.isEmpty { steamCode = nil }
+            steamNew = nil
+            if j["verifyFirst"] as? Bool == true || j["token"] == nil {
+                email = em
+                error = "verify your email first: we sent you a link, open it and then sign in"
+                return
+            }
+            try finishLogin(j, email: em, key: key)
+            await sync()
+        } catch { steamError = errKey(error) }
+    }
+
+    // ---------- Account → Steam: link it (Steam's sign-in), show it on your profile, unlink it ----------
+    func steam() async throws -> Got<SteamLink> {
+        let j = try obj(await call("GET", "/account/steam"))
+        return Got(data: SteamLink(linked: j["linked"] as? Bool ?? false, id: str(j["id"]), persona: str(j["persona"]), shown: j["shown"] as? Bool ?? false))
+    }
+
+    /// Linking asks the password first, then Steam's sign-in; its answer comes back here and links it.
+    func steamLinkStart(password: String) async throws {
+        let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
+        guard let q = try await steamBrowser({ port in
+            let j = try self.obj(await self.call("POST", "/account/steam/start", body: ["auth": keys.auth, "device": "iPhone", "port": port], pass: true))
+            self.steamCode = str(j["code"]).isEmpty ? nil : str(j["code"])
+            guard let u = URL(string: str(j["url"])) else { throw AppError.serverDown }
+            return u
+        }) else { return }
+        guard let g = q["steamLink"], !g.isEmpty else {
+            throw AppError(key: q["steamLinked"] == "taken" ? "this Steam account is already linked to another account" : "steam_not_linked")
+        }
+        guard let code = steamCode else { throw AppError(key: "steam_again") }
+        defer { steamCode = nil }
+        _ = try await call("POST", "/account/steam/link", body: ["grant": g, "code": code])
+    }
+
+    func steamShow(_ shown: Bool) async throws { _ = try await call("POST", "/account/steam/shown", body: ["shown": shown]) }
+
+    func steamUnlink(password: String) async throws {
+        let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
+        _ = try await call("POST", "/account/steam/unlink", body: ["auth": keys.auth], pass: true)
+    }
+
     // ---------- two-step sign-in (optional, recommended) ----------
     struct TwoFactorSetup { let secret: String; let url: URL }
 
     func setup2fa(password: String) async throws -> TwoFactorSetup {
         let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
-        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/2fa/setup", body: ["auth": keys.auth])) as? [String: Any] ?? [:]
+        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/2fa/setup", body: ["auth": keys.auth], pass: true)) as? [String: Any] ?? [:]
         guard let secret = j["secret"] as? String, let u = (j["url"] as? String).flatMap(URL.init) else { throw AppError.serverDown }
         return TwoFactorSetup(secret: secret, url: u)
     }
 
     /// Confirms the first code; returns the recovery codes (shown once).
     func enable2fa(code: String) async throws -> [String] {
-        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/2fa/enable", body: ["code": code.trimmingCharacters(in: .whitespaces)])) as? [String: Any] ?? [:]
+        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/2fa/enable", body: ["code": code.trimmingCharacters(in: .whitespaces)], pass: true)) as? [String: Any] ?? [:]
         let codes = j["codes"] as? [String] ?? []
         twoFactor = true
         recoveryLeft = codes.count
@@ -420,7 +639,7 @@ final class Account: ObservableObject {
 
     func disable2fa(password: String, code: String) async throws {
         let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
-        _ = try await call("POST", "/account/2fa/disable", body: ["auth": keys.auth, "code": code.trimmingCharacters(in: .whitespaces)])
+        _ = try await call("POST", "/account/2fa/disable", body: ["auth": keys.auth, "code": code.trimmingCharacters(in: .whitespaces)], pass: true)
         twoFactor = false
         recoveryLeft = 0
         defaults.set(false, forKey: "twoFactor")
@@ -532,8 +751,7 @@ final class Account: ObservableObject {
     }
 
     private func trimRaces(_ a: [[String: Any]]) -> [[String: Any]] {
-        a.filter { str($0["game"]).isEmpty || str($0["game"]) == "iracing" }
-            .sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }
+        a.sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }
             .prefix(60)
             .map { r0 -> [String: Any] in
                 var r = r0
@@ -554,9 +772,9 @@ final class Account: ObservableObject {
     }
 
     func loadRaces() {
-        if demo { races = Demo.races(); return }
-        guard let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { races = []; return }
-        races = a.map { r in
+        if demo { allRaces = Demo.races(); races = allRaces; return }
+        guard let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { allRaces = []; races = []; return }
+        allRaces = a.map { r in
             Race(
                 id: str(r["id"]), when: num(r["when"]) ?? 0, track: fixTxt(str(r["track"])), car: fixTxt(str(r["car"])), official: r["official"] as? Bool ?? false,
                 start: int(r["start"]), finish: int(r["finish"]), field: int(r["field"]),
@@ -572,9 +790,10 @@ final class Account: ObservableObject {
                 }.sorted { $0.pos < $1.pos },
                 cat: r["cat"] as? String,
                 drinks: (r["drinks"] as? [String] ?? []).map { fixTxt($0) }.filter { !$0.isEmpty },
-                ai: isAIRace(r)
+                ai: isAIRace(r), game: str(r["game"]).isEmpty ? "iracing" : str(r["game"])
             )
         }
+        races = allRaces.filter { $0.game == game }
     }
 
     func logout() async {
@@ -620,7 +839,7 @@ final class Account: ObservableObject {
     func sessions() async throws -> Got<[CloudSession]> {
         if demo { return Got(data: Demo.sessions()) }
         let g = try await cachedGet("/api/sessions?limit=100")
-        return Got(data: (g.data as? [[String: Any]] ?? []).compactMap { s in
+        let all: [CloudSession] = (g.data as? [[String: Any]] ?? []).compactMap { s in
             guard let id = s["id"] as? String else { return nil }
             let kind = str(s["kind"]), game = s["game"] as? String
             // a session against iRacing's AI the server has no flag for (recorded by an older agent): an iRacing session
@@ -629,8 +848,11 @@ final class Account: ObservableObject {
             let offlineAI = (game == nil || game == "iracing") && (id.split(separator: ":").last ?? "").hasPrefix("t-") && !kind.lowercased().contains("test")
             return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: kind, laps: int(s["laps"]), best: pos(s["best"]),
                                 cat: s["cat"] as? String, lic: s["lic"] as? String,
-                                drvs: str(s["drvs"]).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, ai: int(s["ai"]) == 1 || offlineAI)
-        }, stale: g.stale)
+                                drvs: str(s["drvs"]).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, ai: int(s["ai"]) == 1 || offlineAI,
+                                game: (game ?? "").isEmpty ? "iracing" : game!)
+        }
+        noteStats(all)
+        return Got(data: all.filter { $0.game == self.game }, stale: g.stale)
     }
 
     func laps(_ sessionId: String) async throws -> Got<[CloudLap]> {
@@ -664,19 +886,19 @@ final class Account: ObservableObject {
         if demo { return Got(data: Demo.bests()) }
         let g = try await cachedGet("/api/bests")
         return Got(data: (g.data as? [[String: Any]] ?? []).compactMap { b in
-            let game = str(b["game"])
-            guard game.isEmpty || game == "iracing" else { return nil }
+            let gm = str(b["game"]).isEmpty ? "iracing" : str(b["game"])
+            guard gm == self.game else { return nil }
             let lap = str(b["bestLapId"]), ses = str(b["bestSessionId"])
             return PersonalBest(track: str(b["track"]), trackConfig: str(b["track_config"]), car: str(b["car"]), best: num(b["best"]) ?? 0, laps: int(b["laps"]),
-                                last: num(b["last"]) ?? 0, bestLapId: lap.isEmpty ? nil : lap, bestSessionId: ses.isEmpty ? nil : ses)
+                                last: num(b["last"]) ?? 0, bestLapId: lap.isEmpty ? nil : lap, bestSessionId: ses.isEmpty ? nil : ses, game: gm)
         }.sorted { $0.last > $1.last }, stale: g.stale)
     }
 
     // ---------- community ----------
 
-    func combos() async throws -> Got<[Combo]> {
+    func combos(game gm: String? = nil) async throws -> Got<[Combo]> {
         if demo { return Got(data: Demo.combos()) }
-        let g = try await cachedGet("/community/combos?game=iracing")
+        let g = try await cachedGet("/community/combos?game=\(gm ?? game)")
         let a = (g.data as? [String: Any])?["combos"] as? [[String: Any]] ?? []
         return Got(data: a.map { c in
             Combo(trackId: (c["trackId"] as? NSNumber)?.int64Value ?? 0, track: str(c["track"]), carId: (c["carId"] as? NSNumber)?.int64Value ?? 0, car: str(c["car"]), laps: int(c["laps"]), best: pos(c["best"]), cat: c["cat"] as? String)
@@ -686,7 +908,7 @@ final class Account: ObservableObject {
     /// The records: the fastest lap of every car and track, the newest first, with the lap it beat.
     func records() async throws -> Got<[RecordItem]> {
         if demo { return Got(data: []) }
-        let g = try await cachedGet("/community/records?game=iracing&limit=40")
+        let g = try await cachedGet("/community/records?game=\(game)&limit=40")
         let a = (g.data as? [String: Any])?["records"] as? [[String: Any]] ?? []
         return Got(data: a.map { recordOf($0, trackId: 0, track: "") }, stale: g.stale)
     }
@@ -704,7 +926,7 @@ final class Account: ObservableObject {
     /// One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it.
     func trackPage(trackId: Int64) async throws -> Got<TrackPage> {
         if demo { return Got(data: TrackPage(trackId: trackId, track: "", drivers: 0, laps: 0, layout: nil, turns: [], cars: [])) }
-        let g = try await cachedGet("/community/track?game=iracing&trackId=\(trackId)")
+        let g = try await cachedGet("/community/track?game=\(game)&trackId=\(trackId)")
         let j = g.data as? [String: Any] ?? [:]
         var lay: ([Double], [Double])? = nil
         if let l = j["layout"] as? [String: Any], let x = (l["x"] as? [NSNumber])?.map({ $0.doubleValue }), let y = (l["y"] as? [NSNumber])?.map({ $0.doubleValue }), x.count >= 20, x.count == y.count { lay = (x, y) }
@@ -717,23 +939,23 @@ final class Account: ObservableObject {
     /// One line per driver: their best lap.
     /// The card of a car: what it does on every track it was driven on (its hardest braking, where the fast
     /// drivers shift up, its top speed), learnt by the server from its laps; nil when the server has no laps of it.
-    func carCard(carId: Int64) async throws -> [String: Any]? {
+    func carCard(carId: Int64, game gm: String? = nil) async throws -> [String: Any]? {
         if demo { return nil }
-        guard let j = try await cachedGet("/community/car?game=iracing&carId=\(carId)").data as? [String: Any], ((j["n"] as? NSNumber)?.intValue ?? 0) > 0 else { return nil }
+        guard let j = try await cachedGet("/community/car?game=\(gm ?? game)&carId=\(carId)").data as? [String: Any], ((j["n"] as? NSNumber)?.intValue ?? 0) > 0 else { return nil }
         return j
     }
     /// A track's layout drawn by the community from clean laps (x/y of n points along the lap), nil when none yet.
-    func trackLayout(trackId: Int64) async -> ([Double], [Double])? {
+    func trackLayout(trackId: Int64, game gm: String? = nil) async -> ([Double], [Double])? {
         if demo || trackId <= 0 { return nil }
-        guard let j = try? await cachedGet("/community/trackmaps?game=iracing&trackId=\(trackId)").data as? [String: Any],
+        guard let j = try? await cachedGet("/community/trackmaps?game=\(gm ?? game)&trackId=\(trackId)").data as? [String: Any],
               let x = j["x"] as? [Any], let y = j["y"] as? [Any], x.count >= 20, x.count == y.count else { return nil }
         return (x.map { ($0 as? NSNumber)?.doubleValue ?? 0 }, y.map { ($0 as? NSNumber)?.doubleValue ?? 0 })
     }
     /// The model's references for a car and track (`/community/model`): the record (the fastest lap really driven) and the
     /// next level for a lap of `lapTime` (the driver just ahead), each a trace every 5 m with its time and, when known, its line.
-    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?, corners: [CornerCard]) {
+    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double, game gm: String? = nil) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?, corners: [CornerCard]) {
         if demo || trackId <= 0 || carId <= 0 { return (nil, nil, []) }
-        guard let m = try? await cachedGet("/community/model?game=iracing&trackId=\(trackId)&carId=\(carId)").data as? [String: Any] else { return (nil, nil, []) }
+        guard let m = try? await cachedGet("/community/model?game=\(gm ?? game)&trackId=\(trackId)&carId=\(carId)").data as? [String: Any] else { return (nil, nil, []) }
         // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
         let cards: [CornerCard] = ((m["corners"] as? [[String: Any]]) ?? []).map { o in
             func d(_ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
@@ -797,9 +1019,9 @@ final class Account: ObservableObject {
         return (rec, lvl, cards)
     }
     /// A thumb on one of the coach's tips (1 up, -1 down, 0 takes it back), kept with the account on the server (coachtips.js).
-    func rateTip(trackId: Int64, carId: Int64, sid: String, started: Double, n: Int, apexM: Int, kind: String, cls: String, up: Int) async {
+    func rateTip(trackId: Int64, carId: Int64, sid: String, started: Double, n: Int, apexM: Int, kind: String, cls: String, up: Int, game gm: String? = nil) async {
         if demo || trackId <= 0 || carId <= 0 { return }
-        _ = try? await call("POST", "/community/coach/rate", body: ["game": "iracing", "trackId": trackId, "carId": carId, "sid": sid, "started": Int64(started), "n": n, "apex": apexM, "kind": kind, "cls": cls, "up": up])
+        _ = try? await call("POST", "/community/coach/rate", body: ["game": gm ?? game, "trackId": trackId, "carId": carId, "sid": sid, "started": Int64(started), "n": n, "apex": apexM, "kind": kind, "cls": cls, "up": up])
     }
     /// A track's official turns (T1 … Tn as fractions of the lap from the line), placed by an admin on its map.
     /// What the coach learnt from everyone's tips (coachtips.js): the tips an admin turned off ("kind|cls"), how many drivers
@@ -818,15 +1040,15 @@ final class Account: ObservableObject {
         guard let j = try? await cachedGet("/community/coach/me").data as? [String: Any], let a = j["habits"] as? [[String: Any]] else { return [] }
         return a.map { Habit(kind: str($0["kind"]), tracks: int($0["tracks"]), sessions: int($0["sessions"])) }
     }
-    func turns(trackId: Int64) async -> [Double] {
+    func turns(trackId: Int64, game gm: String? = nil) async -> [Double] {
         if demo || trackId <= 0 { return [] }
-        guard let j = try? await cachedGet("/community/turns?game=iracing&trackId=\(trackId)").data as? [String: Any], let a = j["turns"] as? [Any] else { return [] }
+        guard let j = try? await cachedGet("/community/turns?game=\(gm ?? game)&trackId=\(trackId)").data as? [String: Any], let a = j["turns"] as? [Any] else { return [] }
         return a.compactMap { ($0 as? NSNumber)?.doubleValue }.filter { $0 >= 0 && $0 < 1 }
     }
     /// The pit lane of a track, learnt from laps through the pits: [5 m point of a lap of n points, metres to the left].
-    func pitLane(trackId: Int64) async -> PitLane? {
+    func pitLane(trackId: Int64, game gm: String? = nil) async -> PitLane? {
         if demo || trackId <= 0 { return nil }
-        guard let j = try? await cachedGet("/community/pitlane?game=iracing&trackId=\(trackId)").data as? [String: Any],
+        guard let j = try? await cachedGet("/community/pitlane?game=\(gm ?? game)&trackId=\(trackId)").data as? [String: Any],
               let a = j["pts"] as? [[Any]], let n = (j["n"] as? NSNumber)?.intValue, n > 0 else { return nil }
         let pts: [(Int, Double)] = a.compactMap { q in
             guard q.count == 2, let i = (q[0] as? NSNumber)?.intValue, let v = (q[1] as? NSNumber)?.doubleValue else { return nil }
@@ -836,7 +1058,7 @@ final class Account: ObservableObject {
     }
     func leaderboard(trackId: Int64, carId: Int64) async throws -> Got<[CommunityLap]> {
         if demo { return Got(data: Demo.board(trackId: trackId, carId: carId)) }
-        let g = try await cachedGet("/community/laps?game=iracing&trackId=\(trackId)&carId=\(carId)")
+        let g = try await cachedGet("/community/laps?game=\(game)&trackId=\(trackId)&carId=\(carId)")
         var seen = Set<String>()
         var out: [CommunityLap] = []
         for l in (g.data as? [String: Any])?["laps"] as? [[String: Any]] ?? [] {
@@ -966,7 +1188,7 @@ final class Account: ObservableObject {
 
     func reports() async throws -> Got<[SharedReport]> {
         if demo { return Got(data: Demo.reports()) }
-        let g = try await cachedGet("/community/reports?game=iracing")
+        let g = try await cachedGet("/community/reports?game=\(game)")
         let a = (g.data as? [String: Any])?["reports"] as? [[String: Any]] ?? []
         return Got(data: a.map { r in
             SharedReport(id: str(r["id"]), alias: str(r["alias"]), track: str(r["track"]), car: str(r["car"]), created: num(r["created"]) ?? 0, finish: int(r["finish"]), field: int(r["field"]), best: pos(r["best"]), mine: (r["mine"] as? Bool) ?? false)
@@ -975,7 +1197,7 @@ final class Account: ObservableObject {
 
     func setups() async throws -> Got<[SharedSetup]> {
         if demo { return Got(data: Demo.setups()) }
-        let g = try await cachedGet("/community/setups?game=iracing")
+        let g = try await cachedGet("/community/setups?game=\(game)")
         let a = (g.data as? [String: Any])?["setups"] as? [[String: Any]] ?? []
         return Got(data: a.map { s in
             SharedSetup(id: str(s["id"]), alias: str(s["alias"]), name: str(s["name"]), car: str(s["car"]), track: str(s["track"]), notes: str(s["notes"]), downloads: int(s["downloads"]), created: num(s["created"]) ?? 0)
@@ -988,4 +1210,117 @@ func isAIRace(_ r: [String: Any]) -> Bool {
     if r["ai"] as? Bool ?? false { return true }
     let g = (r["game"] as? String) ?? ""
     return (g.isEmpty || g == "iracing") && ((r["subsession"] as? NSNumber)?.intValue ?? 0) == 0 && ((r["id"] as? String) ?? "").hasPrefix("t-")
+}
+
+/// A Steam account with no Pitlane HQ account yet: the sign-up grant and the persona for the new account's form.
+struct SteamNew: Identifiable {
+    let sid: String
+    let persona: String
+    var id: String { sid }
+}
+
+/// Steam's answer, back on this phone: the server sends the browser on to http://127.0.0.1:<port>/steam/done?state=…&…
+/// (the same way it reaches the PC's agent). This listener runs only while a Steam sign-in or link is under way, on the
+/// phone's own loopback, and sends the browser on to pitlanehq://steam with the same parameters, where the sign-in
+/// sheet hands them to the app. The grant in them is good only with the code this phone kept.
+final class SteamLoopback {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "com.pitlanehq.steam")
+    private var ready: CheckedContinuation<Int, Error>?
+
+    init() throws {
+        let p = NWParameters.tcp
+        p.requiredInterfaceType = .loopback
+        listener = try NWListener(using: p, on: .any)
+    }
+
+    /// Starts listening: the port Steam's answer comes back to.
+    func start() async throws -> Int {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Int, Error>) in
+            queue.async {
+                self.ready = c
+                self.listener.stateUpdateHandler = { [weak self] st in self?.changed(st) }
+                self.listener.newConnectionHandler = { [weak self] conn in self?.serve(conn) }
+                self.listener.start(queue: self.queue)
+            }
+        }
+    }
+
+    private func changed(_ st: NWListener.State) {
+        guard let c = ready else { return }
+        switch st {
+        case .ready:
+            guard let p = listener.port else { return }
+            ready = nil
+            c.resume(returning: Int(p.rawValue))
+        case .failed(let e), .waiting(let e):
+            ready = nil
+            c.resume(throwing: e)
+        case .cancelled:
+            ready = nil
+            c.resume(throwing: CancellationError())
+        default:
+            break
+        }
+    }
+
+    private func serve(_ conn: NWConnection) {
+        conn.start(queue: queue)
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
+            let head = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            let line = head.components(separatedBy: "\r\n").first ?? ""
+            let parts = line.split(separator: " ")
+            let target = parts.count > 1 ? String(parts[1]) : ""
+            let resp: String
+            if target.hasPrefix("/steam/done") {
+                let q = target.split(separator: "?", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
+                resp = "HTTP/1.1 302 Found\r\nLocation: pitlanehq://steam?\(q)\r\nCache-Control: no-store\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            } else {
+                resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            }
+            conn.send(content: Data(resp.utf8), completion: .contentProcessed { _ in conn.cancel() })
+        }
+    }
+
+    func stop() {
+        queue.async {
+            if let c = self.ready { self.ready = nil; c.resume(throwing: CancellationError()) }
+            self.listener.cancel()
+        }
+    }
+}
+
+/// The parameters of pitlanehq://steam?… (a "+" is a space, as the server writes them).
+func steamQuery(_ u: URL) -> [String: String] {
+    var out: [String: String] = [:]
+    for kv in (u.query ?? "").split(separator: "&") {
+        let p = kv.split(separator: "=", maxSplits: 1).map { String($0).replacingOccurrences(of: "+", with: " ").removingPercentEncoding ?? String($0) }
+        if let k = p.first, !k.isEmpty { out[k] = p.count > 1 ? p[1] : "" }
+    }
+    return out
+}
+
+/// Steam's sign-in in the system's sign-in sheet (ASWebAuthenticationSession), which closes by itself on pitlanehq://steam.
+@MainActor
+final class SteamAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private var session: ASWebAuthenticationSession?
+
+    /// Steam's answer (its parameters), or nil when the driver closed the sheet.
+    func run(_ url: URL) async -> [String: String]? {
+        let q: [String: String]? = await withCheckedContinuation { (c: CheckedContinuation<[String: String]?, Never>) in
+            let s = ASWebAuthenticationSession(url: url, callbackURLScheme: "pitlanehq") { cb, err in
+                c.resume(returning: err == nil ? cb.map(steamQuery) : nil)
+            }
+            s.presentationContextProvider = self
+            session = s
+            if !s.start() { c.resume(returning: nil) }
+        }
+        session = nil
+        return q
+    }
+
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let ws = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap { $0.windows }
+        return ws.first { $0.isKeyWindow } ?? ws.first ?? ASPresentationAnchor()
+    }
 }

@@ -47,26 +47,27 @@ extension Account {
         a.session = session
         a.trace = try await lapTrace(lap.id)
         // the car and track of this session among the ones the community knows, matched by name
-        let combos = (try? await self.combos().data) ?? []
+        let gm = session.game
+        let combos = (try? await self.combos(game: gm).data) ?? []
         let c = combos.first { $0.track.caseInsensitiveCompare(session.track) == .orderedSame && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
             ?? combos.first { session.track.lowercased().hasPrefix($0.track.lowercased()) && $0.car.caseInsensitiveCompare(session.car) == .orderedSame }
         // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
-        if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { a.car = try? await carCard(carId: cc.carId) }
-        if let tc = c { a.turns = await turns(trackId: tc.trackId); a.trackId = tc.trackId; a.carId = tc.carId }
+        if let cc = c ?? combos.first(where: { $0.car.caseInsensitiveCompare(session.car) == .orderedSame }) { a.car = try? await carCard(carId: cc.carId, game: gm) }
+        if let tc = c { a.turns = await turns(trackId: tc.trackId, game: gm); a.trackId = tc.trackId; a.carId = tc.carId }
         a.coach = await coachInfo()
         a.habits = await coachHabits()
         // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
-        if let tc = c, !(a.trace?.hasShape ?? false) { a.layout = await trackLayout(trackId: tc.trackId) }
+        if let tc = c, !(a.trace?.hasShape ?? false) { a.layout = await trackLayout(trackId: tc.trackId, game: gm) }
         let own = all.filter { $0.valid && $0.time > 0 && $0.id != lap.id && $0.drv == lap.drv }.min { $0.time < $1.time }
         if kind == .myBest {
             (a.ref, a.refLabel, a.refTime, a.refSectors) = await ownRef(own)
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
-            if let c { a.corners = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time).corners }
+            if let c { a.corners = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time, game: gm).corners }
         } else {
             var rec: (Trace, Double)? = nil
             var lvl: (Trace, Double)? = nil
             if let c {
-                let m = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time)
+                let m = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time, game: gm)
                 rec = m.rec
                 lvl = m.lvl
                 a.corners = m.corners
@@ -169,7 +170,7 @@ struct CornerTipView: View {
         let now = mine == up ? 0 : up
         if now == 0 { account.tipRatings.removeValue(forKey: key) } else { account.tipRatings[key] = now }
         let kind = (k.tip ?? "").hasPrefix("tip_") ? String((k.tip ?? "").dropFirst(4)) : (k.tip ?? "")
-        Task { await account.rateTip(trackId: an.trackId, carId: an.carId, sid: s.id, started: s.started, n: k.n, apexM: k.apexM, kind: kind, cls: k.cls, up: now) }
+        Task { await account.rateTip(trackId: an.trackId, carId: an.carId, sid: s.id, started: s.started, n: k.n, apexM: k.apexM, kind: kind, cls: k.cls, up: now, game: s.game) }
     }
 }
 
@@ -333,8 +334,9 @@ struct CoachBody: View {
 struct SessionBadges: View {
     let x: CloudSession
     var body: some View {
-        if !x.drvs.isEmpty || x.ai {
+        if !x.drvs.isEmpty || x.ai || x.game == "lmu" {
             HStack(spacing: 6) {
+                if x.game == "lmu" { LmuPill() }
                 if !x.drvs.isEmpty {
                     Text("DRINKS · " + (x.drvs.count > 1 ? t("drinks_multiple") : x.drvs[0])).font(.system(size: 10, weight: .bold)).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659)).lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 2).background(Theme.accent.opacity(0.22)).overlay(Capsule().stroke(Theme.accent.opacity(0.6), lineWidth: 1)).clipShape(Capsule())

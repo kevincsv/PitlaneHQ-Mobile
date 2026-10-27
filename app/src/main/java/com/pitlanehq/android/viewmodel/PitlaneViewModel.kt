@@ -39,6 +39,11 @@ data class PitLane(val n: Int, val pts: List<Pair<Int, Double>>)
 /** lap B: your best lap of the session, or the model's next level (the driver just ahead) or record */
 enum class RefKind { MY_BEST, LEVEL, RECORD }
 
+/** Sign in with Steam on the sign-in screen: the browser is open ([waiting]), the authenticator's code or the password
+ *  comes next, or Steam has no account yet ([sid] and its persona for the new account's form). */
+data class SteamUi(val busy: Boolean = false, val waiting: Boolean = false, val needCode: Boolean = false, val needKey: Boolean = false,
+    val newPersona: String? = null, val sid: String = "", val error: String? = null)
+
 class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = AccountRepository(app)
     private val live = PitWallRepository(repo)
@@ -77,6 +82,50 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     var combo: Combo? = null
     var race: Race? = null
 
+    // ---------- the game you look at: iRacing or Le Mans Ultimate (Home, Analysis, Community) ----------
+    // Only what this phone shows: never what your PC reads. Telemetry follows the PC's live game.
+    /** the game chosen on this phone (remembered), else the one your PC reads live, else iRacing */
+    var game by mutableStateOf(repo.gameChoice.ifEmpty { "iracing" })
+        private set
+    /** the game your PC is reading live (null: not live), marked ● in the selector */
+    val pcGame = live.pcGame
+    /** per game: how many sessions you have and the last one's date (the sheet that asks which game to see) */
+    val gameStats = MutableStateFlow<Map<String, Pair<Int, Long>>>(emptyMap())
+    /** "What do you want to see?": once when the app opens, the PC not live and sessions of both games */
+    var askGame by mutableStateOf(false)
+    private var gameAsked = false
+    @Volatile private var allRaces: List<Race> = emptyList()
+    @Volatile private var allSessions: List<CloudSession>? = null
+    @Volatile private var allBests: List<PersonalBest>? = null
+
+    fun setGame(g: String, remember: Boolean = true) {
+        if (g !in GAMES) return
+        if (remember) repo.gameChoice = g
+        askGame = false
+        if (g == game) return
+        game = g
+        repo.game = g
+        // every list shows the new game: the account's from what is already here, the community's read again
+        races.value = races.value.copy(data = allRaces.filter { it.game == g })
+        allSessions?.let { a -> sessions.value = sessions.value.copy(data = a.filter { it.game == g }) }
+        allBests?.let { a -> bests.value = bests.value.copy(data = a.filter { it.game == g }) }
+        session = null
+        laps.value = Loadable(); analysis.value = Loadable(); coach.value = Loadable(); coachKey = ""
+        listOf(board, reports, setups, trackPage).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
+        if (combos.value.data != null || combos.value.loading) loadCombos() else combos.value = Loadable()
+        if (records.value.data != null || records.value.loading) loadRecords() else records.value = Loadable()
+    }
+
+    private fun noteStats() {
+        val all = allSessions ?: return
+        val st = GAMES.associateWith { g -> all.filter { it.game == g && it.laps > 0 }.let { l -> l.size to (l.maxOfOrNull { it.started } ?: 0L) } }
+        gameStats.value = st
+        if (!gameAsked && !demo.value) {
+            gameAsked = true
+            if (st.values.count { it.first > 0 } > 1 && pcGame.value == null) askGame = true
+        }
+    }
+
     private val cm = app.getSystemService(ConnectivityManager::class.java)
     private val netCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -94,8 +143,11 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         I18n.choice = repo.language
         online.value = cm?.activeNetwork?.let { cm.getNetworkCapabilities(it)?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) } ?: false
         runCatching { cm?.registerNetworkCallback(NetworkRequest.Builder().addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), netCallback) }
+        repo.game = game
         loadRaces()
         checkUpdate()
+        // nothing chosen on this phone yet: the selector follows the game your PC reads live
+        viewModelScope.launch { pcGame.collect { g -> if (g != null && repo.gameChoice.isEmpty() && g != game) setGame(g, remember = false) } }
         // another device uploaded the account (the server tells the live room): this phone reads it again at once
         viewModelScope.launch { live.syncNudges.collect { onSyncNudge(it) } }
     }
@@ -159,6 +211,111 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelCode() { _account.value = AccountState(email = _account.value.email) }
+
+    // ---------- Sign in with Steam ----------
+    val steamUi = MutableStateFlow(SteamUi())
+    private var catcher: SteamCatcher? = null
+    private fun backPage() = SteamCatcher.page(com.pitlanehq.android.ui.t("steam_back_title"), com.pitlanehq.android.ui.t("steam_back_btn"))
+
+    /** Steam's sign-in in the browser ([open]); its answer comes back to this phone and signs in, or opens the new account's form. */
+    fun steamSignIn(open: (String) -> Unit) {
+        steamUi.value = SteamUi(busy = true)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                catcher?.cancel()
+                val c = SteamCatcher().also { catcher = it }
+                val url = repo.steamLoginStart(c.port)
+                withContext(Dispatchers.Main) { steamUi.value = SteamUi(waiting = true); open(url) }
+                val q = c.await(10 * 60_000L, backPage())
+                if (catcher === c) catcher = null
+                if (q == null) { if (steamUi.value.waiting) steamUi.value = SteamUi(); return@launch } // cancelled, or Steam took too long
+                val g = q["steamLogin"].orEmpty()
+                val sid = q["sid"].orEmpty()
+                steamUi.value = when {
+                    g == "0" && q["new"] == "1" && sid.isNotEmpty() -> SteamUi(newPersona = q["persona"].orEmpty(), sid = sid)
+                    g.isEmpty() || g == "0" -> SteamUi(error = "steam_failed")
+                    repo.steamLogin(g) == "code" -> SteamUi(needCode = true)
+                    else -> SteamUi(needKey = true)
+                }
+            } catch (e: Exception) {
+                steamUi.value = SteamUi(error = errKey(e))
+            }
+        }
+    }
+
+    /** The browser was left: nothing waits for Steam any more, and a half-done sign-in is closed. */
+    fun steamCancel() {
+        catcher?.cancel(); catcher = null
+        steamUi.value = SteamUi()
+        viewModelScope.launch(Dispatchers.IO) { repo.steamCancel() }
+    }
+
+    fun steamCode(code: String) {
+        steamUi.value = steamUi.value.copy(busy = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.steamLoginCode(code) }
+                .onSuccess { steamUi.value = SteamUi(needKey = true) }
+                .onFailure { e -> steamUi.value = if (e.message == "sign_in_again") SteamUi(error = "sign_in_again") else steamUi.value.copy(busy = false, error = errKey(e)) }
+        }
+    }
+
+    /** The password once on this phone after Steam: the data key, and you are in. */
+    fun steamKey(email: String, password: String) {
+        steamUi.value = steamUi.value.copy(busy = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.steamKey(email, password) }
+                .onSuccess { steamUi.value = SteamUi(); _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive() }
+                .onFailure { e -> steamUi.value = steamUi.value.copy(busy = false, error = errKey(e)) }
+        }
+    }
+
+    /** The new account (from Steam: linked to it at once). Without a session yet, the email to confirm comes first. */
+    fun register(email: String, password: String, name: String) {
+        val sid = steamUi.value.sid
+        steamUi.value = steamUi.value.copy(busy = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.register(email, password, name, sid, I18n.lang) }
+                .onSuccess { st ->
+                    steamUi.value = SteamUi()
+                    if (st == null) _account.value = AccountState(email = email, error = "verify your email first: we sent you a link, open it and then sign in")
+                    else { _account.value = st; demo.value = repo.demo; loadRaces(); resumeLive() }
+                }
+                .onFailure { e -> steamUi.value = steamUi.value.copy(busy = false, error = errKey(e)) }
+        }
+    }
+
+    // Account → Steam
+    val steam = MutableStateFlow(Loadable<SteamLink>())
+    val steamLinkWait = MutableStateFlow(false)
+    fun loadSteam() = load(steam) { Got(repo.steam()) }
+    /** Linking asks the password, then Steam's sign-in in the browser; its answer comes back here and links it. */
+    fun steamLinkStart(password: String, open: (String) -> Unit) {
+        steam.value = steam.value.copy(error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                catcher?.cancel()
+                val c = SteamCatcher().also { catcher = it }
+                val url = repo.steamLinkStart(password, c.port)
+                withContext(Dispatchers.Main) { steamLinkWait.value = true; open(url) }
+                val q = c.await(10 * 60_000L, backPage())
+                if (catcher === c) catcher = null
+                steamLinkWait.value = false
+                val g = q?.get("steamLink").orEmpty()
+                if (q != null && g.isEmpty()) steam.value = steam.value.copy(error = if (q["steamLinked"] == "taken") "this Steam account is already linked to another account" else "steam_not_linked")
+                if (g.isNotEmpty()) { repo.steamLink(g); loadSteam() }
+            } catch (e: Exception) {
+                steamLinkWait.value = false
+                steam.value = steam.value.copy(error = errKey(e))
+            }
+        }
+    }
+    fun steamLinkCancel() { catcher?.cancel(); catcher = null; steamLinkWait.value = false }
+    fun steamShow(shown: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { repo.steamShow(shown) }.onSuccess { loadSteam() }.onFailure { steam.value = steam.value.copy(error = errKey(it)) }
+    }
+    fun steamUnlink(password: String) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { repo.steamUnlink(password) }.onSuccess { loadSteam() }.onFailure { steam.value = steam.value.copy(error = errKey(it)) }
+    }
 
     // two-step sign-in: the screens wait on these (null = nothing pending)
     val twoFactorSetup = MutableStateFlow<com.pitlanehq.android.data.TwoFactorSetup?>(null)
@@ -236,7 +393,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     fun logout() {
         live.stop()
-        listOf(races, sessions, bests, laps, analysis, combos, board, reports, setups, devices, discord).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
+        allRaces = emptyList(); allSessions = null; allBests = null
+        listOf(races, sessions, bests, laps, analysis, combos, board, reports, setups, devices, discord, steam).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         viewModelScope.launch(Dispatchers.IO) {
             repo.logout()
             demo.value = false
@@ -257,6 +415,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         repo.demo = on
         demo.value = on
         live.stop()
+        allSessions = null; allBests = null
         listOf(sessions, bests, laps, analysis, combos, board, reports, setups).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         loadRaces()
     }
@@ -266,7 +425,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         I18n.choice = l
     }
 
-    fun loadRaces() = load(races) { Got(repo.races()) }
+    fun loadRaces() = load(races) { val all = repo.races(); allRaces = all; Got(all.filter { it.game == game }) }
 
     /** Your iRating of every discipline, as the PC last saw it. */
     fun ratings(): Map<String, Triple<Int, String, Long>> = runCatching { repo.ratings() }.getOrDefault(emptyMap())
@@ -287,8 +446,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         loadTrackNotes()
         withContext(Dispatchers.Main) { done(err?.message) }
     }
-    fun loadSessions() = load(sessions) { repo.sessions() }
-    fun loadBests() = load(bests) { repo.bests() }
+    fun loadSessions() = load(sessions) { val g = repo.sessions(); allSessions = g.data; noteStats(); Got(g.data.filter { it.game == game }, g.stale) }
+    fun loadBests() = load(bests) { val g = repo.bests(); allBests = g.data; Got(g.data.filter { it.game == game }, g.stale) }
     fun loadLaps(id: String) { laps.value = Loadable(); load(laps) { repo.laps(id) } }
     fun loadCombos() = load(combos) { repo.combos() }
     fun loadBoard(c: Combo) { board.value = Loadable(); load(board) { repo.leaderboard(c.trackId, c.carId) } }
@@ -363,11 +522,12 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             var refTime: Double? = null
             var refSec: List<Double> = emptyList()
             // the car and track of this session among the ones the community knows, matched by name
-            val combos = runCatching { repo.combos().data }.getOrNull() ?: emptyList()
+            val gm = s.game
+            val combos = runCatching { repo.combos(gm).data }.getOrNull() ?: emptyList()
             val c = combos.firstOrNull { it.track.equals(s.track, true) && it.car.equals(s.car, true) }
                 ?: combos.firstOrNull { s.track.startsWith(it.track, true) && it.car.equals(s.car, true) }
             // the car card needs the car alone: what it does on other tracks, for when nobody known drove it here yet
-            val card = (c ?: combos.firstOrNull { it.car.equals(s.car, true) })?.let { runCatching { repo.carCard(it.carId) }.getOrNull() }
+            val card = (c ?: combos.firstOrNull { it.car.equals(s.car, true) })?.let { runCatching { repo.carCard(it.carId, gm) }.getOrNull() }
             var fastest = false
             var cards: List<CornerCard> = emptyList()
             // each driver against their own laps (DRINKS mode: a friend's lap against that friend's best)
@@ -383,7 +543,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             if (kind == RefKind.MY_BEST) ownBest()
             else {
                 // the model's references, like the PC and the web: the next level, else the record
-                val mr = c?.let { runCatching { repo.modelRefs(it.trackId, it.carId, lap.time) }.getOrNull() }
+                val mr = c?.let { runCatching { repo.modelRefs(it.trackId, it.carId, lap.time, gm) }.getOrNull() }
                 val rec = mr?.rec; val lvl = mr?.lvl
                 cards = mr?.corners ?: emptyList()
                 val pick = if (kind == RefKind.LEVEL) lvl ?: rec else rec
@@ -411,13 +571,13 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             // the official turn numbers of this track, when an admin has placed them on its map (else the corners are counted)
-            val turns = c?.let { runCatching { repo.turns(it.trackId) }.getOrNull() } ?: emptyList()
+            val turns = c?.let { runCatching { repo.turns(it.trackId, gm) }.getOrNull() } ?: emptyList()
             val coach = runCatching { repo.coachInfo() }.getOrNull()
             val habits = runCatching { repo.coachHabits() }.getOrDefault(emptyList())
             // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
-            val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId) }.getOrNull() else null
+            val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId, gm) }.getOrNull() else null
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
-            if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time).corners }.getOrDefault(emptyList())
+            if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time, gm).corners }.getOrDefault(emptyList())
             Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards, coach = coach, habits = habits))
         }
     }
@@ -430,16 +590,20 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         val key = s.id + ":" + k.apexM
         val now = if (tipRatings.value[key] == up) 0 else up
         tipRatings.value = tipRatings.value.toMutableMap().also { if (now == 0) it.remove(key) else it[key] = now }
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.rateTip(an.trackId, an.carId, s.id, s.started, k.n, k.apexM, k.tip?.removePrefix("tip_") ?: "", k.cls, now) } }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.rateTip(an.trackId, an.carId, s.id, s.started, k.n, k.apexM, k.tip?.removePrefix("tip_") ?: "", k.cls, now, s.game) } }
     }
 
     // the live map: the track's layout drawn by the community, and its official turns, once per track
     val liveTrack = MutableStateFlow<Triple<Long, Pair<List<Double>, List<Double>>?, List<Double>>?>(null)
+    private var liveTrackGame = ""
     fun loadLiveTrack(trackId: Long) {
-        if (trackId <= 0 || liveTrack.value?.first == trackId) return
+        // the layouts and turns are per game: the one your PC reads
+        val g = liveState.value.source.ifEmpty { "iracing" }
+        if (trackId <= 0 || (liveTrack.value?.first == trackId && liveTrackGame == g)) return
+        liveTrackGame = g
         liveTrack.value = Triple(trackId, null, emptyList())
         viewModelScope.launch {
-            val r = withContext(Dispatchers.IO) { Triple(trackId, runCatching { repo.trackLayout(trackId) }.getOrNull(), runCatching { repo.turns(trackId) }.getOrDefault(emptyList())) }
+            val r = withContext(Dispatchers.IO) { Triple(trackId, runCatching { repo.trackLayout(trackId, g) }.getOrNull(), runCatching { repo.turns(trackId, g) }.getOrDefault(emptyList())) }
             liveTrack.value = r
         }
     }
