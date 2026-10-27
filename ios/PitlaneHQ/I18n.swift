@@ -403,6 +403,7 @@ private let strings: [String: (String, String, String)] = [
     "disc_dirt_road": ("Dirt Road", "Tierra", "Terra"),
     "lic_all": ("Every class", "Todas las clases", "Todas as classes"),
     "lic_all_full": ("Every license", "Todas las licencias", "Todas as licenças"),
+    "in_class": ("class", "clase", "classe"),
     "class_all": ("Every class", "Todas las clases", "Todas as classes"),
     "every_car_track": ("Every car and track", "Todos los coches y circuitos", "Todos os carros e pistas"),
     "viewing": ("Looking at: {0} · {1}", "Estás viendo: {0} · {1}", "Vendo: {0} · {1}"),

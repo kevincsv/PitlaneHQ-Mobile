@@ -613,7 +613,8 @@ class AccountRepository(context: Context) {
                 cat = s.optStr("cat"), lic = s.optStr("lic"),
                 drvs = s.optStr("drvs")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() } ?: emptyList(),
                 ai = s.optInt("ai", 0) == 1 || offlineAI(id, kind, s.optStr("game")),
-                game = s.optStr("game") ?: "iracing", cls = s.clsOf()
+                game = s.optStr("game") ?: "iracing", cls = s.clsOf(),
+                pos = s.posInt("pos"), field = s.posInt("field"), inClass = s.opt("cls").let { it == true || it == 1 }
             )
         }, g.stale)
     }
@@ -841,7 +842,9 @@ class AccountRepository(context: Context) {
 
     private fun JSONObject.optStr(k: String): String? = optString(k, "").takeUnless { it.isEmpty() || it == "null" }
     /** The car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…). */
-    private fun JSONObject.clsOf(): String? = optStr("cls") ?: optStr("carClass") ?: optStr("class")
+    private fun JSONObject.clsOf(): String? = listOf("cls", "carClass", "class").firstNotNullOfOrNull { k -> (opt(k) as? String)?.takeUnless { it.isEmpty() || it == "null" } }
+    /** a positive whole number, or null (missing, null or 0) */
+    private fun JSONObject.posInt(k: String): Int? = (opt(k) as? Number)?.toInt()?.takeIf { it > 0 }
 
     /** A driver's profile, from one of their laps on a leaderboard, or yours (lapId null). */
     fun profile(lapId: String?): DriverProfile {

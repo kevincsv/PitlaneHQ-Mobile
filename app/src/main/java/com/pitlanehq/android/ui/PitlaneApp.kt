@@ -574,7 +574,7 @@ private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: 
                     val ir = if (o.noIr || o.irChange == 0) null else o.irChange
                     HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.track, "race", raceDisc(o.cat, o.car), o.car + " · " + agoText(o.whenMs), ir, o.laps.size, o.best, { onRace(o) }) { DrinksBadge(o); AiBadge(o) }
                 }
-                is CloudSession -> HomeRow("–", Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + agoText(o.started), null, o.laps, o.best, { onSession(o) }) {
+                is CloudSession -> HomeRow(o.place, if (o.pos != null) Fg else Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + agoText(o.started), null, o.laps, o.best, { onSession(o) }, if (o.inClass && o.pos != null) t("in_class") else "") {
                     if (o.drvs.isNotEmpty() || o.ai || o.game == "lmu") SessionBadges(o)
                 }
             }
@@ -583,9 +583,13 @@ private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: 
 }
 
 @Composable
-private fun HomeRow(place: String, placeCol: Color, track: String, kind: String, disc: String, sub: String, ir: Int?, laps: Int, best: Double?, onClick: () -> Unit, badges: @Composable () -> Unit) {
+private fun HomeRow(place: String, placeCol: Color, track: String, kind: String, disc: String, sub: String, ir: Int?, laps: Int, best: Double?, onClick: () -> Unit, placeSub: String = "", badges: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(place, color = placeCol, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+        // the place ("P3", a session's "P3/20"), with "class" under it when it counts within your class
+        Column(Modifier.width(54.dp)) {
+            Text(place, color = placeCol, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, fontSize = if (place.length > 4) 12.sp else 14.sp, maxLines = 1, softWrap = false)
+            if (placeSub.isNotEmpty()) Text(placeSub, color = Muted, fontSize = 9.sp, maxLines = 1)
+        }
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(track, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -1143,7 +1147,7 @@ private fun SessionRow(x: CloudSession, on: Boolean, onClick: () -> Unit) {
         SessionBadges(x)
         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f, fill = false)) {
-                Text(listOf(kindText(x.kind), day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(listOf(placeLine(x), kindText(x.kind), day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 LicBadge(x.lic)
             }
             Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
@@ -1173,7 +1177,7 @@ private fun SessionHead(x: CloudSession, onChoose: () -> Unit) {
         SessionBadges(x)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.weight(1f)) {
-                Text(listOf(kindText(x.kind), day(x.started), sessCat(x)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(listOf(placeLine(x), kindText(x.kind), day(x.started), sessCat(x)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 LicBadge(x.lic)
             }
             TextButton(onChoose) { Text(t("choose_session") + " ▾", color = Accent, fontSize = 12.sp, maxLines = 1) }
@@ -1630,6 +1634,8 @@ private fun catKeys(game: String, have: Collection<String>): List<String> =
 private fun catColor(game: String, k: String): Color = if (game != "lmu") discColor(k) else when (k) {
     "Hypercar" -> Color(0xFFFF6363); "LMP2" -> Color(0xFF5AA9FF); "LMP3" -> Color(0xFFB98CFF); "LMGT3" -> Color(0xFF38C97C); "GTE" -> Color(0xFFFFB02E); else -> Muted
 }
+/** A session's place for its line: "P3/20", "P3/8 class" within your class, or "–" without one. */
+private fun placeLine(x: CloudSession): String = x.place + if (x.inClass && x.pos != null) " " + t("in_class") else ""
 /** A session's category as its name: the discipline, or its Le Mans Ultimate class. */
 private fun sessCat(x: CloudSession): String = catName(x.game, catOf(x.game, x.cat, x.cls, x.car))
 /** Each discipline's colour, the same as the web's Community cards. */

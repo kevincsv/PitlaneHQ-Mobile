@@ -403,6 +403,7 @@ private val STRINGS: Map<String, L> = mapOf(
     "disc_dirt_road" to L("Dirt Road", "Tierra", "Terra"),
     "lic_all" to L("Every class", "Todas las clases", "Todas as classes"),
     "lic_all_full" to L("Every license", "Todas las licencias", "Todas as licenças"),
+    "in_class" to L("class", "clase", "classe"),
     "class_all" to L("Every class", "Todas las clases", "Todas as classes"),
     "every_car_track" to L("Every car and track", "Todos los coches y circuitos", "Todos os carros e pistas"),
     "viewing" to L("Looking at: {0} · {1}", "Estás viendo: {0} · {1}", "Vendo: {0} · {1}"),

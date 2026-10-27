@@ -60,8 +60,14 @@ data class CloudSession(
     val drvs: List<String> = emptyList(),  // the friends who drove laps of it in DRINKS mode
     val ai: Boolean = false,   // a session against iRacing's AI
     val game: String = "iracing",  // the sim it was driven in: iracing or lmu (Le Mans Ultimate)
-    val cls: String? = null       // the car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…)
-)
+    val cls: String? = null,      // the car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…)
+    val pos: Int? = null,         // your place (null: older sessions, test drives)
+    val field: Int? = null,       // how many cars (your class's when inClass)
+    val inClass: Boolean = false  // the place is within your class in a multiclass session
+) {
+    /** "P3/20", "P3", or "–" without a place */
+    val place: String get() = pos?.let { "P$it" + (this.field?.let { f -> "/$f" } ?: "") } ?: "–"
+}
 
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0, val drv: String = "")  // drv: a friend's lap (DRINKS mode)
 

@@ -21,6 +21,13 @@ struct CloudSession: Identifiable, Hashable {
     var game = "iracing"
     /// the car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…)
     var cls: String? = nil
+    /// your place and how many cars (your class's when inClass, the place within your class in a multiclass session);
+    /// nil for older sessions and test drives
+    var pos: Int? = nil
+    var field: Int? = nil
+    var inClass = false
+    /// "P3/20", "P3", or "–" without a place
+    var place: String { pos.map { p in "P\(p)" + (field.map { f in "/\(f)" } ?? "") } ?? "–" }
 }
 
 struct CloudLap: Identifiable, Hashable {

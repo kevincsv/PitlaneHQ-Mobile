@@ -360,7 +360,7 @@ struct SessionRow: View {
             Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
             SessionBadges(x: x)
             HStack {
-                Text([kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                Text([placeLine(x), kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                 LicBadge(k: x.lic)
                 Spacer()
                 Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
@@ -381,7 +381,7 @@ struct SessionHead: View {
             Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
             SessionBadges(x: x)
             HStack(spacing: 6) {
-                Text([kindText(x.kind), day(x.started), sessCat(x)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                Text([placeLine(x), kindText(x.kind), day(x.started), sessCat(x)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                 LicBadge(k: x.lic)
                 Spacer()
                 Button(t("choose_session") + " ▾", action: choose).font(.caption.bold()).foregroundColor(Theme.accent).lineLimit(1)

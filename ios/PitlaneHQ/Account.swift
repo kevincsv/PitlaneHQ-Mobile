@@ -56,6 +56,8 @@ private func int(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
 private func str(_ v: Any?) -> String { v as? String ?? "" }
 /// The car's class when the server sends one (Le Mans Ultimate: Hypercar, LMP2…).
 private func clsOf(_ o: [String: Any]) -> String? { ["cls", "carClass", "class"].map { str(o[$0]) }.first { !$0.isEmpty && $0 != "null" } }
+/// a positive whole number, or nil (missing, null or 0)
+private func posInt(_ v: Any?) -> Int? { (v as? NSNumber).map(\.intValue).flatMap { $0 > 0 ? $0 : nil } }
 private func orNull(_ v: Any?) -> Any { v ?? NSNull() }
 private func pos(_ v: Any?) -> Double? { num(v).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
 private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.doubleValue) }
@@ -861,7 +863,8 @@ final class Account: ObservableObject {
             return CloudSession(id: id, started: num(s["started"]) ?? 0, track: str(s["track"]), trackConfig: str(s["track_config"]), car: str(s["car"]), kind: kind, laps: int(s["laps"]), best: pos(s["best"]),
                                 cat: s["cat"] as? String, lic: s["lic"] as? String,
                                 drvs: str(s["drvs"]).split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }, ai: int(s["ai"]) == 1 || offlineAI,
-                                game: (game ?? "").isEmpty ? "iracing" : game!, cls: clsOf(s))
+                                game: (game ?? "").isEmpty ? "iracing" : game!, cls: clsOf(s),
+                                pos: posInt(s["pos"]), field: posInt(s["field"]), inClass: (s["cls"] as? Bool) ?? ((s["cls"] as? NSNumber)?.intValue == 1))
         }
         noteStats(all)
         return Got(data: all.filter { $0.game == self.game }, stale: g.stale)

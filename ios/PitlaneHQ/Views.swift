@@ -1594,7 +1594,7 @@ struct HomeRecent: View {
                         }.buttonStyle(.plain)
                     case .ses(let x):
                         NavigationLink(value: Route.session(x)) {
-                            row("–", Theme.muted, fixText(x.track), x.kind, x.cat ?? "", fixText(x.car) + " · " + agoText(x.started), nil, x.laps, x.best) { SessionBadges(x: x) }
+                            row(x.place, x.pos != nil ? Theme.fg : Theme.muted, fixText(x.track), x.kind, x.cat ?? "", fixText(x.car) + " · " + agoText(x.started), nil, x.laps, x.best, x.inClass && x.pos != nil ? t("in_class") : "") { SessionBadges(x: x) }
                         }.buttonStyle(.plain)
                     }
                 }
@@ -1602,9 +1602,14 @@ struct HomeRecent: View {
         }
     }
 
-    private func row<B: View>(_ place: String, _ pc: Color, _ track: String, _ kind: String, _ disc: String, _ sub: String, _ ir: Int?, _ laps: Int, _ best: Double?, @ViewBuilder _ badges: () -> B) -> some View {
+    private func row<B: View>(_ place: String, _ pc: Color, _ track: String, _ kind: String, _ disc: String, _ sub: String, _ ir: Int?, _ laps: Int, _ best: Double?, _ placeSub: String = "", @ViewBuilder _ badges: () -> B) -> some View {
         HStack(spacing: 8) {
-            Text(place).font(.system(size: 14, weight: .black, design: .monospaced)).foregroundColor(pc).frame(width: 44, alignment: .leading)
+            // the place ("P3", a session's "P3/20"), with "class" under it when it counts within your class
+            VStack(alignment: .leading, spacing: 0) {
+                Text(place).font(.system(size: place.count > 4 ? 12 : 14, weight: .black, design: .monospaced)).foregroundColor(pc).lineLimit(1).minimumScaleFactor(0.7)
+                if !placeSub.isEmpty { Text(placeSub).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1) }
+            }
+            .frame(width: 54, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) { Text(track).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: kind) }
                 badges()
@@ -2983,6 +2988,8 @@ func catColor(_ game: String, _ k: String) -> Color {
     default: return Theme.muted
     }
 }
+/// A session's place for its line: "P3/20", "P3/8 class" within your class, or "–" without one.
+func placeLine(_ x: CloudSession) -> String { x.place + (x.inClass && x.pos != nil ? " " + t("in_class") : "") }
 /// A session's category as its name: the discipline, or its Le Mans Ultimate class.
 func sessCat(_ x: CloudSession) -> String { catName(x.game, catOf(x.game, x.cat, x.cls, x.car)) }
 private func licColor(_ k: String) -> Color {
