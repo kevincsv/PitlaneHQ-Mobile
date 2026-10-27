@@ -95,7 +95,10 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     var askGame by mutableStateOf(false)
     private var gameAsked = false
     @Volatile private var allRaces: List<Race> = emptyList()
-    @Volatile private var allSessions: List<CloudSession>? = null
+    /** Home's four numbers of the month for the chosen game, counted by the server (GET /api/sessions/summary) */
+    val monthStats = MutableStateFlow(Loadable<MonthStats>())
+    /** goes up each time the account's bundle comes back with a new version: what is read from it is read again */
+    val bundleVer = MutableStateFlow(0)
     @Volatile private var allBests: List<PersonalBest>? = null
 
     fun setGame(g: String, remember: Boolean = true) {
@@ -107,7 +110,10 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         repo.game = g
         // every list shows the new game: the account's from what is already here, the community's read again
         races.value = races.value.copy(data = allRaces.filter { it.game == g })
-        allSessions?.let { a -> sessions.value = sessions.value.copy(data = a.filter { it.game == g }) }
+        // the sessions and the month's numbers are the server's for each game: asked again for the new one
+        val had = sessions.value.data != null || sessions.value.loading || sessions.value.error != null
+        sessions.value = Loadable(); monthStats.value = Loadable()
+        if (had) loadSessions()
         allBests?.let { a -> bests.value = bests.value.copy(data = a.filter { it.game == g }) }
         session = null
         laps.value = Loadable(); analysis.value = Loadable(); coach.value = Loadable(); coachKey = ""
@@ -118,9 +124,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (leagues.value.data != null || leagues.value.loading) loadLeagues() else leagues.value = Loadable()
     }
 
-    private fun noteStats() {
-        val all = allSessions ?: return
-        val st = GAMES.associateWith { g -> all.filter { it.game == g && it.laps > 0 }.let { l -> l.size to (l.maxOfOrNull { it.started } ?: 0L) } }
+    private fun noteStats(st: Map<String, Pair<Int, Long>>) {
         gameStats.value = st
         if (!gameAsked && !demo.value) {
             gameAsked = true
@@ -167,6 +171,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     private fun refreshStale() {
         if (!_account.value.signedIn) return
         if (sessions.value.stale || sessions.value.error != null) loadSessions()
+        else if (monthStats.value.stale || monthStats.value.error != null) loadMonthStats()
         if (bests.value.stale || bests.value.error != null) loadBests()
         if (combos.value.stale || combos.value.error != null) loadCombos()
         if (reports.value.stale || reports.value.error != null) loadReports()
@@ -373,8 +378,11 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun sync(quiet: Boolean = false) {
         if (!quiet) _account.value = _account.value.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
+            val before = _account.value.syncVersion
             runCatching { repo.sync() }
                 .onSuccess {
+                    // a new version of the bundle: the races and ratings held here are dropped and read again from it
+                    if (it.syncVersion != before) { allRaces = emptyList(); bundleVer.value = bundleVer.value + 1 }
                     _account.value = it; demo.value = repo.demo; loadRaces()
                     // what is already on screen is read again too
                     if (sessions.value.data != null) loadSessions()
@@ -415,8 +423,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     fun logout() {
         live.stop()
-        allRaces = emptyList(); allSessions = null; allBests = null
-        listOf(races, sessions, bests, laps, analysis, combos, board, reports, setups, devices, discord, steam).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
+        allRaces = emptyList(); allBests = null
+        listOf(races, sessions, monthStats, bests, laps, analysis, combos, board, reports, setups, devices, discord, steam).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         viewModelScope.launch(Dispatchers.IO) {
             repo.logout()
             demo.value = false
@@ -437,8 +445,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         repo.demo = on
         demo.value = on
         live.stop()
-        allSessions = null; allBests = null
-        listOf(sessions, bests, laps, analysis, combos, board, reports, setups).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
+        allBests = null
+        listOf(sessions, monthStats, bests, laps, analysis, combos, board, reports, setups).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         loadRaces()
     }
 
@@ -469,7 +477,17 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         loadTrackNotes()
         withContext(Dispatchers.Main) { done(err?.message) }
     }
-    fun loadSessions() = load(sessions) { val g = repo.sessions(); allSessions = g.data; noteStats(); Got(g.data.filter { it.game == game }, g.stale) }
+    /** Your sessions of the chosen game, asked like the web (limit=100&game=…), and Home's numbers of the month with them. */
+    fun loadSessions() {
+        val gm = game
+        load(sessions) {
+            val g = repo.sessions(gm)
+            if (!gameAsked) noteStats(repo.gameCounts())
+            g
+        }
+        loadMonthStats()
+    }
+    fun loadMonthStats() { val gm = game; load(monthStats) { repo.monthStats(gm) } }
     fun loadBests() = load(bests) { val g = repo.bests(); allBests = g.data; Got(g.data.filter { it.game == game }, g.stale) }
     fun loadLaps(id: String) { laps.value = Loadable(); load(laps) { repo.laps(id) } }
     fun loadCombos() = load(combos) { repo.combos() }

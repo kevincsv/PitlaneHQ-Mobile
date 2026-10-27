@@ -392,12 +392,17 @@ class AccountRepository(context: Context) {
             val all = JSONObject(String(Crypto.gunzip(Crypto.open(dataKey(), blob, Crypto.ACCOUNT_AAD))))
             files = all.length()
             // Go writes the files as base64 strings
-            all.optString("races.json").takeIf { it.isNotEmpty() }?.let { b64 ->
-                runCatching { save("races", trimRaces(JSONArray(String(Base64.decode(b64, Base64.DEFAULT))))) }
-            }
+            // a bundle without races.json has no races: never keep an older copy of them
+            val rb = all.optString("races.json")
+            if (rb.isEmpty()) save("races", "[]")
+            else runCatching { save("races", trimRaces(JSONArray(String(Base64.decode(rb, Base64.DEFAULT))))) }
             save("ratings", all.optString("ratings.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
             save("drivers", all.optString("drivers.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
             save("notes", all.optString("notes.json").takeIf { it.isNotEmpty() }?.let { runCatching { String(Base64.decode(it, Base64.DEFAULT)) }.getOrNull() } ?: "{}")
+        } else {
+            // an account with nothing in it yet: no races and no ratings from an earlier copy
+            save("races", "[]")
+            save("ratings", "{}")
         }
         prefs.edit()
             .putInt("syncedFiles", files)
@@ -406,7 +411,7 @@ class AccountRepository(context: Context) {
             .apply()
         runCatching {
             val me = JSONObject(call("GET", "/account/me"))
-            prefs.edit().putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false))
+            prefs.edit().putString("acctId", me.optString("id", "")).putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false))
                 .putBoolean("twoFactor", me.optBoolean("twoFactor", false)).putInt("recoveryLeft", me.optInt("recoveryLeft", 0))
                 .putBoolean("supporter", me.optBoolean("supporter", false)).putBoolean("supporterHidden", me.optBoolean("supporterHidden", false)).apply()
         }
@@ -606,11 +611,53 @@ class AccountRepository(context: Context) {
     fun discordShow(shown: Boolean) { call("POST", "/account/discord/show", JSONObject().put("shown", shown)) }
 
     // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
-    fun sessions(): Got<List<CloudSession>> {
-        if (demo) return Got(Demo.sessions())
-        val g = cachedGet("/api/sessions?limit=100")
-        val a = JSONArray(g.data)
-        return Got((0 until a.length()).map { i ->
+    /** Your sessions of one game, asked like the web (limit=100&game=…): only this account's, only with laps. */
+    fun sessions(gm: String = game): Got<List<CloudSession>> {
+        if (demo) return Got(Demo.sessions().filter { it.game == gm && it.laps > 0 })
+        val g = cachedGet("/api/sessions?limit=100&game=$gm")
+        return Got(parseSessions(g.data).filter { it.game == gm && it.laps > 0 && mine(it.id) }, g.stale)
+    }
+
+    /** Per game: how many sessions you have and the last one's date (the sheet that asks which game to see), like the web's. */
+    fun gameCounts(): Map<String, Pair<Int, Long>> = GAMES.associateWith { gm ->
+        val l = runCatching {
+            if (demo) Demo.sessions().filter { it.game == gm && it.laps > 0 }
+            else parseSessions(cachedGet("/api/sessions?limit=200&game=$gm").data).filter { it.game == gm && it.laps > 0 && mine(it.id) }
+        }.getOrDefault(emptyList())
+        l.size to (l.maxOfOrNull { it.started } ?: 0L)
+    }
+
+    /** A session of another account (an admin's view of someone else's) never counts as yours: ids are "acct_<id>:…". */
+    private fun mine(id: String): Boolean {
+        val me = prefs.getString("acctId", "") ?: ""
+        if (me.isEmpty() || !id.startsWith("acct_")) return true
+        return id.startsWith("acct_" + me.replace(Regex("[^A-Za-z0-9_.-]"), "_") + ":")
+    }
+
+    /**
+     * Home's four numbers of the month for one game, counted by the server over every session of the account (the
+     * same numbers as the PC and the web): from the start of this month on the phone's clock, in its time zone.
+     */
+    fun monthStats(gm: String = game): Got<MonthStats> {
+        if (demo) return Got(localMonthStats(Demo.sessions().filter { it.game == gm }, Demo.races().filter { it.game == gm }))
+        val zone = java.time.ZoneId.systemDefault()
+        val from = java.time.LocalDate.now(zone).withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
+        val tz = java.time.ZonedDateTime.now(zone).offset.totalSeconds / 60
+        // "+120" with its plus sign encoded, never read as a space
+        val g = cachedGet("/api/sessions/summary?from=$from&tz=" + (if (tz >= 0) "%2B$tz" else "$tz") + "&game=$gm")
+        val j = JSONObject(g.data)
+        val b = j.optJSONObject("best")
+        val secs = j.optDouble("secs", 0.0).takeIf { !it.isNaN() && it > 0 } ?: 0.0
+        return Got(MonthStats(
+            laps = j.optInt("laps"), secs = secs, sessions = j.optInt("sessions"), days = j.optInt("days"),
+            races = j.optInt("races"), top5 = j.optInt("top5"),
+            best = b?.let { MonthBest(it.optInt("pos"), it.optInt("field"), it.opt("cls").let { c -> c == true || c == 1 }, fixTxt(it.optString("track")), fixTxt(it.optString("car")), it.optLong("started")) }?.takeIf { it.pos > 0 }
+        ), g.stale)
+    }
+
+    private fun parseSessions(data: String): List<CloudSession> {
+        val a = JSONArray(data)
+        return (0 until a.length()).map { i ->
             val s = a.getJSONObject(i)
             val id = s.getString("id")
             val kind = s.optString("kind").takeUnless { it == "null" } ?: ""
@@ -624,7 +671,7 @@ class AccountRepository(context: Context) {
                 game = s.optStr("game") ?: "iracing", cls = s.clsOf(),
                 pos = s.posInt("pos"), field = s.posInt("field"), inClass = s.opt("cls").let { it == true || it == 1 }
             )
-        }, g.stale)
+        }
     }
 
     /** A session against iRacing's AI the server has no flag for (recorded by an older agent): an iRacing session

@@ -30,6 +30,42 @@ struct CloudSession: Identifiable, Hashable {
     var place: String { pos.map { p in "P\(p)" + (field.map { f in "/\(f)" } ?? "") } ?? "–" }
 }
 
+/// Home's four numbers of the month, counted by the server like the PC's and the web's (GET /api/sessions/summary).
+struct MonthStats {
+    var laps = 0
+    var secs: Double = 0
+    var sessions = 0
+    var days = 0
+    var races = 0
+    var top5 = 0
+    var best: MonthBest? = nil
+}
+
+/// The month's best result: your place, how many cars (your class's when inClass), where and when.
+struct MonthBest {
+    let pos: Int
+    let field: Int
+    let inClass: Bool
+    let track: String
+    let car: String
+    let started: Double
+}
+
+/// The same numbers from what the phone already has (demo data, or a server that does not count them yet).
+func localMonthStats(sessions: [CloudSession], races: [Race]) -> MonthStats {
+    let cal = Calendar.current
+    let m0 = (cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()).timeIntervalSince1970 * 1000
+    let ms = sessions.filter { $0.started >= m0 && $0.laps > 0 }
+    // a session's time is its laps at its best lap's pace, like the web for a session without the server's total
+    let secs = ms.reduce(0.0) { a, x in a + Double(x.laps) * ((x.best ?? 0) > 0 && (x.best ?? 0) < 3600 ? x.best! * 1.03 : 0) }
+    let days = Set(ms.map { cal.startOfDay(for: Date(timeIntervalSince1970: $0.started / 1000)) }).count
+    let month = races.filter { $0.when >= m0 }
+    let best = month.filter { $0.finish > 0 && !$0.dnf }.sorted { $0.finish != $1.finish ? $0.finish < $1.finish : $0.when > $1.when }.first
+    return MonthStats(laps: ms.reduce(0) { $0 + $1.laps }, secs: secs, sessions: ms.count, days: days, races: month.count,
+                      top5: month.filter { (1...5).contains($0.finish) && !$0.dnf }.count,
+                      best: best.map { MonthBest(pos: $0.finish, field: $0.field, inClass: false, track: $0.track, car: $0.car, started: $0.when) })
+}
+
 struct CloudLap: Identifiable, Hashable {
     let id: String
     let n: Int

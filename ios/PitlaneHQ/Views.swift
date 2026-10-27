@@ -1399,6 +1399,24 @@ struct HomeView: View {
     @EnvironmentObject private var inbox: Inbox
     @EnvironmentObject var live: Live
     @State private var sessions: [CloudSession] = []
+    /// the month's numbers as the server counts them (nil: still asked), for the game in statsGame
+    @State private var stats: MonthStats?
+    @State private var statsFailed = false
+    @State private var statsGame = ""
+
+    /// The sessions and the month's numbers of the chosen game, asked again whenever the account is read (the app came
+    /// back, the live room's nudge) and when the game changes.
+    private func reload() async {
+        let gm = account.game
+        if statsGame != gm { stats = nil; statsFailed = false; statsGame = gm }
+        if let g = try? await account.sessions(), gm == account.game { sessions = g.data }
+        do {
+            let m = try await account.monthStats()
+            if gm == account.game { stats = m.data; statsFailed = false }
+        } catch {
+            if !Task.isCancelled && gm == account.game { statsFailed = true }
+        }
+    }
 
     var body: some View {
         let races = account.races
@@ -1427,7 +1445,8 @@ struct HomeView: View {
                     }
                 }.buttonStyle(.plain)
             }
-            HomeKpis(races: races, sessions: sessions)
+            // the server's count, the same as the PC's and the web's; what the phone has only when the server cannot say
+            HomeKpis(stats: stats ?? (statsFailed ? localMonthStats(sessions: sessions, races: races) : nil))
             if let x = races.first {
                 HomeLastRace(race: x, onLaps: { inbox.analysisTab = 0; inbox.goTab = 1 })
             }
@@ -1439,8 +1458,12 @@ struct HomeView: View {
             // no sync card (the sync is automatic): only what went wrong, when something did
             if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
         }
-        .task(id: account.game) { if let g = try? await account.sessions() { sessions = g.data } }
-        .refreshable { await account.sync(); if let g = try? await account.sessions() { sessions = g.data } }
+        .task(id: "\(account.game)|\(account.refreshTick)") { await reload() }
+        .refreshable {
+            let tick = account.refreshTick
+            await account.sync()
+            if account.refreshTick == tick { await reload() } // else the new read asks again by itself
+        }
     }
 }
 
@@ -1466,31 +1489,24 @@ struct KindTag: View {
     }
 }
 
-/// The four numbers of the month: your laps and the hours on track (from the account's sessions), the races and the best result.
+/// The four numbers of the month: your laps and the hours on track, the races (and how many in the top 5) and the best
+/// result, as the server counts them over every session of the account for the chosen game (nil: still asked).
 struct HomeKpis: View {
-    let races: [Race]
-    let sessions: [CloudSession]
+    let stats: MonthStats?
     var body: some View {
-        let cal = Calendar.current
-        let m0 = (cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()).timeIntervalSince1970 * 1000
-        let ms = sessions.filter { $0.started >= m0 && $0.laps > 0 }
-        let laps = ms.reduce(0) { $0 + $1.laps }
-        // a session's time is its laps at its best lap's pace, like the web for a session without the server's total
-        let secs = ms.reduce(0.0) { a, x in a + Double(x.laps) * ((x.best ?? 0) > 0 && (x.best ?? 0) < 3600 ? x.best! * 1.03 : 0) }
-        let days = Set(ms.map { cal.startOfDay(for: Date(timeIntervalSince1970: $0.started / 1000)) }).count
-        let month = races.filter { $0.when >= m0 }
-        let pool = month.isEmpty ? races : month
-        let best = pool.filter { $0.finish > 0 && !$0.dnf }.sorted { $0.finish != $1.finish ? $0.finish < $1.finish : $0.when > $1.when }.first
+        let secs = stats?.secs ?? 0
         let h = secs / 3600
         let hTxt = secs <= 0 ? "–" : h >= 10 ? "\(Int(h.rounded())) h" : h >= 1 ? String(format: "%.1f h", h) : "\(Int((secs / 60).rounded())) min"
+        let best = stats?.best
+        let n = stats?.sessions ?? 0, days = stats?.days ?? 0, races = stats?.races ?? 0
         VStack(spacing: 8) {
             HStack(spacing: 8) {
-                Metric(label: t("hm_laps_month"), value: "\(laps)", sub: ms.isEmpty ? nil : t("hm_in_sessions", ms.count))
+                Metric(label: t("hm_laps_month"), value: stats.map { "\($0.laps)" } ?? "–", sub: n > 0 ? t("hm_in_sessions", n) : nil)
                 Metric(label: t("hm_hours_month"), value: hTxt, sub: days > 0 ? t("hm_days_driven", days) : nil)
             }
             HStack(spacing: 8) {
-                Metric(label: t("hm_races_month"), value: "\(month.count)", sub: month.isEmpty ? nil : t("hm_top5", month.filter { (1...5).contains($0.finish) && !$0.dnf }.count))
-                Metric(label: t("hm_best_result"), value: best.map { "P\($0.finish)" } ?? "–", color: Theme.accent, sub: best.map { $0.car + " · " + $0.track })
+                Metric(label: t("hm_races_month"), value: stats.map { "\($0.races)" } ?? "–", sub: races > 0 ? t("hm_top5", stats?.top5 ?? 0) : nil)
+                Metric(label: t("hm_best_result"), value: best.map { "P\($0.pos)" } ?? "–", color: Theme.accent, sub: best.map { $0.car + " · " + $0.track })
             }
         }
     }
@@ -1672,7 +1688,7 @@ struct DaysDriven: View {
                 }
             }
         }
-        .task(id: account.game) { if let g = try? await account.sessions() { sessions = g.data } }
+        .task(id: "\(account.game)|\(account.refreshTick)") { if let g = try? await account.sessions() { sessions = g.data } }
         .sheet(item: Binding(get: { open.map { DayRef(day: $0) } }, set: { open = $0?.day })) { ref in
             NavigationStack {
                 List {
@@ -2094,6 +2110,8 @@ struct AnalysisView: View {
             if ((tab == 2 && onlyBest) ? bests.data == nil : sessions.data == nil) { await load() }
         }
         .onChange(of: net.cameBack) { _ in Task { await load() } }
+        // the account was read again (the app came back, the live room's nudge): the session list too
+        .onChange(of: account.refreshTick) { _ in if sessions.data != nil { Task { await sessions.load { try await account.sessions() } } } }
         .onReceive(inbox.$analysisTab.compactMap { $0 }) { v in tab = v; inbox.analysisTab = nil }
     }
 }

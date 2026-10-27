@@ -69,6 +69,29 @@ data class CloudSession(
     val place: String get() = pos?.let { "P$it" + (this.field?.let { f -> "/$f" } ?: "") } ?: "–"
 }
 
+/** Home's four numbers of the month, counted by the server like the PC's and the web's (GET /api/sessions/summary). */
+data class MonthStats(
+    val laps: Int = 0, val secs: Double = 0.0, val sessions: Int = 0, val days: Int = 0,
+    val races: Int = 0, val top5: Int = 0, val best: MonthBest? = null
+)
+
+/** The month's best result: your place, how many cars (your class's when inClass), where and when. */
+data class MonthBest(val pos: Int, val field: Int, val inClass: Boolean, val track: String, val car: String, val started: Long)
+
+/** The same numbers from what the phone already has (demo data, or a server that does not count them yet). */
+fun localMonthStats(sessions: List<CloudSession>, races: List<Race>): MonthStats {
+    val zone = java.time.ZoneId.systemDefault()
+    val m0 = java.time.LocalDate.now(zone).withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    val ms = sessions.filter { it.started >= m0 && it.laps > 0 }
+    // a session's time is its laps at its best lap's pace, like the web for a session without the server's total
+    val secs = ms.sumOf { x -> x.laps * (x.best?.takeIf { it > 0 && it < 3600 }?.times(1.03) ?: 0.0) }
+    val days = ms.map { java.time.Instant.ofEpochMilli(it.started).atZone(zone).toLocalDate() }.toSet().size
+    val month = races.filter { it.whenMs >= m0 }
+    val best = month.filter { it.finish > 0 && !it.dnf }.minWithOrNull(compareBy<Race> { it.finish }.thenByDescending { it.whenMs })
+    return MonthStats(ms.sumOf { it.laps }, secs, ms.size, days, month.size, month.count { it.finish in 1..5 && !it.dnf },
+        best?.let { MonthBest(it.finish, it.field, false, it.track, it.car, it.whenMs) })
+}
+
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0, val drv: String = "")  // drv: a friend's lap (DRINKS mode)
 
 /** A lap trace: one row every [bin] metres: speed m/s, throttle 0-1, brake 0-1, gear, steering rad, lap time s. */

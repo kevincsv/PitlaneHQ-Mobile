@@ -404,6 +404,7 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     val a by vm.account.collectAsState()
     val r by vm.races.collectAsState()
     val sl by vm.sessions.collectAsState()
+    val mst by vm.monthStats.collectAsState()
     val live by vm.liveState.collectAsState()
     LaunchedEffect(Unit) { if (sl.data == null && !sl.loading) vm.loadSessions() }
     val races = r.data ?: emptyList()
@@ -435,7 +436,8 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
         state(r) { vm.loadRaces() }
-        item { HomeKpis(races, sessions) }
+        // the server's count, the same as the PC's and the web's; what the phone has only when the server cannot say
+        item { HomeKpis(mst.data ?: if (mst.error != null) localMonthStats(sessions, races) else null) }
         races.firstOrNull()?.let { x -> item { HomeLastRace(x, { vm.race = x; nav.navigate("race") }, { toAnalysis(0) }) } }
         item { HomeRecent(races.drop(1), sessions, { x -> vm.race = x; nav.navigate("race") }, { x -> vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) { toAnalysis(2) } }
         if (r.data != null && races.isEmpty() && sessions.isEmpty()) item { Empty(t("no_races")) }
@@ -447,28 +449,22 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
     }
 }
 
-/** The four numbers of the month: your laps and the hours on track (from the account's sessions), the races and the best result. */
+/** The four numbers of the month: your laps and the hours on track, the races (and how many in the top 5) and the best
+ *  result, as the server counts them over every session of the account for the chosen game (null: still asked). */
 @Composable
-private fun HomeKpis(races: List<Race>, sessions: List<CloudSession>) {
-    val m0 = java.time.LocalDate.now().withDayOfMonth(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-    val ms = sessions.filter { it.started >= m0 && it.laps > 0 }
-    val laps = ms.sumOf { it.laps }
-    // a session's time is its laps at its best lap's pace, like the web for a session without the server's total
-    val secs = ms.sumOf { x -> x.laps * (x.best?.takeIf { it > 0 && it < 3600 }?.times(1.03) ?: 0.0) }
-    val days = ms.map { java.time.Instant.ofEpochMilli(it.started).atZone(java.time.ZoneId.systemDefault()).toLocalDate() }.toSet().size
-    val month = races.filter { it.whenMs >= m0 }
-    val pool = month.ifEmpty { races }
-    val best = pool.filter { it.finish > 0 && !it.dnf }.minWithOrNull(compareBy<Race> { it.finish }.thenByDescending { it.whenMs })
+private fun HomeKpis(st: MonthStats?) {
+    val secs = st?.secs ?: 0.0
     val h = secs / 3600
     val hTxt = if (secs <= 0) "–" else if (h >= 10) "${h.roundToInt()} h" else if (h >= 1) "%.1f h".format(h) else "${(secs / 60).roundToInt()} min"
+    val best = st?.best
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Metric(t("hm_laps_month"), "$laps", Modifier.weight(1f).fillMaxHeight(), sub = if (ms.isNotEmpty()) t("hm_in_sessions", ms.size) else null)
-            Metric(t("hm_hours_month"), hTxt, Modifier.weight(1f).fillMaxHeight(), sub = if (days > 0) t("hm_days_driven", days) else null)
+            Metric(t("hm_laps_month"), st?.let { "${it.laps}" } ?: "–", Modifier.weight(1f).fillMaxHeight(), sub = st?.takeIf { it.sessions > 0 }?.let { t("hm_in_sessions", it.sessions) })
+            Metric(t("hm_hours_month"), hTxt, Modifier.weight(1f).fillMaxHeight(), sub = st?.takeIf { it.days > 0 }?.let { t("hm_days_driven", it.days) })
         }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Metric(t("hm_races_month"), "${month.size}", Modifier.weight(1f).fillMaxHeight(), sub = if (month.isNotEmpty()) t("hm_top5", month.count { it.finish in 1..5 && !it.dnf }) else null)
-            Metric(t("hm_best_result"), best?.let { "P${it.finish}" } ?: "–", Modifier.weight(1f).fillMaxHeight(), color = Accent, sub = best?.let { it.car + " · " + it.track })
+            Metric(t("hm_races_month"), st?.let { "${it.races}" } ?: "–", Modifier.weight(1f).fillMaxHeight(), sub = st?.takeIf { it.races > 0 }?.let { t("hm_top5", it.top5) })
+            Metric(t("hm_best_result"), best?.let { "P${it.pos}" } ?: "–", Modifier.weight(1f).fillMaxHeight(), color = Accent, sub = best?.let { fixText(it.car) + " · " + fixText(it.track) })
         }
     }
 }
@@ -3401,7 +3397,8 @@ private fun Grid(items: List<MetricData>, columns: Int) {
 private fun Licences(vm: PitlaneViewModel) {
     val acc by vm.account.collectAsState()
     val r by vm.races.collectAsState()
-    val all = remember(acc) { vm.ratings() }
+    val bv by vm.bundleVer.collectAsState()
+    val all = remember(acc, bv) { vm.ratings() }
     val races = r.data ?: emptyList()
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Section(t("licences"))
@@ -3420,7 +3417,8 @@ private fun Licences(vm: PitlaneViewModel) {
 @Composable
 private fun LmuRatings(vm: PitlaneViewModel) {
     val acc by vm.account.collectAsState()
-    val r = remember(acc) { vm.lmuRating() }
+    val bv by vm.bundleVer.collectAsState()
+    val r = remember(acc, bv) { vm.lmuRating() }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Section(t("lmu_ratings"))
         Panel {

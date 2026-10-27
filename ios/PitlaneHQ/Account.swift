@@ -94,6 +94,9 @@ final class Account: ObservableObject {
     @Published var syncVersion = 0
     @Published var syncUpdated: Double = 0
     @Published var races: [Race] = []
+    /// goes up after every read of the account (the app came back, the live room's nudge): the screens ask the server
+    /// again for the sessions and the month's numbers, which are not in the bundle
+    @Published var refreshTick = 0
     /// the thumbs the driver gave the coach's tips on this device, by session and corner ("sid:apexM" → 1 or -1)
     @Published var tipRatings: [String: Int] = [:]
     @Published var demo = UserDefaults.standard.bool(forKey: "demo") {
@@ -122,12 +125,7 @@ final class Account: ObservableObject {
         races = allRaces.filter { $0.game == g }
     }
 
-    private func noteStats(_ all: [CloudSession]) {
-        var st: [String: (n: Int, last: Double)] = [:]
-        for g in games {
-            let l = all.filter { $0.game == g && $0.laps > 0 }
-            st[g] = (l.count, l.map(\.started).max() ?? 0)
-        }
+    private func noteStats(_ st: [String: (n: Int, last: Double)]) {
         gameStats = st
         if !gameAsked && !demo {
             gameAsked = true
@@ -328,7 +326,7 @@ final class Account: ObservableObject {
     private func clear() {
         Vault.set("token", nil)
         Vault.set("dataKey", nil)
-        for k in ["email", "display", "verified", "admin", "syncedFiles", "syncVersion", "syncUpdated", "twoFactor", "recoveryLeft"] { defaults.removeObject(forKey: k) }
+        for k in ["email", "display", "verified", "admin", "syncedFiles", "syncVersion", "syncUpdated", "twoFactor", "recoveryLeft", "acctId"] { defaults.removeObject(forKey: k) }
         twoFactor = false
         recoveryLeft = 0
         try? FileManager.default.removeItem(at: dir)
@@ -681,6 +679,7 @@ final class Account: ObservableObject {
             let data = try await call("GET", "/account/sync")
             let j = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
             var files = 0
+            let changed = int(j["version"]) != syncVersion
             if let blob = j["blob"] as? String, !blob.isEmpty, let key = dataKey {
                 let raw = try PLCrypto.gunzip(PLCrypto.open(key: key, sealed: blob, aad: PLCrypto.accountAAD))
                 let all = try JSONSerialization.jsonObject(with: raw) as? [String: Any] ?? [:]
@@ -689,10 +688,17 @@ final class Account: ObservableObject {
                 if let b64 = all["races.json"] as? String, let racesData = Data(base64Encoded: b64), let a = try? JSONSerialization.jsonObject(with: racesData) as? [[String: Any]] {
                     let slim = trimRaces(a)
                     if let d = try? JSONSerialization.data(withJSONObject: slim) { save("races", d) }
+                } else if all["races.json"] == nil {
+                    // a bundle without races.json has no races: never keep an older copy of them
+                    save("races", Data("[]".utf8))
                 }
                 save("drivers", (all["drivers.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
                 save("notes", (all["notes.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
                 save("ratings", (all["ratings.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
+            } else if (j["blob"] as? String ?? "").isEmpty {
+                // an account with nothing in it yet: no races and no ratings from an earlier copy
+                save("races", Data("[]".utf8))
+                save("ratings", Data("{}".utf8))
             }
             syncedFiles = files
             syncVersion = int(j["version"])
@@ -702,6 +708,7 @@ final class Account: ObservableObject {
             defaults.set(syncUpdated, forKey: "syncUpdated")
             if let me = try? JSONSerialization.jsonObject(with: await call("GET", "/account/me")) as? [String: Any] {
                 display = str(me["display"])
+                if let id = me["id"] as? String { defaults.set(id, forKey: "acctId") }
                 verified = me["verified"] as? Bool ?? true
                 realAdmin = me["admin"] as? Bool ?? false
                 twoFactor = me["twoFactor"] as? Bool ?? false
@@ -716,7 +723,11 @@ final class Account: ObservableObject {
                 defaults.set(twoFactor, forKey: "twoFactor")
                 defaults.set(recoveryLeft, forKey: "recoveryLeft")
             }
+            // a new version of the bundle: the races held here are dropped and read again from it (the ratings are
+            // read from it each time a screen draws them)
+            if changed { allRaces = []; races = [] }
             loadRaces()
+            refreshTick += 1
             await publishProfileRaces()
         } catch {
             if !quiet || (error as? AppError)?.key == AppError.signedOut.key { self.error = (error as? AppError)?.key ?? error.localizedDescription }
@@ -854,10 +865,59 @@ final class Account: ObservableObject {
         return id.addingPercentEncoding(withAllowedCharacters: allowed) ?? id
     }
 
+    /// Your sessions of the chosen game, asked like the web (limit=100&game=…): only this account's, only with laps.
     func sessions() async throws -> Got<[CloudSession]> {
-        if demo { return Got(data: Demo.sessions()) }
-        let g = try await cachedGet("/api/sessions?limit=100")
-        let all: [CloudSession] = (g.data as? [[String: Any]] ?? []).compactMap { s in
+        let gm = game
+        if !gameAsked { noteStats(await gameCounts()) }
+        if demo { return Got(data: Demo.sessions().filter { $0.game == gm && $0.laps > 0 }) }
+        let g = try await cachedGet("/api/sessions?limit=100&game=" + gm)
+        return Got(data: parseSessions(g.data).filter { $0.game == gm && $0.laps > 0 && mine($0.id) }, stale: g.stale)
+    }
+
+    /// Per game: how many sessions you have and the last one's date (the sheet that asks which game to see), like the web's.
+    private func gameCounts() async -> [String: (n: Int, last: Double)] {
+        var st: [String: (n: Int, last: Double)] = [:]
+        for g in games {
+            var l: [CloudSession] = []
+            if demo { l = Demo.sessions().filter { $0.game == g && $0.laps > 0 } }
+            else if let got = try? await cachedGet("/api/sessions?limit=200&game=" + g) { l = parseSessions(got.data).filter { $0.game == g && $0.laps > 0 && mine($0.id) } }
+            st[g] = (l.count, l.map(\.started).max() ?? 0)
+        }
+        return st
+    }
+
+    /// A session of another account (an admin's view of someone else's) never counts as yours: ids are "acct_<id>:…".
+    private func mine(_ id: String) -> Bool {
+        let me = defaults.string(forKey: "acctId") ?? ""
+        guard !me.isEmpty, id.hasPrefix("acct_") else { return true }
+        let safe = String(me.map { $0.isASCII && ($0.isLetter || $0.isNumber || "_.-".contains($0)) ? $0 : "_" })
+        return id.hasPrefix("acct_" + safe + ":")
+    }
+
+    /// Home's four numbers of the month for the chosen game, counted by the server over every session of the account
+    /// (the same numbers as the PC and the web): from the start of this month on the phone's clock, in its time zone.
+    func monthStats() async throws -> Got<MonthStats> {
+        let gm = game
+        if demo { return Got(data: localMonthStats(sessions: Demo.sessions().filter { $0.game == gm }, races: Demo.races().filter { $0.game == gm })) }
+        let cal = Calendar.current
+        let m0 = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
+        let from = Int64(m0.timeIntervalSince1970 * 1000)
+        let tz = TimeZone.current.secondsFromGMT() / 60
+        // "+120" with its plus sign encoded, never read as a space
+        let g = try await cachedGet("/api/sessions/summary?from=\(from)&tz=" + (tz >= 0 ? "%2B\(tz)" : "\(tz)") + "&game=" + gm)
+        let j = g.data as? [String: Any] ?? [:]
+        var best: MonthBest?
+        if let b = j["best"] as? [String: Any], int(b["pos"]) > 0 {
+            best = MonthBest(pos: int(b["pos"]), field: int(b["field"]), inClass: (b["cls"] as? Bool) ?? ((b["cls"] as? NSNumber)?.intValue == 1),
+                             track: fixTxt(str(b["track"])), car: fixTxt(str(b["car"])), started: num(b["started"]) ?? 0)
+        }
+        let secs = num(j["secs"]) ?? 0
+        return Got(data: MonthStats(laps: int(j["laps"]), secs: secs > 0 ? secs : 0, sessions: int(j["sessions"]), days: int(j["days"]),
+                                    races: int(j["races"]), top5: int(j["top5"]), best: best), stale: g.stale)
+    }
+
+    private func parseSessions(_ data: Any) -> [CloudSession] {
+        (data as? [[String: Any]] ?? []).compactMap { s in
             guard let id = s["id"] as? String else { return nil }
             let kind = str(s["kind"]), game = s["game"] as? String
             // a session against iRacing's AI the server has no flag for (recorded by an older agent): an iRacing session
@@ -870,8 +930,6 @@ final class Account: ObservableObject {
                                 game: (game ?? "").isEmpty ? "iracing" : game!, cls: clsOf(s),
                                 pos: posInt(s["pos"]), field: posInt(s["field"]), inClass: (s["cls"] as? Bool) ?? ((s["cls"] as? NSNumber)?.intValue == 1))
         }
-        noteStats(all)
-        return Got(data: all.filter { $0.game == self.game }, stale: g.stale)
     }
 
     func laps(_ sessionId: String) async throws -> Got<[CloudLap]> {
