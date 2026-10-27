@@ -17,6 +17,11 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "25"
         UILaunchScreen: {}
+        # pitlanehq://steam and pitlanehq://discord: back from Steam's or Discord's sign-in (the sign-in sheet takes them)
+        CFBundleURLTypes:
+          - CFBundleURLName: com.pitlanehq.ios.signin
+            CFBundleURLSchemes:
+              - pitlanehq
         UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

@@ -39,10 +39,10 @@ data class PitLane(val n: Int, val pts: List<Pair<Int, Double>>)
 /** lap B: your best lap of the session, or the model's next level (the driver just ahead) or record */
 enum class RefKind { MY_BEST, LEVEL, RECORD }
 
-/** Sign in with Steam on the sign-in screen: the browser is open ([waiting]), the authenticator's code or the password
- *  comes next, or Steam has no account yet ([sid] and its persona for the new account's form). */
-data class SteamUi(val busy: Boolean = false, val waiting: Boolean = false, val needCode: Boolean = false, val needKey: Boolean = false,
-    val newPersona: String? = null, val sid: String = "", val error: String? = null)
+/** Sign in with Steam or Discord ([prov]) on the sign-in screen: the authenticator's code or the password comes next, or
+ *  that Steam or Discord has no account yet ([sid] and its name for the new account's form). */
+data class AuthUi(val prov: String = "", val busy: Boolean = false, val needCode: Boolean = false, val needKey: Boolean = false,
+    val newName: String? = null, val sid: String = "", val error: String? = null)
 
 class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = AccountRepository(app)
@@ -148,6 +148,9 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         checkUpdate()
         // nothing chosen on this phone yet: the selector follows the game your PC reads live
         viewModelScope.launch { pcGame.collect { g -> if (g != null && repo.gameChoice.isEmpty() && g != game) setGame(g, remember = false) } }
+        // back from Steam's or Discord's sign-in in the browser (MainActivity)
+        // (dispatched, never at once: the properties below are set by then)
+        viewModelScope.launch(Dispatchers.Main) { AuthReturns.pending.collect { r -> if (r != null) { AuthReturns.pending.value = null; onReturn(r.first, r.second) } } }
         // another device uploaded the account (the server tells the live room): this phone reads it again at once
         viewModelScope.launch { live.syncNudges.collect { onSyncNudge(it) } }
     }
@@ -212,109 +215,126 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     fun cancelCode() { _account.value = AccountState(email = _account.value.email) }
 
-    // ---------- Sign in with Steam ----------
-    val steamUi = MutableStateFlow(SteamUi())
-    private var catcher: SteamCatcher? = null
-    private fun backPage() = SteamCatcher.page(com.pitlanehq.android.ui.t("steam_back_title"), com.pitlanehq.android.ui.t("steam_back_btn"))
+    // ---------- Sign in with Steam or Discord, and linking them (Account) ----------
+    val authUi = MutableStateFlow(AuthUi())
 
-    /** Steam's sign-in in the browser ([open]); its answer comes back to this phone and signs in, or opens the new account's form. */
-    fun steamSignIn(open: (String) -> Unit) {
-        steamUi.value = SteamUi(busy = true)
+    /** Steam's or Discord's sign-in in the browser ([open]); it comes back to this app (pitlanehq://…, onReturn). */
+    fun socialSignIn(prov: String, open: (String) -> Unit) {
+        authUi.value = AuthUi(prov, busy = true)
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                catcher?.cancel()
-                val c = SteamCatcher().also { catcher = it }
-                val url = repo.steamLoginStart(c.port)
-                withContext(Dispatchers.Main) { steamUi.value = SteamUi(waiting = true); open(url) }
-                val q = c.await(10 * 60_000L, backPage())
-                if (catcher === c) catcher = null
-                if (q == null) { if (steamUi.value.waiting) steamUi.value = SteamUi(); return@launch } // cancelled, or Steam took too long
-                val g = q["steamLogin"].orEmpty()
+                val url = repo.loginStart(prov)
+                authUi.value = AuthUi(prov)
+                withContext(Dispatchers.Main) { open(url) }
+            } catch (e: Exception) {
+                authUi.value = AuthUi(prov, error = errKey(e))
+            }
+        }
+    }
+
+    /** The browser came back with the answer of a start of this app: signs in, opens the new account's form, or links. */
+    private fun onReturn(prov: String, q: Map<String, String>) {
+        val start = repo.takeStart(q["state"].orEmpty(), prov)
+        if (start == null) { authUi.value = AuthUi(prov, error = prov + "_again"); return } // another start, or the app was closed meanwhile
+        if (start.kind == "link") { finishLink(prov, start, q); return }
+        authUi.value = AuthUi(prov, busy = true)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val g = q[prov + "Login"].orEmpty()
                 val sid = q["sid"].orEmpty()
-                steamUi.value = when {
-                    g == "0" && q["new"] == "1" && sid.isNotEmpty() -> SteamUi(newPersona = q["persona"].orEmpty(), sid = sid)
-                    g.isEmpty() || g == "0" -> SteamUi(error = "steam_failed")
-                    repo.steamLogin(g) == "code" -> SteamUi(needCode = true)
-                    else -> SteamUi(needKey = true)
+                authUi.value = when {
+                    g == "0" && q["new"] == "1" && sid.isNotEmpty() -> { repo.keepSignup(start.code); AuthUi(prov, newName = q[if (prov == "discord") "name" else "persona"].orEmpty(), sid = sid) }
+                    g == "0" && q["relink"] == "1" -> AuthUi(prov, error = "discord_relink_login")
+                    g.isEmpty() || g == "0" -> AuthUi(prov, error = prov + "_failed")
+                    repo.socialLogin(prov, g, start.code, I18n.lang) == "code" -> AuthUi(prov, needCode = true)
+                    else -> AuthUi(prov, needKey = true)
                 }
             } catch (e: Exception) {
-                steamUi.value = SteamUi(error = errKey(e))
+                authUi.value = AuthUi(prov, error = errKey(e))
             }
         }
     }
 
-    /** The browser was left: nothing waits for Steam any more, and a half-done sign-in is closed. */
-    fun steamCancel() {
-        catcher?.cancel(); catcher = null
-        steamUi.value = SteamUi()
-        viewModelScope.launch(Dispatchers.IO) { repo.steamCancel() }
+    /** What Account → Steam or Discord says went wrong (null: nothing). */
+    private fun linkError(prov: String, e: String?) {
+        if (prov == "discord") discord.value = discord.value.copy(error = e) else steam.value = steam.value.copy(error = e)
     }
+    private fun linkReload(prov: String) { if (prov == "discord") loadDiscord() else loadSteam() }
 
-    fun steamCode(code: String) {
-        steamUi.value = steamUi.value.copy(busy = true, error = null)
+    private fun finishLink(prov: String, start: AccountRepository.AuthStart, q: Map<String, String>) {
+        val g = q[prov + "Link"].orEmpty()
+        if (g.isEmpty()) {
+            linkError(prov, if (q[prov + "Linked"] == "taken") "this ${if (prov == "discord") "Discord" else "Steam"} account is already linked to another account" else prov + "_not_linked")
+            return
+        }
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repo.steamLoginCode(code) }
-                .onSuccess { steamUi.value = SteamUi(needKey = true) }
-                .onFailure { e -> steamUi.value = if (e.message == "sign_in_again") SteamUi(error = "sign_in_again") else steamUi.value.copy(busy = false, error = errKey(e)) }
+            runCatching { repo.socialLink(prov, g, start.code) }
+                .onSuccess { linkReload(prov) }
+                .onFailure { e -> linkError(prov, errKey(e)) }
         }
     }
 
-    /** The password once on this phone after Steam: the data key, and you are in. */
-    fun steamKey(email: String, password: String) {
-        steamUi.value = steamUi.value.copy(busy = true, error = null)
+    /** The sign-in left halfway: a half-done session is closed on the server. */
+    fun socialCancel() {
+        authUi.value = AuthUi()
+        viewModelScope.launch(Dispatchers.IO) { repo.socialCancel() }
+    }
+
+    fun socialCode(code: String) {
+        authUi.value = authUi.value.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repo.steamKey(email, password) }
-                .onSuccess { steamUi.value = SteamUi(); _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive() }
-                .onFailure { e -> steamUi.value = steamUi.value.copy(busy = false, error = errKey(e)) }
+            runCatching { repo.socialLoginCode(code) }
+                .onSuccess { authUi.value = authUi.value.copy(busy = false, needCode = false, needKey = true) }
+                .onFailure { e -> authUi.value = if (e.message == "sign_in_again") AuthUi(error = "sign_in_again") else authUi.value.copy(busy = false, error = errKey(e)) }
         }
     }
 
-    /** The new account (from Steam: linked to it at once). Without a session yet, the email to confirm comes first. */
+    /** The password once on this phone after Steam or Discord: the data key, and you are in. */
+    fun socialKey(email: String, password: String) {
+        authUi.value = authUi.value.copy(busy = true, error = null)
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { repo.socialKey(email, password) }
+                .onSuccess { authUi.value = AuthUi(); _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive() }
+                .onFailure { e -> authUi.value = authUi.value.copy(busy = false, error = errKey(e)) }
+        }
+    }
+
+    /** The new account (from Steam or Discord: linked to it at once). Without a session yet, the email to confirm comes first. */
     fun register(email: String, password: String, name: String) {
-        val sid = steamUi.value.sid
-        steamUi.value = steamUi.value.copy(busy = true, error = null)
+        val u = authUi.value
+        authUi.value = u.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { repo.register(email, password, name, sid, I18n.lang) }
-                .onSuccess { st ->
-                    steamUi.value = SteamUi()
-                    if (st == null) _account.value = AccountState(email = email, error = "verify your email first: we sent you a link, open it and then sign in")
-                    else { _account.value = st; demo.value = repo.demo; loadRaces(); resumeLive() }
+            runCatching { repo.register(email, password, name, u.prov, u.sid, I18n.lang) }
+                .onSuccess { r ->
+                    authUi.value = AuthUi()
+                    val st = r.state
+                    if (st == null) _account.value = AccountState(email = email, error = if (r.discordTaken) "discord_taken_verify" else "verify your email first: we sent you a link, open it and then sign in")
+                    else { _account.value = if (r.discordTaken) st.copy(error = "discord_taken") else st; demo.value = repo.demo; loadRaces(); resumeLive() }
                 }
-                .onFailure { e -> steamUi.value = steamUi.value.copy(busy = false, error = errKey(e)) }
+                .onFailure { e -> authUi.value = authUi.value.copy(busy = false, error = errKey(e)) }
         }
     }
 
-    // Account → Steam
+    // Account → Steam (and Discord, below)
     val steam = MutableStateFlow(Loadable<SteamLink>())
-    val steamLinkWait = MutableStateFlow(false)
     fun loadSteam() = load(steam) { Got(repo.steam()) }
-    /** Linking asks the password, then Steam's sign-in in the browser; its answer comes back here and links it. */
-    fun steamLinkStart(password: String, open: (String) -> Unit) {
-        steam.value = steam.value.copy(error = null)
+    /** Linking asks the password, then Steam's or Discord's sign-in in the browser; it comes back to this app and links it. */
+    fun linkStart(prov: String, password: String, open: (String) -> Unit) {
+        linkError(prov, null)
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                catcher?.cancel()
-                val c = SteamCatcher().also { catcher = it }
-                val url = repo.steamLinkStart(password, c.port)
-                withContext(Dispatchers.Main) { steamLinkWait.value = true; open(url) }
-                val q = c.await(10 * 60_000L, backPage())
-                if (catcher === c) catcher = null
-                steamLinkWait.value = false
-                val g = q?.get("steamLink").orEmpty()
-                if (q != null && g.isEmpty()) steam.value = steam.value.copy(error = if (q["steamLinked"] == "taken") "this Steam account is already linked to another account" else "steam_not_linked")
-                if (g.isNotEmpty()) { repo.steamLink(g); loadSteam() }
+                val url = repo.linkStart(prov, password)
+                withContext(Dispatchers.Main) { open(url) }
             } catch (e: Exception) {
-                steamLinkWait.value = false
-                steam.value = steam.value.copy(error = errKey(e))
+                linkError(prov, errKey(e))
             }
         }
     }
-    fun steamLinkCancel() { catcher?.cancel(); catcher = null; steamLinkWait.value = false }
     fun steamShow(shown: Boolean) = viewModelScope.launch(Dispatchers.IO) {
         runCatching { repo.steamShow(shown) }.onSuccess { loadSteam() }.onFailure { steam.value = steam.value.copy(error = errKey(it)) }
     }
-    fun steamUnlink(password: String) = viewModelScope.launch(Dispatchers.IO) {
-        runCatching { repo.steamUnlink(password) }.onSuccess { loadSteam() }.onFailure { steam.value = steam.value.copy(error = errKey(it)) }
+    fun socialUnlink(prov: String, password: String) = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { repo.socialUnlink(prov, password) }.onSuccess { linkReload(prov) }.onFailure { linkError(prov, errKey(it)) }
     }
 
     // two-step sign-in: the screens wait on these (null = nothing pending)
@@ -490,16 +510,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     // Account → Discord
     fun loadDiscord() = load(discord) { Got(repo.discord()) }
-    /** Discord's sign-in to open in the browser (null: it failed, the card shows why); read again when the app is back. */
-    fun discordStart(done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
-        val url = runCatching { repo.discordStart() }.onFailure { discord.value = discord.value.copy(error = errKey(it)) }.getOrNull()?.ifBlank { null }
-        withContext(Dispatchers.Main) { done(url) }
-    }
     fun discordShow(shown: Boolean) = viewModelScope.launch(Dispatchers.IO) {
         runCatching { repo.discordShow(shown) }.onSuccess { loadDiscord() }.onFailure { discord.value = discord.value.copy(error = errKey(it)) }
-    }
-    fun discordUnlink() = viewModelScope.launch(Dispatchers.IO) {
-        runCatching { repo.discordUnlink() }.onSuccess { loadDiscord() }.onFailure { discord.value = discord.value.copy(error = errKey(it)) }
     }
 
     /** Analysis → Coach: the best valid lap of a session against the model's next level (else the record), once per session */

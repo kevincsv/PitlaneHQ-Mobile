@@ -235,40 +235,60 @@ class AccountRepository(context: Context) {
         return runCatching { sync() }.getOrElse { storedState() }
     }
 
-    // ---------- Sign in with Steam (steam.js): the browser goes to Steam and comes back to this phone ----------
-    // The code the start gives stays here, in memory: a grant is only good with it. Steam says who; the data key still
-    // comes from the password, asked once on this phone (POST /account/key).
-    private var steamCode: String? = null
-    private var steamPending: String? = null      // the authenticator code comes next (a Steam sign-in with two-step on)
-    private var steamSession: JSONObject? = null  // signed in by Steam, waiting for the password
+    // ---------- Sign in with Steam or Discord (steam.js, discord.js) ----------
+    // The browser goes to Steam or Discord and comes back to this app by its own address (pitlanehq://steam?state=…&…,
+    // pitlanehq://discord?…). The code each start gives stays here, in memory, by its state: a grant is only good with
+    // it, so another app that catches the address can do nothing. Steam or Discord says who; the data key still comes
+    // from the password, asked once on this phone (POST /account/key).
+    /** A sign-in ("login") or a link ("link") under way with Steam or Discord ([prov]), and the code its grant needs. */
+    class AuthStart(val prov: String, val kind: String, val code: String)
+    private val starts = java.util.concurrent.ConcurrentHashMap<String, AuthStart>()
+    @Volatile private var signupCode: String? = null   // the code a sign-up grant (sid) is redeemed with
+    private var socialPending: String? = null           // the authenticator code comes next (two-step sign-in on)
+    private var socialSession: JSONObject? = null       // signed in by Steam or Discord, waiting for the password
 
-    /** The address of Steam's sign-in; [port]: where Steam's answer comes back on this phone (SteamCatcher). */
-    fun steamLoginStart(port: Int): String {
-        val j = JSONObject(call("POST", "/account/steam/login/start", JSONObject().put("device", "Android").put("port", port), auth = false))
-        steamCode = j.optString("code").ifEmpty { null }
+    private fun startOf(prov: String, kind: String, j: JSONObject): String {
+        val code = j.optString("code"); val state = j.optString("state")
+        if (code.isEmpty() || state.isEmpty()) throw AppError("server_down")
+        starts.entries.removeIf { it.value.prov == prov && it.value.kind == kind } // one at a time: the last one pressed
+        starts[state] = AuthStart(prov, kind, code)
         return j.getString("url")
     }
 
-    /** The grant Steam came back with: "key" (the password comes next) or "code" (the authenticator's code first). */
-    fun steamLogin(grant: String): String {
-        val code = steamCode ?: throw AppError("steam_again")
-        val j = JSONObject(call("POST", "/account/login/steam", JSONObject().put("grant", grant).put("code", code).put("device", "Android"), auth = false))
-        steamCode = null
-        if (j.optBoolean("twoFactor") && j.has("pending")) { steamPending = j.getString("pending"); return "code" }
-        steamSession = j
+    /** The address of Steam's or Discord's sign-in ([prov] "steam" or "discord"); it comes back to this app. */
+    fun loginStart(prov: String): String =
+        startOf(prov, "login", JSONObject(call("POST", "/account/$prov/login/start", JSONObject().put("device", "Android").put("app", 1), auth = false)))
+
+    /** Linking asks the password first; the address of Steam's or Discord's sign-in, which comes back to this app. */
+    fun linkStart(prov: String, password: String): String {
+        val k = Crypto.derive(email(), password)
+        return startOf(prov, "link", JSONObject(call("POST", "/account/$prov/start", JSONObject().put("auth", k.auth).put("device", "Android").put("app", 1), pass = true)))
+    }
+
+    /** The start the browser came back for (by its state, used once), or null: another start, or one this app forgot. */
+    fun takeStart(state: String, prov: String): AuthStart? = starts[state]?.takeIf { it.prov == prov }?.also { starts.remove(state) }
+
+    /** The grant of a sign-in: "key" (the password comes next) or "code" (the authenticator's code first). */
+    fun socialLogin(prov: String, grant: String, code: String, lang: String): String {
+        val j = JSONObject(call("POST", "/account/login/$prov", JSONObject().put("grant", grant).put("code", code).put("device", "Android").put("lang", lang), auth = false))
+        if (j.optBoolean("twoFactor") && j.has("pending")) { socialPending = j.getString("pending"); return "code" }
+        socialSession = j
         return "key"
     }
 
-    /** A Steam sign-in with two-step sign-in on: the authenticator's code, then the password. */
-    fun steamLoginCode(code: String) {
-        val p = steamPending ?: throw AppError("sign_in_again")
-        steamSession = JSONObject(call("POST", "/account/login/2fa", JSONObject().put("pending", p).put("code", code.trim()), auth = false))
-        steamPending = null
+    /** A sign-up grant came back: its code stays for the new account's form. */
+    fun keepSignup(code: String) { signupCode = code }
+
+    /** Two-step sign-in on: the authenticator's code, then the password. */
+    fun socialLoginCode(code: String) {
+        val p = socialPending ?: throw AppError("sign_in_again")
+        socialSession = JSONObject(call("POST", "/account/login/2fa", JSONObject().put("pending", p).put("code", code.trim()), auth = false))
+        socialPending = null
     }
 
     /** The password once on this phone: the server hands the data key wrapped with it, and it opens here. */
-    fun steamKey(email0: String, password: String): AccountState {
-        val s = steamSession ?: throw AppError("sign_in_again")
+    fun socialKey(email0: String, password: String): AccountState {
+        val s = socialSession ?: throw AppError("sign_in_again")
         val email = email0.trim().lowercase()
         if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(email)) throw AppError("bad_email")
         if (password.isEmpty()) throw AppError("enter_pw")
@@ -276,19 +296,23 @@ class AccountRepository(context: Context) {
         val r = try { JSONObject(call("POST", "/account/key", JSONObject().put("auth", k.auth), bearer = s.getString("token"))) }
             catch (e: AppError) { throw if (e.message == "the password is wrong") AppError("wrong_email_pw") else e }
         val key = runCatching { Crypto.open(k.wrap, r.getString("wrappedKey"), Crypto.ACCOUNT_AAD) }.getOrElse { throw AppError("wrong_email_pw") }
-        steamSession = null
+        socialSession = null
         return signedInKey(s, email, key)
     }
 
-    /** The Steam sign-in left halfway: its session (if any) is closed on the server. */
-    fun steamCancel() {
-        steamSession?.optString("token")?.takeIf { it.isNotEmpty() }?.let { t -> runCatching { call("POST", "/account/logout", JSONObject(), bearer = t) } }
-        steamSession = null; steamPending = null; steamCode = null
+    /** A sign-in left halfway: its session (if any) is closed on the server. */
+    fun socialCancel() {
+        socialSession?.optString("token")?.takeIf { it.isNotEmpty() }?.let { t -> runCatching { call("POST", "/account/logout", JSONObject(), bearer = t) } }
+        socialSession = null; socialPending = null; signupCode = null
+        starts.entries.removeIf { it.value.kind == "login" }
     }
 
-    /** A new account, like the web's: a new data key wrapped with the password; [sid]: made from a Steam sign-in, which
-     *  links that Steam to it at once. Null: the server sent the email to confirm first (then the driver signs in). */
-    fun register(email0: String, password: String, display: String, sid: String, lang: String): AccountState? {
+    /** What a new account gave: signed in (null: the email to confirm comes first) and whether that Discord was taken meanwhile. */
+    class Registered(val state: AccountState?, val discordTaken: Boolean)
+
+    /** A new account, like the web's: a new data key wrapped with the password; [sid]: made from a Steam or Discord
+     *  sign-in ([prov]), which links it at once. */
+    fun register(email0: String, password: String, display: String, prov: String, sid: String, lang: String): Registered {
         val email = email0.trim().lowercase()
         if (!Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$").matches(email)) throw AppError("bad_email")
         if (password.length < 10) throw AppError("pw_short")
@@ -298,36 +322,30 @@ class AccountRepository(context: Context) {
         val key = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
         val body = JSONObject().put("email", email).put("auth", k.auth).put("wrappedKey", Crypto.seal(k.wrap, key, Crypto.ACCOUNT_AAD))
             .put("display", name).put("nameKind", "nick").put("device", "Android").put("lang", lang)
-        if (sid.isNotEmpty()) body.put("sid", sid).put("code", steamCode ?: throw AppError("steam_again"))
+        if (sid.isNotEmpty()) body.put(if (prov == "discord") "discordSid" else "sid", sid).put("code", signupCode ?: throw AppError(prov + "_again"))
         val j = JSONObject(call("POST", "/account/register", body, auth = false))
-        if (sid.isNotEmpty()) steamCode = null
-        if (j.optBoolean("verifyFirst") || !j.has("token")) return null
-        return signedInKey(j, email, key)
+        if (sid.isNotEmpty()) signupCode = null
+        val taken = j.optBoolean("discordTaken")
+        if (j.optBoolean("verifyFirst") || !j.has("token")) return Registered(null, taken)
+        return Registered(signedInKey(j, email, key), taken)
     }
 
-    // ---------- Account → Steam: link it (Steam's sign-in, in the browser), show it on your profile, unlink it ----------
+    /** A link's grant came back: Steam's goes to /account/steam/link, Discord's to /account/discord/link/grant. */
+    fun socialLink(prov: String, grant: String, code: String) {
+        call("POST", if (prov == "discord") "/account/discord/link/grant" else "/account/steam/link", JSONObject().put("grant", grant).put("code", code))
+    }
+
+    // ---------- Account → Steam: link it, show it on your profile, unlink it ----------
     fun steam(): SteamLink = JSONObject(call("GET", "/account/steam")).let {
         SteamLink(it.optBoolean("linked"), it.optStr("id") ?: "", it.optStr("persona") ?: "", it.optBoolean("shown"))
     }
 
-    /** Linking asks the password first; the address of Steam's sign-in, its answer back on this phone at [port]. */
-    fun steamLinkStart(password: String, port: Int): String {
-        val k = Crypto.derive(email(), password)
-        val j = JSONObject(call("POST", "/account/steam/start", JSONObject().put("auth", k.auth).put("device", "Android").put("port", port), pass = true))
-        steamCode = j.optString("code").ifEmpty { null }
-        return j.getString("url")
-    }
-
-    fun steamLink(grant: String) {
-        val code = steamCode ?: throw AppError("steam_again")
-        try { call("POST", "/account/steam/link", JSONObject().put("grant", grant).put("code", code)) } finally { steamCode = null }
-    }
-
     fun steamShow(shown: Boolean) { call("POST", "/account/steam/shown", JSONObject().put("shown", shown)) }
 
-    fun steamUnlink(password: String) {
+    /** Unlinking Steam or Discord asks the password. */
+    fun socialUnlink(prov: String, password: String) {
         val k = Crypto.derive(email(), password)
-        call("POST", "/account/steam/unlink", JSONObject().put("auth", k.auth), pass = true)
+        call("POST", "/account/$prov/unlink", JSONObject().put("auth", k.auth), pass = true)
     }
 
     // ---------- two-step sign-in (optional, recommended) ----------
@@ -564,17 +582,12 @@ class AccountRepository(context: Context) {
         call("POST", "/account/sessions/revoke", JSONObject().put("id", id))
     }
 
-    // ---------- Discord: link it (Discord's sign-in, in the browser), show it on your profile, unlink it ----------
+    // ---------- Account → Discord: what is linked, show it on your profile (linking and unlinking: linkStart, socialUnlink) ----------
     fun discord(): DiscordLink = JSONObject(call("GET", "/account/discord")).let {
-        DiscordLink(it.optBoolean("linked"), it.optStr("id") ?: "", it.optStr("handle") ?: "", it.optBoolean("shown"), it.optBoolean("oauth"))
+        DiscordLink(it.optBoolean("linked"), it.optStr("id") ?: "", it.optStr("handle") ?: "", it.optBoolean("shown"), it.optBoolean("oauth"), it.optBoolean("login", true))
     }
 
-    /** The address of Discord's sign-in, to open in the browser. */
-    fun discordStart(): String = JSONObject(call("POST", "/account/discord/start", JSONObject())).optString("url")
-
     fun discordShow(shown: Boolean) { call("POST", "/account/discord/show", JSONObject().put("shown", shown)) }
-
-    fun discordUnlink() { call("POST", "/account/discord/unlink", JSONObject()) }
 
     // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
     fun sessions(): Got<List<CloudSession>> {
@@ -954,65 +967,19 @@ class AccountRepository(context: Context) {
 /** A race against iRacing's AI: the PC says so, or an offline race (no subsession, its id "t-…") */
 fun isAIRace(r: JSONObject): Boolean = r.optBoolean("ai") || (r.optString("game", "iracing").ifEmpty { "iracing" } == "iracing" && r.optInt("subsession") == 0 && r.optString("id").startsWith("t-"))
 
-/**
- * Steam's answer, back on this phone: the server sends the browser on to http://127.0.0.1:<port>/steam/done?state=…&…
- * (the same way it reaches the PC's agent), this phone listens there only while a Steam sign-in or link is under way,
- * reads the parameters and answers the browser with a page that leads back to the app (pitlanehq://steam). The grant in
- * it is good only with the code this phone kept, so nothing else that reaches the port can use it.
- */
-class SteamCatcher {
-    private val server = java.net.ServerSocket(0, 4, java.net.InetAddress.getByName("127.0.0.1"))
-    val port: Int get() = server.localPort
-
-    /** Waits up to [ms] for the browser; the answer's parameters, or null (timed out or cancelled). */
-    fun await(ms: Long, page: String): Map<String, String>? {
-        server.soTimeout = ms.toInt()
-        val until = System.currentTimeMillis() + ms
-        try {
-            while (System.currentTimeMillis() < until) {
-                val sock = server.accept()
-                try {
-                    sock.soTimeout = 5000
-                    val line = sock.getInputStream().bufferedReader().readLine().orEmpty() // "GET /steam/done?… HTTP/1.1"
-                    val target = line.split(' ').getOrNull(1).orEmpty()
-                    val out = sock.getOutputStream()
-                    if (!target.startsWith("/steam/done")) {
-                        out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray()); out.flush()
-                        continue
-                    }
-                    val q = target.substringAfter('?', "").split('&').filter { it.isNotEmpty() }.associate { kv ->
-                        val k = kv.substringBefore('='); val v = kv.substringAfter('=', "")
-                        java.net.URLDecoder.decode(k, "UTF-8") to java.net.URLDecoder.decode(v, "UTF-8")
-                    }
-                    val body = page.toByteArray()
-                    out.write(("HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n").toByteArray())
-                    out.write(body); out.flush()
-                    return q
-                } catch (e: java.io.IOException) {
-                    // a connection that went wrong: wait for the next one
-                } finally {
-                    runCatching { sock.close() }
-                }
-            }
-            return null
-        } catch (e: java.io.IOException) {
-            return null // timed out, or closed by cancel()
-        } finally {
-            runCatching { server.close() }
+/** pitlanehq://steam?… and pitlanehq://discord?…: the browser back from a sign-in or a link (MainActivity), for the
+ *  view model, which redeems the grant with the code of the start its state names. */
+object AuthReturns {
+    val pending = kotlinx.coroutines.flow.MutableStateFlow<Pair<String, Map<String, String>>?>(null)
+    fun deliver(uri: android.net.Uri?) {
+        if (uri == null || uri.scheme != "pitlanehq") return
+        val prov = uri.host ?: return
+        if (prov != "steam" && prov != "discord") return
+        // "+" is a space, as the server writes the query (URLSearchParams)
+        val q = (uri.encodedQuery ?: "").split('&').filter { it.isNotEmpty() }.associate { kv ->
+            fun dec(v: String) = runCatching { java.net.URLDecoder.decode(v, "UTF-8") }.getOrDefault(v)
+            dec(kv.substringBefore('=')) to dec(kv.substringAfter('=', ""))
         }
-    }
-
-    fun cancel() { runCatching { server.close() } }
-
-    companion object {
-        /** The page the browser shows once Steam answered: one button back to the app (it also opens by itself). */
-        fun page(title: String, button: String): String {
-            fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            return "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Pitlane HQ</title></head>" +
-                "<body style=\"margin:0;background:#0D1116;color:#E7EBF1;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;text-align:center\">" +
-                "<div style=\"padding:24px\"><p style=\"font-size:18px;font-weight:700;margin:0 0 18px\">${esc(title)}</p>" +
-                "<a href=\"pitlanehq://steam\" style=\"display:inline-block;background:#FFB02E;color:#0D1116;font-weight:800;text-decoration:none;padding:12px 22px;border-radius:10px\">${esc(button)}</a></div>" +
-                "<script>setTimeout(function(){location.href='pitlanehq://steam'},300)</script></body></html>"
-        }
+        pending.value = prov to q
     }
 }

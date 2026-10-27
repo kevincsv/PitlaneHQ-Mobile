@@ -291,6 +291,8 @@ struct DiscordLink {
     let handle: String
     let shown: Bool
     let oauth: Bool
+    /// the link signs in with Discord (false when only the bot's /link made it: it is linked again from Account)
+    var login = true
 }
 
 /// DRINKS mode on the PC (admins only): friends drive and their laps go to the community under their name.

@@ -562,7 +562,7 @@ struct LoginView: View {
                 Panel {
                     Text(t("sign_in").uppercased()).font(.system(size: 22, weight: .black))
                     Text(t("same_account")).font(.caption).foregroundColor(Theme.muted)
-                    SteamSignIn(email: email)
+                    SocialSignIn(email: email)
                     TextField(t("email"), text: $email)
                         .textContentType(.username).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6)).padding(.top, 10)
@@ -593,25 +593,33 @@ struct LoginView: View {
     }
 }
 
-/// "Continue with Steam", above the email form: Steam's sign-in opens in the system's sign-in sheet and comes back to
-/// this phone. Then the authenticator's code when two-step sign-in is on, and the password once on this phone (the data
-/// key comes from it). A Steam with no account yet opens the new account's form with its persona as the public name.
-struct SteamSignIn: View {
+/// "Continue with Steam" and "Continue with Discord", above the email form: the sign-in opens in the system's sign-in
+/// sheet and comes back to this app. Then the authenticator's code when two-step sign-in is on, and the password once on
+/// this phone (the data key comes from it). A Steam or Discord with no account yet opens the new account's form with its
+/// name as the public name, linked once created.
+struct SocialSignIn: View {
     @EnvironmentObject var account: Account
     let email: String
     @State private var em = ""
     @State private var pw = ""
     @State private var code = ""
     @State private var name = ""
+    private static let blurple = Color(red: 0x58 / 255, green: 0x65 / 255, blue: 0xF2 / 255)
 
     var body: some View {
+        let dc = account.socialProv == "discord"
         VStack(alignment: .leading, spacing: 6) {
-            Button { Task { await account.steamSignIn() } } label: {
+            Button { Task { await account.socialSignIn("steam") } } label: {
                 Text(t("steam_continue")).font(.subheadline.bold()).frame(maxWidth: .infinity).padding(11)
                     .foregroundColor(Theme.fg).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
             }
-            .disabled(account.steamBusy)
-            if !account.steamNeedCode && !account.steamNeedKey && account.steamNew == nil, let e = account.steamError {
+            .disabled(account.socialBusy)
+            Button { Task { await account.socialSignIn("discord") } } label: {
+                Text(t("discord_continue")).font(.subheadline.bold()).frame(maxWidth: .infinity).padding(11)
+                    .foregroundColor(.white).background(Self.blurple).clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .disabled(account.socialBusy)
+            if !account.socialNeedCode && !account.socialNeedKey && account.socialNew == nil, let e = account.socialError {
                 Text(t(e)).font(.caption).foregroundColor(Theme.bad)
             }
             HStack {
@@ -622,32 +630,32 @@ struct SteamSignIn: View {
             .padding(.vertical, 6)
         }
         .padding(.top, 10)
-        .sheet(isPresented: Binding(get: { account.steamNeedCode || account.steamNeedKey }, set: { if !$0 && (account.steamNeedCode || account.steamNeedKey) { account.steamCancel() } })) {
-            form(title: account.steamNeedCode ? t("two_factor") : t("steam_sign_in")) {
-                if account.steamNeedCode {
+        .sheet(isPresented: Binding(get: { account.socialNeedCode || account.socialNeedKey }, set: { if !$0 && (account.socialNeedCode || account.socialNeedKey) { account.socialCancel() } })) {
+            form(title: account.socialNeedCode ? t("two_factor") : t(dc ? "discord_sign_in" : "steam_sign_in")) {
+                if account.socialNeedCode {
                     Text(t("two_factor_code")).font(.caption).foregroundColor(Theme.muted)
                     TextField("123 456", text: $code).textContentType(.oneTimeCode).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
                         .font(.system(size: 24, weight: .semibold, design: .monospaced)).multilineTextAlignment(.center)
                         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
-                    go(t("continue"), enabled: !code.isEmpty) { await account.steamLoginCode(code) }
+                    go(t("continue"), enabled: !code.isEmpty) { await account.socialLoginCode(code) }
                 } else {
                     Text(t("steam_pw_once")).font(.caption).foregroundColor(Theme.muted)
                     field(t("email"), $em)
                     SecureField(t("password"), text: $pw).textContentType(.password).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
-                    go(account.steamBusy ? t("signing_in") : t("sign_in"), enabled: !em.isEmpty && !pw.isEmpty) { await account.steamKey(email: em, password: pw) }
+                    go(account.socialBusy ? t("signing_in") : t("sign_in"), enabled: !em.isEmpty && !pw.isEmpty) { await account.socialKey(email: em, password: pw) }
                 }
             }
         }
-        .sheet(item: Binding(get: { account.steamNew }, set: { if $0 == nil && account.steamNew != nil { account.steamCancel() } })) { n in
+        .sheet(item: Binding(get: { account.socialNew }, set: { if $0 == nil && account.socialNew != nil { account.socialCancel() } })) { n in
             form(title: t("create_account")) {
-                Text(t("steam_no_account")).font(.caption).foregroundColor(Theme.accent)
+                Text(t(dc ? "discord_no_account" : "steam_no_account")).font(.caption).foregroundColor(Theme.accent)
                 field(t("email"), $em)
                 SecureField(t("password"), text: $pw).textContentType(.newPassword).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                 Text(t("pw_short")).font(.caption2).foregroundColor(Theme.muted)
                 TextField(t("public_name"), text: $name).autocorrectionDisabled().padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                 go(t("create_account"), enabled: !em.isEmpty && pw.count >= 10 && !name.trimmingCharacters(in: .whitespaces).isEmpty) { await account.register(email: em, password: pw, name: name) }
             }
-            .onAppear { if name.isEmpty { name = String(n.persona.prefix(32)) } }
+            .onAppear { name = String(n.name.prefix(32)) }
         }
         .onAppear { if em.isEmpty { em = email } }
     }
@@ -662,7 +670,7 @@ struct SteamSignIn: View {
             Text(label.uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
                 .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
         }
-        .disabled(account.steamBusy || !enabled)
+        .disabled(account.socialBusy || !enabled)
     }
 
     private func form<C: View>(title: String, @ViewBuilder _ c: () -> C) -> some View {
@@ -670,14 +678,34 @@ struct SteamSignIn: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     c()
-                    if let e = account.steamError { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                    if let e = account.socialError { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
                 }
                 .padding(20)
             }
             .background(Theme.ink.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { account.steamCancel() } } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button(t("cancel")) { account.socialCancel() } } }
+        }
+    }
+}
+
+/// The password asked first, for what adds or removes a way into the account (linking, unlinking Steam or Discord).
+struct PassAsk: ViewModifier {
+    let title: String
+    @Binding var ask: String          // "", "link", "unlink"
+    let run: (String, String) -> Void // (what, password)
+    @State private var pw = ""
+    func body(content: Content) -> some View {
+        content.alert(title, isPresented: Binding(get: { !ask.isEmpty }, set: { if !$0 { ask = "" } })) {
+            SecureField(t("password"), text: $pw)
+            Button(ask == "unlink" ? t("unlink") : t("continue"), role: ask == "unlink" ? ButtonRole.destructive : nil) {
+                let p = pw, a = ask
+                pw = ""
+                ask = ""
+                run(a, p)
+            }
+            Button(t("cancel"), role: .cancel) { pw = ""; ask = "" }
         }
     }
 }
@@ -686,21 +714,17 @@ struct SteamSignIn: View {
 /// unlink it (the password again). Once linked, Steam signs you in on every device.
 struct SteamPanel: View {
     @EnvironmentObject var account: Account
-    @Environment(\.scenePhase) private var phase
     @StateObject private var steam = Loader<SteamLink>()
-    @State private var ask = ""   // "", "link", "unlink"
-    @State private var pw = ""
-    @State private var busy = false
+    @State private var ask = ""
 
     var body: some View {
         Panel {
             if let d = steam.data {
                 if !d.linked {
                     Text(t("steam_intro")).font(.caption).foregroundColor(Theme.muted)
-                    Button { pw = ""; ask = "link" } label: {
+                    Button { ask = "link" } label: {
                         Text(t("steam_link").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
                     }
-                    .disabled(busy)
                     .padding(.top, 4)
                 } else {
                     HStack(spacing: 8) {
@@ -709,7 +733,7 @@ struct SteamPanel: View {
                             .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.good.opacity(0.55), lineWidth: 1))
                     }
                     Toggle(t("steam_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.steamShow(v) } })).font(.subheadline)
-                    Button(t("steam_unlink")) { pw = ""; ask = "unlink" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+                    Button(t("unlink")) { ask = "unlink" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
                 }
             } else if steam.error == nil {
                 Text(t("loading")).font(.caption).foregroundColor(Theme.muted)
@@ -717,26 +741,17 @@ struct SteamPanel: View {
             if let e = steam.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
         }
         .task { await load() }
-        .onChange(of: phase) { p in if p == .active && !busy { Task { await load() } } }
-        .alert(t(ask == "unlink" ? "steam_unlink_ask" : "steam_link"), isPresented: Binding(get: { !ask.isEmpty }, set: { if !$0 { ask = "" } })) {
-            SecureField(t("password"), text: $pw)
-            Button(ask == "unlink" ? t("steam_unlink") : t("continue"), role: ask == "unlink" ? ButtonRole.destructive : nil) {
-                let p = pw, a = ask
-                ask = ""
-                if a == "link" { act { try await account.steamLinkStart(password: p) } } else { act { try await account.steamUnlink(password: p) } }
-            }
-            Button(t("cancel"), role: .cancel) { ask = "" }
-        }
+        .modifier(PassAsk(title: t(ask == "unlink" ? "steam_unlink_ask" : "steam_link"), ask: $ask) { a, p in
+            if a == "link" { act { try await account.linkStart("steam", password: p) } } else { act { try await account.socialUnlink("steam", password: p) } }
+        })
     }
 
     private func load() async { await steam.load { try await account.steam() } }
 
     // a change, then the card read again (an error stays on the card)
     private func act(_ f: @escaping () async throws -> Void) {
-        busy = true
         Task {
             do { try await f(); await load() } catch { steam.error = (error as? AppError)?.key ?? error.localizedDescription }
-            busy = false
         }
     }
 }
@@ -772,15 +787,13 @@ struct CodeSheet: View {
 }
 
 /// Two-step sign-in with an authenticator app: optional, recommended. Setup: password → link/key → first code → recovery codes once.
-/// Account → Discord: link it with Discord's sign-in (in the browser), show it on your profile so other drivers can find
-/// you there (off until you say), or unlink it. Without Discord's sign-in on the server, the bot's /link does it.
+/// Account → Discord: link it with Discord's sign-in (the password first), show it on your profile so other drivers can
+/// find you there (off until you say), or unlink it (the password again). A link the bot's /link made never signs in:
+/// "Link it again" does it with Discord's sign-in.
 struct DiscordPanel: View {
     @EnvironmentObject var account: Account
-    @Environment(\.scenePhase) private var phase
-    @Environment(\.openURL) private var openURL
     @StateObject private var discord = Loader<DiscordLink>()
-    @State private var opened = false
-    @State private var unlinking = false
+    @State private var ask = ""
 
     var body: some View {
         Panel {
@@ -788,47 +801,39 @@ struct DiscordPanel: View {
                 if !d.linked {
                     Text(t("discord_intro")).font(.caption).foregroundColor(Theme.muted)
                     if d.oauth {
-                        Button { start() } label: {
+                        Button { ask = "link" } label: {
                             Text(t("discord_link").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .padding(.top, 4)
                     } else {
                         Text(t("discord_no_oauth")).font(.caption).foregroundColor(Theme.muted)
                     }
-                    if opened { Text(t("discord_finish")).font(.caption).foregroundColor(Theme.accent).padding(.top, 2) }
                 } else {
                     HStack(spacing: 8) {
                         Text(d.handle.isEmpty ? t("discord_linked") : "@" + d.handle).font(.subheadline.bold()).lineLimit(1)
                         Text(t("discord_linked_pill")).font(.system(size: 10, weight: .bold)).lineLimit(1).foregroundColor(Theme.good)
                             .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.good.opacity(0.55), lineWidth: 1))
                     }
+                    if !d.login && d.oauth {
+                        Text(t("discord_relink_note")).font(.caption).foregroundColor(Theme.accent)
+                        Button(t("discord_relink")) { ask = "link" }.font(.caption.bold()).foregroundColor(Theme.accent)
+                    }
                     Toggle(t("discord_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.discordShow(v) } })).font(.subheadline)
                     Text(t("discord_show_note")).font(.caption).foregroundColor(Theme.muted)
-                    Button(t("discord_unlink")) { unlinking = true }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+                    Button(t("discord_unlink")) { ask = "unlink" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
                 }
             } else if discord.error == nil {
                 Text(t("loading")).font(.caption).foregroundColor(Theme.muted)
             }
             if let e = discord.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
         }
-        // read when the screen shows and when the app comes back (from Discord's sign-in in the browser)
         .task { await load() }
-        .onChange(of: phase) { p in if p == .active { Task { await load() } } }
-        .alert(t("discord_unlink_ask"), isPresented: $unlinking) {
-            Button(t("discord_unlink"), role: .destructive) { act { try await account.discordUnlink() } }
-            Button(t("cancel"), role: .cancel) {}
-        }
+        .modifier(PassAsk(title: t(ask == "unlink" ? "discord_unlink_ask" : "discord_link"), ask: $ask) { a, p in
+            if a == "link" { act { try await account.linkStart("discord", password: p) } } else { act { try await account.socialUnlink("discord", password: p) } }
+        })
     }
 
     private func load() async { await discord.load { try await account.discord() } }
-
-    private func start() {
-        Task {
-            do {
-                if let u = try await account.discordStart() { opened = true; openURL(u) }
-            } catch { discord.error = (error as? AppError)?.key ?? error.localizedDescription }
-        }
-    }
 
     // a change, then the card read again (an error stays on the card)
     private func act(_ f: @escaping () async throws -> Void) {

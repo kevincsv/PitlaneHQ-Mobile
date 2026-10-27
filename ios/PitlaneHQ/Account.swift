@@ -1,6 +1,5 @@
 import AuthenticationServices
 import Foundation
-import Network
 import Security
 import UIKit
 
@@ -446,84 +445,90 @@ final class Account: ObservableObject {
         signedIn = true
     }
 
-    // ---------- Sign in with Steam (steam.js): the browser goes to Steam and comes back to this phone ----------
-    // The code the start gives stays here, in memory: a grant is only good with it. Steam says who; the data key still
-    // comes from the password, asked once on this phone (POST /account/key).
-    private var steamCode: String?
-    private var steamPending: String?          // the authenticator's code comes next (a Steam sign-in with two-step on)
-    private var steamSession: [String: Any]?   // signed in by Steam, waiting for the password
-    private var steamAuth: SteamAuth?
-    @Published var steamBusy = false
-    @Published var steamNeedCode = false
-    @Published var steamNeedKey = false
-    @Published var steamNew: SteamNew?
-    @Published var steamError: String?
+    // ---------- Sign in with Steam or Discord (steam.js, discord.js), and linking them ----------
+    // The sign-in sheet goes to Steam or Discord and closes on this app's own address (pitlanehq://steam?state=…&…,
+    // pitlanehq://discord?…). The code each start gives stays here, in memory, with its state: a grant is only good with
+    // it. Steam or Discord says who; the data key still comes from the password, asked once on this phone (POST /account/key).
+    private var signupCode: String?               // the code a sign-up grant (sid) is redeemed with
+    private var socialPending: String?            // the authenticator's code comes next (two-step sign-in on)
+    private var socialSession: [String: Any]?     // signed in by Steam or Discord, waiting for the password
+    private var authSheet: AuthSheet?
+    /// the sign-in screen's state: which one ("steam", "discord"), and what comes next
+    @Published var socialProv = ""
+    @Published var socialBusy = false
+    @Published var socialNeedCode = false
+    @Published var socialNeedKey = false
+    @Published var socialNew: SocialNew?
+    @Published var socialError: String?
 
     private func obj(_ d: Data) throws -> [String: Any] { try JSONSerialization.jsonObject(with: d) as? [String: Any] ?? [:] }
     private func errKey(_ e: Error) -> String { (e as? AppError)?.key ?? e.localizedDescription }
 
-    /// Steam's sign-in in the system's sign-in sheet; its answer comes back to this phone's listener (the port the start
-    /// was given), which sends it on to pitlanehq://steam where the sheet hands it over. Nil: the driver closed it.
-    private func steamBrowser(_ start: (Int) async throws -> URL) async throws -> [String: String]? {
-        let loop = try SteamLoopback()
-        defer { loop.stop() }
-        let port = try await loop.start()
-        let url = try await start(port)
-        let a = SteamAuth()
-        steamAuth = a
-        defer { steamAuth = nil }
-        return await a.run(url)
+    /// A start's answer (url, state, code), then the sign-in sheet until it closes on pitlanehq://<prov>: the answer's
+    /// parameters with the start's code, or nil when the driver closed it. Another state is never taken.
+    private func browse(_ prov: String, _ j: [String: Any]) async throws -> (q: [String: String], code: String)? {
+        let state = str(j["state"]), code = str(j["code"])
+        guard let u = URL(string: str(j["url"])), !state.isEmpty, !code.isEmpty else { throw AppError.serverDown }
+        let a = AuthSheet()
+        authSheet = a
+        defer { authSheet = nil }
+        guard let cb = await a.run(u), cb.host == prov else { return nil }
+        let q = steamQuery(cb)
+        guard q["state"] == state else { throw AppError(key: prov + "_again") }
+        return (q, code)
     }
 
-    /// "Continue with Steam": signs in (the code and the password come next), or opens the new account's form.
-    func steamSignIn() async {
-        steamError = nil
-        steamBusy = true
-        defer { steamBusy = false }
+    /// "Continue with Steam" / "Continue with Discord": signs in (the code and the password come next), or opens the
+    /// new account's form.
+    func socialSignIn(_ prov: String) async {
+        socialCancel()
+        socialProv = prov
+        socialBusy = true
+        defer { socialBusy = false }
         do {
-            guard let q = try await steamBrowser({ port in
-                let j = try self.obj(await self.call("POST", "/account/steam/login/start", body: ["device": "iPhone", "port": port], auth: false))
-                self.steamCode = str(j["code"]).isEmpty ? nil : str(j["code"])
-                guard let u = URL(string: str(j["url"])) else { throw AppError.serverDown }
-                return u
-            }) else { return }
-            let g = q["steamLogin"] ?? ""
-            if g == "0", q["new"] == "1", let sid = q["sid"], !sid.isEmpty { steamNew = SteamNew(sid: sid, persona: q["persona"] ?? ""); return }
-            guard !g.isEmpty, g != "0" else { steamError = "steam_failed"; return }
-            guard let code = steamCode else { throw AppError(key: "steam_again") }
-            let r = try obj(await call("POST", "/account/login/steam", body: ["grant": g, "code": code, "device": "iPhone"], auth: false))
-            steamCode = nil
-            if r["twoFactor"] as? Bool == true, let p = r["pending"] as? String { steamPending = p; steamNeedCode = true; return }
-            steamSession = r
-            steamNeedKey = true
+            let j = try obj(await call("POST", "/account/\(prov)/login/start", body: ["device": "iPhone", "app": 1], auth: false))
+            guard let back = try await browse(prov, j) else { return }
+            let q = back.q, code = back.code
+            let g = q[prov + "Login"] ?? ""
+            if g == "0", q["new"] == "1", let sid = q["sid"], !sid.isEmpty {
+                signupCode = code
+                socialNew = SocialNew(sid: sid, name: q[prov == "discord" ? "name" : "persona"] ?? "")
+                return
+            }
+            if g == "0", q["relink"] == "1" { socialError = "discord_relink_login"; return }
+            guard !g.isEmpty, g != "0" else { socialError = prov + "_failed"; return }
+            let r = try obj(await call("POST", "/account/login/\(prov)", body: ["grant": g, "code": code, "device": "iPhone", "lang": I18n.shared.lang], auth: false))
+            if r["twoFactor"] as? Bool == true, let p = r["pending"] as? String { socialPending = p; socialNeedCode = true; return }
+            socialSession = r
+            socialNeedKey = true
         } catch {
-            steamError = errKey(error)
+            socialError = errKey(error)
         }
     }
 
-    /// A Steam sign-in with two-step sign-in on: the authenticator's code, then the password.
-    func steamLoginCode(_ code: String) async {
-        guard let p = steamPending else { steamCancel(); steamError = "sign_in_again"; return }
-        steamBusy = true
-        steamError = nil
-        defer { steamBusy = false }
+    /// Two-step sign-in on: the authenticator's code, then the password.
+    func socialLoginCode(_ code: String) async {
+        guard let p = socialPending else { socialCancel(); socialError = "sign_in_again"; return }
+        socialBusy = true
+        socialError = nil
+        defer { socialBusy = false }
         do {
-            steamSession = try obj(await call("POST", "/account/login/2fa", body: ["pending": p, "code": code.trimmingCharacters(in: .whitespaces)], auth: false))
-            steamPending = nil
-            steamNeedCode = false
-            steamNeedKey = true
-        } catch { steamError = errKey(error) }
+            socialSession = try obj(await call("POST", "/account/login/2fa", body: ["pending": p, "code": code.trimmingCharacters(in: .whitespaces)], auth: false))
+            socialPending = nil
+            socialNeedCode = false
+            socialNeedKey = true
+        } catch { socialError = errKey(error) }
     }
 
     /// The password once on this phone: the server hands the data key wrapped with it, and it opens here.
-    func steamKey(email e: String, password: String) async {
-        guard let s = steamSession, let tok = s["token"] as? String else { steamCancel(); steamError = "sign_in_again"; return }
+    func socialKey(email e: String, password: String) async {
+        guard let s = socialSession, let tok = s["token"] as? String else { socialCancel(); socialError = "sign_in_again"; return }
         let em = e.trimmingCharacters(in: .whitespaces).lowercased()
-        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { steamError = "bad_email"; return }
-        guard !password.isEmpty else { steamError = "enter_pw"; return }
-        steamBusy = true
-        steamError = nil
-        defer { steamBusy = false }
+        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { socialError = "bad_email"; return }
+        guard !password.isEmpty else { socialError = "enter_pw"; return }
+        socialBusy = true
+        socialError = nil
+        defer { socialBusy = false }
         do {
             let keys = try await Task.detached { try PLCrypto.derive(email: em, password: password) }.value
             let r: [String: Any]
@@ -531,36 +536,36 @@ final class Account: ObservableObject {
             catch let x as AppError where x.key == "the password is wrong" { throw AppError(key: "wrong_email_pw") }
             guard let wrapped = r["wrappedKey"] as? String, let key = try? PLCrypto.open(key: keys.wrap, sealed: wrapped, aad: PLCrypto.accountAAD) else { throw AppError(key: "wrong_email_pw") }
             try finishLogin(s, email: em, key: key)
-            steamSession = nil
-            steamNeedKey = false
+            socialSession = nil
+            socialNeedKey = false
             await sync()
-        } catch { steamError = errKey(error) }
+        } catch { socialError = errKey(error) }
     }
 
-    /// The Steam sign-in left halfway: its session (if any) is closed on the server.
-    func steamCancel() {
-        if let t = steamSession?["token"] as? String { Task { _ = try? await call("POST", "/account/logout", body: [:], bearer: t) } }
-        steamSession = nil
-        steamPending = nil
-        steamCode = nil
-        steamNeedCode = false
-        steamNeedKey = false
-        steamNew = nil
-        steamError = nil
+    /// The sign-in left halfway: its session (if any) is closed on the server.
+    func socialCancel() {
+        if let t = socialSession?["token"] as? String { Task { _ = try? await call("POST", "/account/logout", body: [:], bearer: t) } }
+        socialSession = nil
+        socialPending = nil
+        signupCode = nil
+        socialNeedCode = false
+        socialNeedKey = false
+        socialNew = nil
+        socialError = nil
     }
 
-    /// A new account, like the web's: a new data key wrapped with the password; made from a Steam sign-in (steamNew), which
-    /// links that Steam to it at once. When the server sent the email to confirm first, the sign-in screen says so.
+    /// A new account, like the web's: a new data key wrapped with the password; made from a Steam or Discord sign-in
+    /// (socialNew), which links it at once. When the server sent the email to confirm first, the sign-in screen says so.
     func register(email e: String, password: String, name: String) async {
         let em = e.trimmingCharacters(in: .whitespaces).lowercased()
-        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { steamError = "bad_email"; return }
-        guard password.count >= 10 else { steamError = "pw_short"; return }
+        guard em.range(of: #"^[^@\s]+@[^@\s]+\.[^@\s]+$"#, options: .regularExpression) != nil else { socialError = "bad_email"; return }
+        guard password.count >= 10 else { socialError = "pw_short"; return }
         let nm = String(name.trimmingCharacters(in: .whitespaces).prefix(32))
-        guard !nm.isEmpty else { steamError = "choose_name"; return }
-        let sid = steamNew?.sid ?? ""
-        steamBusy = true
-        steamError = nil
-        defer { steamBusy = false }
+        guard !nm.isEmpty else { socialError = "choose_name"; return }
+        let sid = socialNew?.sid ?? "", prov = socialProv
+        socialBusy = true
+        socialError = nil
+        defer { socialBusy = false }
         do {
             let keys = try await Task.detached { try PLCrypto.derive(email: em, password: password) }.value
             var key = Data(count: 32)
@@ -569,51 +574,49 @@ final class Account: ObservableObject {
             let wrapped = try PLCrypto.seal(key: keys.wrap, plain: key, aad: PLCrypto.accountAAD)
             var body: [String: Any] = ["email": em, "auth": keys.auth, "wrappedKey": wrapped, "display": nm, "nameKind": "nick", "device": "iPhone", "lang": I18n.shared.lang]
             if !sid.isEmpty {
-                guard let code = steamCode else { throw AppError(key: "steam_again") }
-                body["sid"] = sid
+                guard let code = signupCode else { throw AppError(key: prov + "_again") }
+                body[prov == "discord" ? "discordSid" : "sid"] = sid
                 body["code"] = code
             }
             let j = try obj(await call("POST", "/account/register", body: body, auth: false))
-            if !sid.isEmpty { steamCode = nil }
-            steamNew = nil
+            if !sid.isEmpty { signupCode = nil }
+            socialNew = nil
+            let taken = j["discordTaken"] as? Bool == true
             if j["verifyFirst"] as? Bool == true || j["token"] == nil {
                 email = em
-                error = "verify your email first: we sent you a link, open it and then sign in"
+                error = taken ? "discord_taken_verify" : "verify your email first: we sent you a link, open it and then sign in"
                 return
             }
             try finishLogin(j, email: em, key: key)
             await sync()
-        } catch { steamError = errKey(error) }
+            if taken { error = "discord_taken" }
+        } catch { socialError = errKey(error) }
     }
 
-    // ---------- Account → Steam: link it (Steam's sign-in), show it on your profile, unlink it ----------
+    // ---------- Account → Steam and Discord: link them (the password first), show them on your profile, unlink them ----------
     func steam() async throws -> Got<SteamLink> {
         let j = try obj(await call("GET", "/account/steam"))
         return Got(data: SteamLink(linked: j["linked"] as? Bool ?? false, id: str(j["id"]), persona: str(j["persona"]), shown: j["shown"] as? Bool ?? false))
     }
 
-    /// Linking asks the password first, then Steam's sign-in; its answer comes back here and links it.
-    func steamLinkStart(password: String) async throws {
+    /// Linking asks the password, then Steam's or Discord's sign-in; it comes back to this app and links it.
+    func linkStart(_ prov: String, password: String) async throws {
         let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
-        guard let q = try await steamBrowser({ port in
-            let j = try self.obj(await self.call("POST", "/account/steam/start", body: ["auth": keys.auth, "device": "iPhone", "port": port], pass: true))
-            self.steamCode = str(j["code"]).isEmpty ? nil : str(j["code"])
-            guard let u = URL(string: str(j["url"])) else { throw AppError.serverDown }
-            return u
-        }) else { return }
-        guard let g = q["steamLink"], !g.isEmpty else {
-            throw AppError(key: q["steamLinked"] == "taken" ? "this Steam account is already linked to another account" : "steam_not_linked")
+        let j = try obj(await call("POST", "/account/\(prov)/start", body: ["auth": keys.auth, "device": "iPhone", "app": 1], pass: true))
+        guard let back = try await browse(prov, j) else { return }
+        let q = back.q, code = back.code
+        guard let g = q[prov + "Link"], !g.isEmpty else {
+            throw AppError(key: q[prov + "Linked"] == "taken" ? "this \(prov == "discord" ? "Discord" : "Steam") account is already linked to another account" : prov + "_not_linked")
         }
-        guard let code = steamCode else { throw AppError(key: "steam_again") }
-        defer { steamCode = nil }
-        _ = try await call("POST", "/account/steam/link", body: ["grant": g, "code": code])
+        _ = try await call("POST", prov == "discord" ? "/account/discord/link/grant" : "/account/steam/link", body: ["grant": g, "code": code])
     }
 
     func steamShow(_ shown: Bool) async throws { _ = try await call("POST", "/account/steam/shown", body: ["shown": shown]) }
 
-    func steamUnlink(password: String) async throws {
+    /// Unlinking Steam or Discord asks the password.
+    func socialUnlink(_ prov: String, password: String) async throws {
         let keys = try await Task.detached { [email] in try PLCrypto.derive(email: email, password: password) }.value
-        _ = try await call("POST", "/account/steam/unlink", body: ["auth": keys.auth], pass: true)
+        _ = try await call("POST", "/account/\(prov)/unlink", body: ["auth": keys.auth], pass: true)
     }
 
     // ---------- two-step sign-in (optional, recommended) ----------
@@ -814,18 +817,12 @@ final class Account: ObservableObject {
     // ---------- Discord: link it (Discord's sign-in, in the browser), show it on your profile, unlink it ----------
     func discord() async throws -> Got<DiscordLink> {
         let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/discord")) as? [String: Any] ?? [:]
-        return Got(data: DiscordLink(linked: j["linked"] as? Bool ?? false, id: str(j["id"]), handle: str(j["handle"]), shown: j["shown"] as? Bool ?? false, oauth: j["oauth"] as? Bool ?? false))
-    }
-
-    /// The address of Discord's sign-in, to open in the browser.
-    func discordStart() async throws -> URL? {
-        let j = try JSONSerialization.jsonObject(with: await call("POST", "/account/discord/start", body: [:])) as? [String: Any] ?? [:]
-        return URL(string: str(j["url"]))
+        return Got(data: DiscordLink(linked: j["linked"] as? Bool ?? false, id: str(j["id"]), handle: str(j["handle"]), shown: j["shown"] as? Bool ?? false, oauth: j["oauth"] as? Bool ?? false,
+                                     login: j["login"] as? Bool ?? true))
     }
 
     func discordShow(_ shown: Bool) async throws { _ = try await call("POST", "/account/discord/show", body: ["shown": shown]) }
 
-    func discordUnlink() async throws { _ = try await call("POST", "/account/discord/unlink", body: [:]) }
 
     // ---------- your laps (uploaded by PitlaneHQ.exe) ----------
 
@@ -1212,85 +1209,14 @@ func isAIRace(_ r: [String: Any]) -> Bool {
     return (g.isEmpty || g == "iracing") && ((r["subsession"] as? NSNumber)?.intValue ?? 0) == 0 && ((r["id"] as? String) ?? "").hasPrefix("t-")
 }
 
-/// A Steam account with no Pitlane HQ account yet: the sign-up grant and the persona for the new account's form.
-struct SteamNew: Identifiable {
+/// A Steam or Discord account with no Pitlane HQ account yet: the sign-up grant and the name for the new account's form.
+struct SocialNew: Identifiable {
     let sid: String
-    let persona: String
+    let name: String
     var id: String { sid }
 }
 
-/// Steam's answer, back on this phone: the server sends the browser on to http://127.0.0.1:<port>/steam/done?state=…&…
-/// (the same way it reaches the PC's agent). This listener runs only while a Steam sign-in or link is under way, on the
-/// phone's own loopback, and sends the browser on to pitlanehq://steam with the same parameters, where the sign-in
-/// sheet hands them to the app. The grant in them is good only with the code this phone kept.
-final class SteamLoopback {
-    private let listener: NWListener
-    private let queue = DispatchQueue(label: "com.pitlanehq.steam")
-    private var ready: CheckedContinuation<Int, Error>?
-
-    init() throws {
-        let p = NWParameters.tcp
-        p.requiredInterfaceType = .loopback
-        listener = try NWListener(using: p, on: .any)
-    }
-
-    /// Starts listening: the port Steam's answer comes back to.
-    func start() async throws -> Int {
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Int, Error>) in
-            queue.async {
-                self.ready = c
-                self.listener.stateUpdateHandler = { [weak self] st in self?.changed(st) }
-                self.listener.newConnectionHandler = { [weak self] conn in self?.serve(conn) }
-                self.listener.start(queue: self.queue)
-            }
-        }
-    }
-
-    private func changed(_ st: NWListener.State) {
-        guard let c = ready else { return }
-        switch st {
-        case .ready:
-            guard let p = listener.port else { return }
-            ready = nil
-            c.resume(returning: Int(p.rawValue))
-        case .failed(let e), .waiting(let e):
-            ready = nil
-            c.resume(throwing: e)
-        case .cancelled:
-            ready = nil
-            c.resume(throwing: CancellationError())
-        default:
-            break
-        }
-    }
-
-    private func serve(_ conn: NWConnection) {
-        conn.start(queue: queue)
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 16384) { data, _, _, _ in
-            let head = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-            let line = head.components(separatedBy: "\r\n").first ?? ""
-            let parts = line.split(separator: " ")
-            let target = parts.count > 1 ? String(parts[1]) : ""
-            let resp: String
-            if target.hasPrefix("/steam/done") {
-                let q = target.split(separator: "?", maxSplits: 1).dropFirst().first.map(String.init) ?? ""
-                resp = "HTTP/1.1 302 Found\r\nLocation: pitlanehq://steam?\(q)\r\nCache-Control: no-store\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-            } else {
-                resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-            }
-            conn.send(content: Data(resp.utf8), completion: .contentProcessed { _ in conn.cancel() })
-        }
-    }
-
-    func stop() {
-        queue.async {
-            if let c = self.ready { self.ready = nil; c.resume(throwing: CancellationError()) }
-            self.listener.cancel()
-        }
-    }
-}
-
-/// The parameters of pitlanehq://steam?… (a "+" is a space, as the server writes them).
+/// The parameters of pitlanehq://steam?… or pitlanehq://discord?… (a "+" is a space, as the server writes them).
 func steamQuery(_ u: URL) -> [String: String] {
     var out: [String: String] = [:]
     for kv in (u.query ?? "").split(separator: "&") {
@@ -1300,23 +1226,24 @@ func steamQuery(_ u: URL) -> [String: String] {
     return out
 }
 
-/// Steam's sign-in in the system's sign-in sheet (ASWebAuthenticationSession), which closes by itself on pitlanehq://steam.
+/// Steam's or Discord's sign-in in the system's sign-in sheet (ASWebAuthenticationSession), which closes by itself when
+/// the server sends it on to this app's address (pitlanehq://…).
 @MainActor
-final class SteamAuth: NSObject, ASWebAuthenticationPresentationContextProviding {
+final class AuthSheet: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var session: ASWebAuthenticationSession?
 
-    /// Steam's answer (its parameters), or nil when the driver closed the sheet.
-    func run(_ url: URL) async -> [String: String]? {
-        let q: [String: String]? = await withCheckedContinuation { (c: CheckedContinuation<[String: String]?, Never>) in
+    /// The address it closed on, or nil when the driver closed the sheet.
+    func run(_ url: URL) async -> URL? {
+        let u: URL? = await withCheckedContinuation { (c: CheckedContinuation<URL?, Never>) in
             let s = ASWebAuthenticationSession(url: url, callbackURLScheme: "pitlanehq") { cb, err in
-                c.resume(returning: err == nil ? cb.map(steamQuery) : nil)
+                c.resume(returning: err == nil ? cb : nil)
             }
             s.presentationContextProvider = self
             session = s
             if !s.start() { c.resume(returning: nil) }
         }
         session = nil
-        return q
+        return u
     }
 
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {

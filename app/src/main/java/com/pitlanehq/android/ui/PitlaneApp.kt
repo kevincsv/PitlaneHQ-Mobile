@@ -163,7 +163,7 @@ private fun LoginScreen(vm: PitlaneViewModel, error: String?, busy: Boolean) {
                 Text(t("sign_in").uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text(t("same_account"), color = Muted, fontSize = 12.sp)
                 Spacer(Modifier.height(12.dp))
-                SteamSignIn(vm, email)
+                SocialSignIn(vm, email)
                 OutlinedTextField(
                     email, { email = it }, label = { Text(t("email")) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth()
@@ -2941,8 +2941,8 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
     val demo by vm.demo.collectAsState()
     val uri = LocalUriHandler.current
     LaunchedEffect(Unit) { if (d.data == null && !d.loading) vm.loadDevices() }
-    // the Discord card is read when the screen shows and when the app comes back (from Discord's sign-in in the browser)
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.loadDiscord(); vm.loadSteam() }
+    // the Discord and Steam cards are read when the screen shows (back from their sign-in, the answer reads them again)
+    LaunchedEffect(Unit) { vm.loadDiscord(); vm.loadSteam() }
     Screen(t("account_tab")) {
         item { Section(t("account")) }
         item {
@@ -3027,46 +3027,47 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
     }
 }
 
-/** Account → Discord: link it with Discord's sign-in (in the browser), show it on your profile so other drivers can find
- *  you there (off until you say), or unlink it. Without Discord's sign-in on the server, the bot's /link does it. */
+/** Account → Discord: link it with Discord's sign-in (the password first, then Discord in the browser), show it on your
+ *  profile so other drivers can find you there (off until you say), or unlink it (the password again). A link the bot's
+ *  /link made never signs in: "Link it again" does it with Discord's sign-in. */
 @Composable
 private fun DiscordPanel(vm: PitlaneViewModel) {
     val st by vm.discord.collectAsState()
     val d = st.data
     val uri = LocalUriHandler.current
-    var opened by remember { mutableStateOf(false) }
-    var unlinking by remember { mutableStateOf(false) }
+    var ask by remember { mutableStateOf("") } // "", "link", "unlink"
     Panel {
         if (d == null) { if (st.error == null) Text(t("loading"), color = Muted, fontSize = 12.sp) }
         else if (!d.linked) {
             Text(t("discord_intro"), color = Muted, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
-            if (d.oauth) Button({ vm.discordStart { u -> if (u != null) { uri.openUri(u); opened = true } } }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
+            if (d.oauth) Button({ ask = "link" }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
                 Text(t("discord_link").uppercase(), fontWeight = FontWeight.Black)
             }
             else Text(t("discord_no_oauth"), color = Muted, fontSize = 12.sp)
-            if (opened) Text(t("discord_finish"), color = Accent, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(if (d.handle.isNotBlank()) "@" + d.handle else t("discord_linked"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(t("discord_linked_pill"), color = Good, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
                     modifier = Modifier.border(1.dp, Good.copy(alpha = 0.55f), RoundedCornerShape(50)).padding(horizontal = 8.dp, vertical = 2.dp))
             }
+            if (!d.login && d.oauth) {
+                Text(t("discord_relink_note"), color = Accent, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                OutlinedButton({ ask = "link" }, modifier = Modifier.padding(top = 4.dp)) { Text(t("discord_relink"), color = Accent) }
+            }
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(t("discord_show"), fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Switch(d.shown, { vm.discordShow(it) })
             }
             Text(t("discord_show_note"), color = Muted, fontSize = 12.sp)
-            OutlinedButton({ unlinking = true }, modifier = Modifier.padding(top = 8.dp)) { Text(t("discord_unlink"), color = Bad) }
+            OutlinedButton({ ask = "unlink" }, modifier = Modifier.padding(top = 8.dp)) { Text(t("discord_unlink"), color = Bad) }
         }
         st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
     }
-    if (unlinking) AlertDialog(
-        onDismissRequest = { unlinking = false },
-        text = { Text(t("discord_unlink_ask")) },
-        confirmButton = { TextButton({ unlinking = false; vm.discordUnlink() }) { Text(t("discord_unlink"), color = Bad) } },
-        dismissButton = { TextButton({ unlinking = false }) { Text(t("cancel"), color = Muted) } }
-    )
+    if (ask.isNotEmpty()) PassAsk(if (ask == "link") t("discord_link") else t("discord_unlink_ask"), ask == "unlink", { ask = "" }) { pw ->
+        if (ask == "link") vm.linkStart("discord", pw) { uri.openUri(it) } else vm.socialUnlink("discord", pw)
+        ask = ""
+    }
 }
 
 /** The same password field everywhere it is asked again. */
@@ -3076,59 +3077,76 @@ private fun PassField(v: String, label: String, onChange: (String) -> Unit) {
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
 }
 
+/** The password asked first, for what adds or removes a way into the account (linking, unlinking Steam or Discord). */
+@Composable
+private fun PassAsk(title: String, danger: Boolean, close: () -> Unit, go: (String) -> Unit) {
+    var pw by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = close,
+        title = { Text(title, fontWeight = FontWeight.Black) },
+        text = { PassField(pw, t("password")) { pw = it } },
+        confirmButton = { TextButton({ go(pw) }, enabled = pw.isNotEmpty()) { Text(t(if (danger) "unlink" else "continue"), color = if (danger) Bad else Accent) } },
+        dismissButton = { TextButton(close) { Text(t("cancel"), color = Muted) } }
+    )
+}
+
+private val Blurple = Color(0xFF5865F2)
+
 /**
- * "Continue with Steam", above the email form: Steam's sign-in opens in the browser and comes back to this phone. Then the
- * authenticator's code when two-step sign-in is on, and the password once on this phone (the data key comes from it).
- * A Steam with no account yet opens the new account's form with its persona as the public name, linked once created.
+ * "Continue with Steam" and "Continue with Discord", above the email form: the sign-in opens in the browser and comes back
+ * to this app (pitlanehq://…). Then the authenticator's code when two-step sign-in is on, and the password once on this
+ * phone (the data key comes from it). A Steam or Discord with no account yet opens the new account's form with its name
+ * as the public name, linked once created.
  */
 @Composable
-private fun SteamSignIn(vm: PitlaneViewModel, email0: String) {
-    val st by vm.steamUi.collectAsState()
+private fun SocialSignIn(vm: PitlaneViewModel, email0: String) {
+    val st by vm.authUi.collectAsState()
     val uri = LocalUriHandler.current
     var email by remember { mutableStateOf(email0) }
     var pw by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
-    var name by remember(st.newPersona) { mutableStateOf(st.newPersona ?: "") }
-    OutlinedButton({ vm.steamSignIn { uri.openUri(it) } }, enabled = !st.busy && !st.waiting, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) {
+    var name by remember(st.newName) { mutableStateOf(st.newName ?: "") }
+    val dc = st.prov == "discord"
+    OutlinedButton({ vm.socialSignIn("steam") { uri.openUri(it) } }, enabled = !st.busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, Line)) {
         Text(t("steam_continue"), color = Fg, fontWeight = FontWeight.Bold)
     }
-    if (st.waiting) Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(t("steam_finish"), color = Accent, fontSize = 12.sp, modifier = Modifier.weight(1f))
-        TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted, fontSize = 12.sp) }
+    Button({ vm.socialSignIn("discord") { uri.openUri(it) } }, enabled = !st.busy, modifier = Modifier.fillMaxWidth().padding(top = 6.dp), shape = RoundedCornerShape(8.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Blurple, contentColor = Color.White)) {
+        Text(t("discord_continue"), fontWeight = FontWeight.Bold)
     }
-    if (!st.needCode && !st.needKey && st.newPersona == null) st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
+    if (!st.needCode && !st.needKey && st.newName == null) st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)) }
     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         HorizontalDivider(Modifier.weight(1f), color = Line); Text("  " + t("or") + "  ", color = Muted, fontSize = 11.sp); HorizontalDivider(Modifier.weight(1f), color = Line)
     }
     val err: @Composable () -> Unit = { st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp) } }
     if (st.needCode) AlertDialog(
-        onDismissRequest = { vm.steamCancel() },
+        onDismissRequest = { vm.socialCancel() },
         title = { Text(t("two_factor"), fontWeight = FontWeight.Black) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("two_factor_code"), color = Muted, fontSize = 12.sp)
             OutlinedTextField(code, { code = it }, label = { Text(t("code")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
             err()
         } },
-        confirmButton = { TextButton({ vm.steamCode(code) }, enabled = !st.busy && code.isNotBlank()) { Text(t("continue"), color = Accent) } },
-        dismissButton = { TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted) } }
+        confirmButton = { TextButton({ vm.socialCode(code) }, enabled = !st.busy && code.isNotBlank()) { Text(t("continue"), color = Accent) } },
+        dismissButton = { TextButton({ vm.socialCancel() }) { Text(t("cancel"), color = Muted) } }
     )
     if (st.needKey) AlertDialog(
-        onDismissRequest = { vm.steamCancel() },
-        title = { Text(t("steam_sign_in"), fontWeight = FontWeight.Black) },
+        onDismissRequest = { vm.socialCancel() },
+        title = { Text(t(if (dc) "discord_sign_in" else "steam_sign_in"), fontWeight = FontWeight.Black) },
         text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("steam_pw_once"), color = Muted, fontSize = 12.sp)
             OutlinedTextField(email, { email = it }, label = { Text(t("email")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
             PassField(pw, t("password")) { pw = it }
             err()
         } },
-        confirmButton = { TextButton({ vm.steamKey(email, pw) }, enabled = !st.busy && email.isNotBlank() && pw.isNotEmpty()) { Text(if (st.busy) t("signing_in") else t("sign_in"), color = Accent) } },
-        dismissButton = { TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted) } }
+        confirmButton = { TextButton({ vm.socialKey(email, pw) }, enabled = !st.busy && email.isNotBlank() && pw.isNotEmpty()) { Text(if (st.busy) t("signing_in") else t("sign_in"), color = Accent) } },
+        dismissButton = { TextButton({ vm.socialCancel() }) { Text(t("cancel"), color = Muted) } }
     )
-    if (st.newPersona != null) AlertDialog(
-        onDismissRequest = { vm.steamCancel() },
+    if (st.newName != null) AlertDialog(
+        onDismissRequest = { vm.socialCancel() },
         title = { Text(t("create_account"), fontWeight = FontWeight.Black) },
         text = { Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(t("steam_no_account"), color = Accent, fontSize = 12.sp)
+            Text(t(if (dc) "discord_no_account" else "steam_no_account"), color = Accent, fontSize = 12.sp)
             OutlinedTextField(email, { email = it }, label = { Text(t("email")) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), modifier = Modifier.fillMaxWidth())
             PassField(pw, t("password")) { pw = it }
             Text(t("pw_short"), color = Muted, fontSize = 11.sp)
@@ -3136,7 +3154,7 @@ private fun SteamSignIn(vm: PitlaneViewModel, email0: String) {
             err()
         } },
         confirmButton = { TextButton({ vm.register(email, pw, name) }, enabled = !st.busy && email.isNotBlank() && pw.length >= 10 && name.isNotBlank()) { Text(t("create_account"), color = Accent) } },
-        dismissButton = { TextButton({ vm.steamCancel() }) { Text(t("cancel"), color = Muted) } }
+        dismissButton = { TextButton({ vm.socialCancel() }) { Text(t("cancel"), color = Muted) } }
     )
 }
 
@@ -3145,22 +3163,16 @@ private fun SteamSignIn(vm: PitlaneViewModel, email0: String) {
 @Composable
 private fun SteamPanel(vm: PitlaneViewModel) {
     val st by vm.steam.collectAsState()
-    val waiting by vm.steamLinkWait.collectAsState()
     val d = st.data
     val uri = LocalUriHandler.current
     var ask by remember { mutableStateOf("") } // "", "link", "unlink"
-    var pw by remember { mutableStateOf("") }
     Panel {
         if (d == null) { if (st.error == null) Text(t("loading"), color = Muted, fontSize = 12.sp) }
         else if (!d.linked) {
             Text(t("steam_intro"), color = Muted, fontSize = 12.sp)
             Spacer(Modifier.height(8.dp))
-            Button({ pw = ""; ask = "link" }, enabled = !waiting, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
+            Button({ ask = "link" }, colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
                 Text(t("steam_link").uppercase(), fontWeight = FontWeight.Black)
-            }
-            if (waiting) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(t("steam_finish"), color = Accent, fontSize = 12.sp, modifier = Modifier.weight(1f))
-                TextButton({ vm.steamLinkCancel() }) { Text(t("cancel"), color = Muted, fontSize = 12.sp) }
             }
         } else {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3172,21 +3184,14 @@ private fun SteamPanel(vm: PitlaneViewModel) {
                 Text(t("steam_show"), fontSize = 13.sp, modifier = Modifier.weight(1f))
                 Switch(d.shown, { vm.steamShow(it) })
             }
-            OutlinedButton({ pw = ""; ask = "unlink" }, modifier = Modifier.padding(top = 8.dp)) { Text(t("steam_unlink"), color = Bad) }
+            OutlinedButton({ ask = "unlink" }, modifier = Modifier.padding(top = 8.dp)) { Text(t("unlink"), color = Bad) }
         }
         st.error?.let { Text(t(it), color = Bad, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
     }
-    if (ask.isNotEmpty()) AlertDialog(
-        onDismissRequest = { ask = "" },
-        title = { Text(t(if (ask == "link") "steam_link" else "steam_unlink_ask"), fontWeight = FontWeight.Black) },
-        text = { PassField(pw, t("password")) { pw = it } },
-        confirmButton = {
-            TextButton({ val p = pw; val a = ask; ask = ""; if (a == "link") vm.steamLinkStart(p) { uri.openUri(it) } else vm.steamUnlink(p) }, enabled = pw.isNotEmpty()) {
-                Text(t(if (ask == "link") "continue" else "steam_unlink"), color = if (ask == "link") Accent else Bad)
-            }
-        },
-        dismissButton = { TextButton({ ask = "" }) { Text(t("cancel"), color = Muted) } }
-    )
+    if (ask.isNotEmpty()) PassAsk(if (ask == "link") t("steam_link") else t("steam_unlink_ask"), ask == "unlink", { ask = "" }) { pw ->
+        if (ask == "link") vm.linkStart("steam", pw) { uri.openUri(it) } else vm.socialUnlink("steam", pw)
+        ask = ""
+    }
 }
 
 // ---------- the game you look at ----------

@@ -7,12 +7,14 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- back from Steam's sign-in in the browser: the page on this phone opens the app again -->
+            <!-- back from Steam's or Discord's sign-in in the browser: pitlanehq://steam?state=… and pitlanehq://discord?… -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="pitlanehq" android:host="steam"/>
+                <data android:scheme="pitlanehq"/>
+                <data android:host="steam"/>
+                <data android:host="discord"/>
             </intent-filter>
         </activity>
     </application>

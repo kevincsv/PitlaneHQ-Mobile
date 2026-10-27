@@ -149,8 +149,9 @@ data class SharedSetup(val id: String, val alias: String, val name: String, val 
 
 data class Device(val id: String, val device: String, val lastSeen: Long, val current: Boolean)
 
-/** Your Discord account linked to this one (`oauth`: the server can link it with Discord's sign-in). */
-data class DiscordLink(val linked: Boolean, val id: String, val handle: String, val shown: Boolean, val oauth: Boolean)
+/** Your Discord account linked to this one (`oauth`: the server can link it with Discord's sign-in; `login`: the link
+ *  signs in with Discord, false when only the bot's /link made it, then it is linked again from Account). */
+data class DiscordLink(val linked: Boolean, val id: String, val handle: String, val shown: Boolean, val oauth: Boolean, val login: Boolean = true)
 
 /** Your Steam account linked to this one (Account → Steam): its persona name and whether your profile shows it. */
 data class SteamLink(val linked: Boolean, val id: String, val persona: String, val shown: Boolean)
