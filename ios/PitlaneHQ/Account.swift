@@ -744,6 +744,7 @@ final class Account: ObservableObject {
         nudge = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled, let self else { return }
+            self.lastAuto = Date()
             await self.sync(quiet: true)
         }
     }
@@ -754,6 +755,29 @@ final class Account: ObservableObject {
         guard signedIn, !busy, Date().timeIntervalSince(lastAuto) > 30 else { return }
         lastAuto = Date()
         await sync(quiet: true)
+    }
+
+    private var minute: Task<Void, Never>?
+
+    /// While the app is on the screen it reads the account once a minute (the same read as syncIfDue), like the PC and
+    /// the web; stopMinuteSync ends it when the app goes to the background.
+    func startMinuteSync() {
+        guard minute == nil else { return }
+        minute = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                // a read made meanwhile (the nudge, coming back) counts: never two within the minute
+                guard self.signedIn, !self.busy, !self.demo, Date().timeIntervalSince(self.lastAuto) >= 55 else { continue }
+                self.lastAuto = Date()
+                await self.sync(quiet: true)
+            }
+        }
+    }
+
+    func stopMinuteSync() {
+        minute?.cancel()
+        minute = nil
     }
 
     // only what the phone shows, newest first: races.json also has braking points and more

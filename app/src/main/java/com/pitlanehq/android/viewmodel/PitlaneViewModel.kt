@@ -401,6 +401,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
      * name, races and laps are read again by themselves, at most every 30 seconds.
      */
     fun onForeground() {
+        startMinuteSync()
         val a = _account.value
         resumeLive()
         if (!a.signedIn || a.busy || demo.value) return
@@ -408,6 +409,24 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (now - lastAuto < 30_000) return
         lastAuto = now
         sync(quiet = true)
+    }
+
+    private var minuteJob: Job? = null
+
+    /** While the app is on the screen it reads the account once a minute (the same read as above), like the PC and the
+     *  web; it stops when the app goes to the background. */
+    private fun startMinuteSync() {
+        if (minuteJob?.isActive == true) return
+        minuteJob = viewModelScope.launch {
+            while (true) {
+                delay(60_000)
+                val a = _account.value
+                // a read made meanwhile (the nudge, coming back) counts: never two within the minute
+                if (!a.signedIn || a.busy || demo.value || System.currentTimeMillis() - lastAuto < 55_000) continue
+                lastAuto = System.currentTimeMillis()
+                sync(quiet = true)
+            }
+        }
     }
 
     private var nudgeJob: Job? = null
@@ -418,7 +437,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (!a.signedIn || demo.value) return
         if (version != 0L && version <= a.syncVersion) return // this phone's own upload, or already read
         nudgeJob?.cancel()
-        nudgeJob = viewModelScope.launch { delay(400); sync(quiet = true) }
+        nudgeJob = viewModelScope.launch { delay(400); lastAuto = System.currentTimeMillis(); sync(quiet = true) }
     }
 
     fun logout() {
@@ -654,7 +673,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (!_account.value.signedIn) { live.stop(); return }
         if (liveScreens > 0) live.start() else if (!demo.value) live.startPresence() else live.stop()
     }
-    fun onBackground() = live.stop()
+    fun onBackground() { minuteJob?.cancel(); minuteJob = null; live.stop() }
     fun liveWatch(m: LiveMode, code: String = "") = live.watch(m, code)
     fun liveShare(on: Boolean, new: Boolean = false) = live.share(on, new)
     fun liveAskAgain() = live.askAgain()
