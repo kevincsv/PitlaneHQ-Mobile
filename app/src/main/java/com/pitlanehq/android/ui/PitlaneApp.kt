@@ -437,7 +437,7 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
         }
         state(r) { vm.loadRaces() }
         // the server's count, the same as the PC's and the web's; what the phone has only when the server cannot say
-        item { HomeKpis(mst.data ?: if (mst.error != null) localMonthStats(sessions, races) else null) }
+        item { HomeKpis(mst.data ?: if (mst.error != null) localMonthStats(sessions, races) else null, races) }
         races.firstOrNull()?.let { x -> item { HomeLastRace(x, { vm.race = x; nav.navigate("race") }, { toAnalysis(0) }) } }
         item { HomeRecent(races.drop(1), sessions, { x -> vm.race = x; nav.navigate("race") }, { x -> vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }) { toAnalysis(2) } }
         if (r.data != null && races.isEmpty() && sessions.isEmpty()) item { Empty(t("no_races")) }
@@ -452,11 +452,12 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
 /** The four numbers of the month: your laps and the hours on track, the races (and how many in the top 5) and the best
  *  result, as the server counts them over every session of the account for the chosen game (null: still asked). */
 @Composable
-private fun HomeKpis(st: MonthStats?) {
+private fun HomeKpis(st: MonthStats?, races: List<Race>) {
     val secs = st?.secs ?: 0.0
     val h = secs / 3600
     val hTxt = if (secs <= 0) "–" else if (h >= 10) "${h.roundToInt()} h" else if (h >= 1) "%.1f h".format(h) else "${(secs / 60).roundToInt()} min"
-    val best = st?.best
+    // the server's best place of the month; without one, the races the phone has (this month's, else every one), like the web
+    val best = st?.let { it.best ?: bestRace(races) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Metric(t("hm_laps_month"), st?.let { "${it.laps}" } ?: "–", Modifier.weight(1f).fillMaxHeight(), sub = st?.takeIf { it.sessions > 0 }?.let { t("hm_in_sessions", it.sessions) })

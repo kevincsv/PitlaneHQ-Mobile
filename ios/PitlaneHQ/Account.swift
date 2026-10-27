@@ -4,6 +4,8 @@ import Security
 import UIKit
 
 let server = URL(string: "https://pitlanehq.app")!
+/// This app and its version for the server ("ios/0.6.0", the X-Pitlane-Client header of every request).
+let pitlaneClient = "ios/" + ((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0").replacingOccurrences(of: "-beta", with: "")
 let webApp = URL(string: "https://pitlanehq.app/")!
 /// Support Pitlane HQ (Settings); empty: not shown.
 let patreonURL = "https://www.patreon.com/c/PitlaneHQ/membership"
@@ -359,10 +361,8 @@ final class Account: ObservableObject {
             guard let t = token else { throw AppError.signedOut }
             r.setValue("Bearer " + t, forHTTPHeaderField: "authorization")
         }
-        // every signed-in call says which app and version it is ("ios/0.6.0"), for the admin page's Online tab
-        if bearer != nil || auth {
-            r.setValue("ios/" + ((Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "0"), forHTTPHeaderField: "X-Pitlane-Client")
-        }
+        // every call says which app and version it is ("ios/0.6.0"), for the admin page's Online tab
+        r.setValue(pitlaneClient, forHTTPHeaderField: "X-Pitlane-Client")
         let pair: (Data, URLResponse)
         do {
             pair = try await URLSession.shared.data(for: r)

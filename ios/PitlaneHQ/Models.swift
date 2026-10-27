@@ -60,10 +60,19 @@ func localMonthStats(sessions: [CloudSession], races: [Race]) -> MonthStats {
     let secs = ms.reduce(0.0) { a, x in a + Double(x.laps) * ((x.best ?? 0) > 0 && (x.best ?? 0) < 3600 ? x.best! * 1.03 : 0) }
     let days = Set(ms.map { cal.startOfDay(for: Date(timeIntervalSince1970: $0.started / 1000)) }).count
     let month = races.filter { $0.when >= m0 }
-    let best = month.filter { $0.finish > 0 && !$0.dnf }.sorted { $0.finish != $1.finish ? $0.finish < $1.finish : $0.when > $1.when }.first
     return MonthStats(laps: ms.reduce(0) { $0 + $1.laps }, secs: secs, sessions: ms.count, days: days, races: month.count,
-                      top5: month.filter { (1...5).contains($0.finish) && !$0.dnf }.count,
-                      best: best.map { MonthBest(pos: $0.finish, field: $0.field, inClass: false, track: $0.track, car: $0.car, started: $0.when) })
+                      top5: month.filter { (1...5).contains($0.finish) && !$0.dnf }.count, best: bestRace(races))
+}
+
+/// Home's best result when the server's summary has none for the month, like the web's: the best place of this month's
+/// races, else of every race the phone has (the lowest place, the newest of a tie; a DNF never counts).
+func bestRace(_ races: [Race]) -> MonthBest? {
+    let cal = Calendar.current
+    let m0 = (cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()).timeIntervalSince1970 * 1000
+    let month = races.filter { $0.when >= m0 }
+    let pool = month.isEmpty ? races : month
+    let best = pool.filter { $0.finish > 0 && !$0.dnf }.sorted { $0.finish != $1.finish ? $0.finish < $1.finish : $0.when > $1.when }.first
+    return best.map { MonthBest(pos: $0.finish, field: $0.field, inClass: false, track: $0.track, car: $0.car, started: $0.when) }
 }
 
 struct CloudLap: Identifiable, Hashable {

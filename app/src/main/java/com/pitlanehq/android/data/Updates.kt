@@ -34,7 +34,7 @@ object Updates {
 
     /** The news of the app, in the phone's language. */
     fun news(server: String, lang: String): List<AppNews> = runCatching {
-        val req = Request.Builder().url("$server/app/app-news.json").build()
+        val req = Request.Builder().url("$server/app/app-news.json").header("X-Pitlane-Client", CLIENT).build()
         client.newCall(req).execute().use { r ->
             if (!r.isSuccessful) return emptyList()
             val items = JSONObject(r.body.string()).optJSONArray("items") ?: return emptyList()
@@ -49,7 +49,7 @@ object Updates {
     }.getOrDefault(emptyList())
 
     fun check(current: String): AppUpdate? = runCatching {
-        val req = Request.Builder().url(API).build()
+        val req = Request.Builder().url(API).header("X-Pitlane-Client", CLIENT).build()
         client.newCall(req).execute().use { r ->
             if (!r.isSuccessful) return null
             val j = JSONObject(r.body.string())

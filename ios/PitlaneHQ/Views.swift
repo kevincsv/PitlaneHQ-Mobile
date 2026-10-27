@@ -1446,7 +1446,7 @@ struct HomeView: View {
                 }.buttonStyle(.plain)
             }
             // the server's count, the same as the PC's and the web's; what the phone has only when the server cannot say
-            HomeKpis(stats: stats ?? (statsFailed ? localMonthStats(sessions: sessions, races: races) : nil))
+            HomeKpis(stats: stats ?? (statsFailed ? localMonthStats(sessions: sessions, races: races) : nil), races: races)
             if let x = races.first {
                 HomeLastRace(race: x, onLaps: { inbox.analysisTab = 0; inbox.goTab = 1 })
             }
@@ -1493,11 +1493,13 @@ struct KindTag: View {
 /// result, as the server counts them over every session of the account for the chosen game (nil: still asked).
 struct HomeKpis: View {
     let stats: MonthStats?
+    let races: [Race]
     var body: some View {
         let secs = stats?.secs ?? 0
         let h = secs / 3600
         let hTxt = secs <= 0 ? "–" : h >= 10 ? "\(Int(h.rounded())) h" : h >= 1 ? String(format: "%.1f h", h) : "\(Int((secs / 60).rounded())) min"
-        let best = stats?.best
+        // the server's best place of the month; without one, the races the phone has (this month's, else every one), like the web
+        let best = stats.flatMap { $0.best ?? bestRace(self.races) }
         let n = stats?.sessions ?? 0, days = stats?.days ?? 0, races = stats?.races ?? 0
         VStack(spacing: 8) {
             HStack(spacing: 8) {

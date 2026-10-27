@@ -95,7 +95,8 @@ final class Updates: ObservableObject {
 
     func check() async {
         // the newest build on the server (pitlanehq.app/dl/phones.json), the same one the downloads page points to
-        let r = URLRequest(url: URL(string: "https://pitlanehq.app/dl/phones.json")!, timeoutInterval: 15)
+        var r = URLRequest(url: URL(string: "https://pitlanehq.app/dl/phones.json")!, timeoutInterval: 15)
+        r.setValue(pitlaneClient, forHTTPHeaderField: "X-Pitlane-Client")
         guard let res = try? await URLSession.shared.data(for: r),
               let j = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any],
               let v0 = j["version"] as? String else { return }
@@ -125,7 +126,9 @@ final class Inbox: ObservableObject {
     }
 
     func load() async {
-        guard let res = try? await URLSession.shared.data(from: server.appendingPathComponent("app/app-news.json")),
+        var r = URLRequest(url: server.appendingPathComponent("app/app-news.json"))
+        r.setValue(pitlaneClient, forHTTPHeaderField: "X-Pitlane-Client")
+        guard let res = try? await URLSession.shared.data(for: r),
               let j = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any], let items = j["items"] as? [[String: Any]] else { return }
         let lang = I18n.shared.lang
         func pick(_ o: Any?) -> String { let d = o as? [String: String] ?? [:]; return d[lang] ?? d["en"] ?? "" }

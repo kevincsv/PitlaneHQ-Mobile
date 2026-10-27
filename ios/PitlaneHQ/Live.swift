@@ -172,6 +172,7 @@ final class Live: ObservableObject {
         let q = presence ? "idle" : (mode == .idle ? "idle" : "view") + (mode == .code ? "&share=" + PLCrypto.codeRoom(code) : "")
         var r = URLRequest(url: URL(string: server.absoluteString.replacingOccurrences(of: "https://", with: "wss://") + "/live?role=" + q)!)
         if let token { r.setValue("Bearer " + token, forHTTPHeaderField: "authorization") }
+        r.setValue(pitlaneClient, forHTTPHeaderField: "X-Pitlane-Client")
         let ws = URLSession.shared.webSocketTask(with: r)
         self.key = key
         task = ws

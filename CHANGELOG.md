@@ -11,6 +11,9 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
 - Sign in with Steam or Discord, and link them in Account.
 - The app speaks Portuguese (Brazil) too, beside English and Spanish.
 - In Le Mans Ultimate, Home shows your Safety Rating and Driver Rank where the licences go.
+- Leagues for Le Mans Ultimate too.
+- Le Mans Ultimate shows its classes, and every session shows your place in it.
+- Your phone shows the same numbers as the PC and the web.
 - Fixes and improvements.
 
 ## 0.5.0 beta

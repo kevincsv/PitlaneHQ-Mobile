@@ -87,9 +87,17 @@ fun localMonthStats(sessions: List<CloudSession>, races: List<Race>): MonthStats
     val secs = ms.sumOf { x -> x.laps * (x.best?.takeIf { it > 0 && it < 3600 }?.times(1.03) ?: 0.0) }
     val days = ms.map { java.time.Instant.ofEpochMilli(it.started).atZone(zone).toLocalDate() }.toSet().size
     val month = races.filter { it.whenMs >= m0 }
-    val best = month.filter { it.finish > 0 && !it.dnf }.minWithOrNull(compareBy<Race> { it.finish }.thenByDescending { it.whenMs })
-    return MonthStats(ms.sumOf { it.laps }, secs, ms.size, days, month.size, month.count { it.finish in 1..5 && !it.dnf },
-        best?.let { MonthBest(it.finish, it.field, false, it.track, it.car, it.whenMs) })
+    return MonthStats(ms.sumOf { it.laps }, secs, ms.size, days, month.size, month.count { it.finish in 1..5 && !it.dnf }, bestRace(races))
+}
+
+/** Home's best result when the server's summary has none for the month, like the web's: the best place of this month's
+ *  races, else of every race the phone has (the lowest place, the newest of a tie; a DNF never counts). */
+fun bestRace(races: List<Race>): MonthBest? {
+    val zone = java.time.ZoneId.systemDefault()
+    val m0 = java.time.LocalDate.now(zone).withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli()
+    val pool = races.filter { it.whenMs >= m0 }.ifEmpty { races }
+    val best = pool.filter { it.finish > 0 && !it.dnf }.minWithOrNull(compareBy<Race> { it.finish }.thenByDescending { it.whenMs })
+    return best?.let { MonthBest(it.finish, it.field, false, it.track, it.car, it.whenMs) }
 }
 
 data class CloudLap(val id: String, val n: Int, val time: Double, val valid: Boolean, val sectors: List<Double>, val inc: Int = 0, val drv: String = "")  // drv: a friend's lap (DRINKS mode)

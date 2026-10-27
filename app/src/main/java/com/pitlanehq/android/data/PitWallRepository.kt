@@ -161,7 +161,7 @@ class PitWallRepository(private val account: AccountRepository) {
         val m = mode
         val key = if (m == LiveMode.CODE) (codeKey ?: Crypto.codeKey(code).also { codeKey = it }) else account.dataKey()
         val q = (if (m == LiveMode.IDLE) "idle" else "view") + if (m == LiveMode.CODE) "&share=" + Crypto.codeRoom(code) else ""
-        val b = Request.Builder().url(SERVER.replaceFirst("http", "ws") + "/live?role=" + q)
+        val b = Request.Builder().url(SERVER.replaceFirst("http", "ws") + "/live?role=" + q).header("X-Pitlane-Client", CLIENT)
         runCatching { account.token() }.getOrNull()?.let { b.header("Authorization", "Bearer $it") }
         val req = b.build()
         _state.update { it.copy(link = LinkState.CONNECTING, message = null) }
