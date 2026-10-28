@@ -40,6 +40,14 @@
   and the line. The track map's road is the reference's path when both laps have one (`c.bx`/`c.by`: B dashed along
   the middle, A beside it by `c.lat`), else the lap's own, else the track's layout drawn by the community
   (`trackLayout`, `layout` in `LapAnalysis`), like the web: a lap without a path still has its map.
+  Like the web's analyzer, a session's lap list has a column per official sector (S1, S2, S3…, only the sectors that add
+  up to the lap's time, `lapSecs`/`secs`, as the web's `lapSecsOf`; purple the session's best, green a valid lap's one better
+  than your best lap's), the lap analysis has the braking points table of lap A against lap B per corner (`BrakeTable`: the
+  turn, where each brakes, Δ m, red when A brakes 3 m or more before B, the speed at each apex, the gear, the loss and what
+  to do, `tipShort` of the corner's own tip, the tips an admin turned off giving way like everywhere; a row reads that
+  corner on the map and the charts), and the coach's plan has "Take the plan to the coach overlay" (`setCoachTurns`: the
+  plan's corners as `ui.coach.turns` with the track as `turnsTrack` in the account's settings.json, only when a PC has
+  synced it and never in demo data; an error says its translated text).
 - Track notes (`notes.json` in the account, the same the PC and the web keep): the track page shows the general note
   and the corner notes and writes the general one (`TrackNotesPanel`, `setTrackNote`: the bundle is read, only
   notes.json changes, sealed with the account's key, like driver notes); Account → Track notes lists them all. A

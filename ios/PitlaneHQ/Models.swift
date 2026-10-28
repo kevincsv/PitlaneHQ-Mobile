@@ -734,6 +734,26 @@ struct Corner: Hashable {
     var lineArgs: [String] = []
     var apexM: Int = 0          // the reference's slowest point, metres from the line: the same corner on the server (coachtips.js)
     var cls: String = ""        // the corner's speed there: slow (under 80 km/h), medium (under 150), fast
+    // the braking points table (like the web's): A's brake point against B's (m, + A later; nil without one within 100 m),
+    // the speed at each lap's slowest point (km/h), the gear there, and whether B takes the corner without braking (a lift)
+    var dd: Int? = nil
+    var vA: Double? = nil
+    var vB: Double = 0
+    var gearA: Int = 0
+    var gearB: Int = 0
+    var lift: Bool = false
+}
+
+/// A tip in a few words for the braking points table: without its figures in brackets (the columns carry them) and, of two
+/// sentences, the one that says what to do (the last, unless it is only the measurement and the first is not), like the web's tipShort.
+func tipShort(_ text: String) -> String {
+    let plain = text.replacingOccurrences(of: "\\s*\\([^)]*\\)", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+    let q = plain.replacingOccurrences(of: "\\.\\s+", with: "\u{1}", options: .regularExpression).split(separator: "\u{1}")
+        .map { s -> String in var x = s.trimmingCharacters(in: .whitespaces); if x.hasSuffix(".") { x.removeLast() }; return x.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    guard q.count >= 2, let first = q.first, let last = q.last else { return q.first ?? "" }
+    let num: (String) -> Bool = { $0.range(of: "\\d", options: .regularExpression) != nil }
+    return num(last) && !num(first) ? first : last
 }
 
 /// The corner card the model learnt (`corners` in /community/model): where the fastest drivers of this car and track
@@ -924,7 +944,9 @@ func corners(_ c: Compared, turns: [Double] = [], off: Set<String> = []) -> [Cor
             }
         }
         out.append(Corner(n: z.turn >= 0 ? z.turn + 1 : turnNo(turns, at: Double(zmin) * c.step, lapLen: Double(n) * c.step, fallback: idx + 1), atM: Int(Double(zi) * c.step), lost: lost, phases: ph, phase: phase, coastA: coastA, coastB: coastB, tip: tip, args: args, lineTip: lineKey, lineArgs: lineArgs,
-                          apexM: Int(Double(zmin) * c.step), cls: cls))
+                          apexM: Int(Double(zmin) * c.step), cls: cls,
+                          dd: ja.map { Int(Double($0 - zi) * c.step) }, vA: aMin.map { c.speedA[$0] }, vB: vb,
+                          gearA: c.gearA?[safe: aMin ?? zmin].map { Int($0) } ?? 0, gearB: c.gearB?[safe: zmin].map { Int($0) } ?? 0, lift: z.lift))
     }
     return out
 }

@@ -274,6 +274,72 @@ private struct CornerBar: View {
     }
 }
 
+/// The braking points of lap A against lap B, like the web's analyzer and Android's BrakeTable: per corner (its official
+/// turn), where each lap brakes, the gap in metres (+ A later), the speed at each apex, the gear there, the time lost and
+/// what to do (the tip in a few words). A row reads that corner on the map and the charts.
+struct BrakeTable: View {
+    let cs: [Corner]
+    let lapLen: Double
+    @Binding var pick: Double?
+    private let w: [CGFloat] = [40, 62, 62, 44, 54, 54, 44, 58]
+    var body: some View {
+        let heads = [t("bt_turn"), t("bt_brake_a"), t("bt_brake_b"), "Δ m", t("bt_apex_a"), t("bt_apex_b"), t("gear"), t("bt_loss")]
+        Panel {
+            SectionLabel(text: t("brake_points"))
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 0) {
+                        ForEach(Array(heads.enumerated()), id: \.offset) { i, h in
+                            Text(h.uppercased()).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1)
+                                .frame(width: w[i] - (i == 0 ? 0 : 6), alignment: i == 0 ? .leading : .trailing).padding(.trailing, i == 0 ? 0 : 6)
+                        }
+                        Text(t("bt_todo").uppercased()).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1)
+                            .frame(width: 204, alignment: .leading).padding(.leading, 6)
+                    }
+                    .padding(.bottom, 4)
+                    ForEach(cs, id: \.self) { k in BrakeRow(k: k, f: Double(k.atM) / max(lapLen, 1), w: w, pick: $pick) }
+                }
+            }
+        }
+    }
+}
+
+private struct BrakeRow: View {
+    let k: Corner
+    let f: Double
+    let w: [CGFloat]
+    @Binding var pick: Double?
+    var body: some View {
+        let on = pick.map { abs($0 - f) < 0.012 } ?? false
+        let dd: Int? = k.lift ? nil : k.dd
+        let gear = k.gearA >= 1 && k.gearB >= 1 && k.gearA != k.gearB ? "\(k.gearA) / \(k.gearB)" : k.gearA >= 1 ? "\(k.gearA)" : k.gearB >= 1 ? "\(k.gearB)" : "–"
+        let ddText: String = dd.map { abs($0) < 3 ? "≈ 0" : ($0 > 0 ? "+" : "−") + "\(abs($0))" } ?? "–"
+        let cells: [(String, Color)] = [
+            ("T\(k.n)", Theme.fg),
+            (k.dd.map { "\(k.atM + $0) m" } ?? "–", Theme.fg),
+            (k.lift ? t("bt_lift") : "\(k.atM) m", k.lift ? Theme.muted : Theme.fg),
+            (ddText, dd.map { $0 <= -3 } == true ? Theme.bad : Theme.muted),
+            (k.vA.map { String(format: "%.0f", $0) } ?? "–", Theme.fg),
+            (String(format: "%.0f", k.vB), Theme.fg),
+            (gear, Theme.fg),
+            ((k.lost >= 0 ? "+" : "−") + String(format: "%.3f", abs(k.lost)), k.lost > 0.02 ? Theme.bad : k.lost < -0.02 ? Theme.good : Theme.muted),
+        ]
+        let tip: String? = k.lost > 0.03 ? k.tip.map { tipShort(fillArgs(t($0), k.args)) } : nil
+        HStack(alignment: .center, spacing: 0) {
+            ForEach(Array(cells.enumerated()), id: \.offset) { i, cell in
+                Text(cell.0).font(.system(size: 11, weight: i == 0 ? .bold : .regular, design: .monospaced)).foregroundColor(i == 0 && on ? Theme.accent : cell.1).lineLimit(1)
+                    .frame(width: w[i] - (i == 0 ? 0 : 6), alignment: i == 0 ? .leading : .trailing).padding(.trailing, i == 0 ? 0 : 6)
+            }
+            Text(tip ?? "–").font(.system(size: 11)).foregroundColor(tip == nil ? Theme.muted : Theme.fg).fixedSize(horizontal: false, vertical: true)
+                .frame(width: 204, alignment: .leading).padding(.leading, 6)
+        }
+        .padding(.vertical, 5)
+        .background(on ? Theme.surface2 : Color.clear).cornerRadius(6)
+        .contentShape(Rectangle())
+        .onTapGesture { pick = f }
+    }
+}
+
 /// Each discipline's colour, the same as the web's Community cards.
 func discColor(_ k: String) -> Color {
     switch k {
@@ -2154,6 +2220,7 @@ struct LapView: View {
     @State private var car: [String: Any]?
     @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
     @State private var layout: ([Double], [Double])? // the community's layout, the map's road when the lap has no path
+    @State private var coachOff: Set<String> = [] // the kinds of tip an admin turned off for a speed of corner (coach_off)
 
     private func load() async {
         loading = true
@@ -2168,6 +2235,7 @@ struct LapView: View {
             car = a.car
             turns = a.turns
             layout = a.layout
+            coachOff = a.coach?.off ?? []
         } catch {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
@@ -2219,6 +2287,8 @@ struct LapView: View {
                           step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1,
                           pick: $pick)
                     if ref != nil {
+                        let bcs = corners(c, turns: turns, off: coachOff)
+                        if !bcs.isEmpty { BrakeTable(cs: bcs, lapLen: Double(c.speedA.count) * c.step, pick: $pick) }
                         PhaseCoach(c: c, turns: turns)
                     }
                 } else if error == nil {

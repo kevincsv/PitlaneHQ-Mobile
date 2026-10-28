@@ -34,7 +34,7 @@ func lapFlags(_ tr: Trace?) -> String? {
     return s.isEmpty ? nil : s.joined(separator: " · ")
 }
 
-private func fillArgs(_ s0: String, _ args: [String]) -> String {
+func fillArgs(_ s0: String, _ args: [String]) -> String {
     var s = s0
     for (i, a) in args.enumerated() { s = s.replacingOccurrences(of: "{\(i)}", with: a) }
     return s
@@ -182,6 +182,28 @@ struct CornerTipView: View {
     }
 }
 
+/// "Take the plan to the coach overlay", like the web's: the plan's corners become the coach overlay's chosen ones on your
+/// PC for this track (the account's settings, which the PC takes at its next sync), and a short line says so.
+private struct PlanToOverlay: View {
+    @EnvironmentObject var account: Account
+    let turns: [String]
+    let trackId: Int64
+    @State private var busy = false
+    @State private var msg: String?
+    var body: some View {
+        Button {
+            busy = true
+            Task {
+                do { msg = try await account.setCoachTurns(turns, trackId: trackId) ? t("plan_sent", turns.joined(separator: ", ")) : t("plan_no_pc") }
+                catch { msg = (error as? AppError).map { t($0.key) } ?? error.localizedDescription }
+                busy = false
+            }
+        } label: { Text(t("plan_to_overlay")).font(.subheadline).foregroundColor(Theme.accent) }
+        .disabled(busy).padding(.top, 4)
+        if let msg { Text(msg).font(.caption).foregroundColor(Theme.muted) }
+    }
+}
+
 /// One step of the coach's plan: the corner, its phase, what it costs and the tip.
 private struct PlanRow: View {
     let i: Int
@@ -299,6 +321,8 @@ struct CoachBody: View {
                 SectionLabel(text: t("coach_plan").uppercased())
                 Text(t("coach_plan_note")).font(.caption2).foregroundColor(Theme.muted)
                 ForEach(Array(lose.prefix(4).enumerated()), id: \.offset) { i, k in PlanRow(i: i, k: k) }
+                let turns = lose.prefix(4).map { "T\($0.n)" }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+                if !turns.isEmpty { PlanToOverlay(turns: turns, trackId: an.trackId) }
             }
         }
     }
@@ -399,6 +423,12 @@ struct SessionHead: View {
     }
 }
 
+/// The game's official sectors of a lap when they add up to its time, like the web's lap list (lapSecsOf); else none.
+func lapSecs(_ l: CloudLap) -> [Double] {
+    let s = l.sectors
+    return l.time > 0 && s.count >= 2 && s.allSatisfy({ $0 > 0 }) && abs(s.reduce(0, +) - l.time) < 1 ? s : []
+}
+
 /// A session's laps: its best and average, then every lap with its sectors and, in DRINKS mode, its driver (tap one to
 /// analyse it).
 struct SessionLaps: View {
@@ -409,9 +439,11 @@ struct SessionLaps: View {
         let mine = laps.filter { $0.valid && $0.time > 0 && $0.drv.isEmpty }
         let valid = mine.isEmpty ? laps.filter { $0.valid && $0.time > 0 } : mine
         let best = valid.map(\.time).min()
-        let nSec = laps.map(\.sectors.count).max() ?? 0
+        let nSec = laps.map { lapSecs($0).count }.max() ?? 0
         // fastest time of each sector over the valid laps, in purple like in the sim
-        let bestSec: [Double?] = (0..<nSec).map { i in valid.compactMap { i < $0.sectors.count && $0.sectors[i] > 0 ? $0.sectors[i] : nil }.min() }
+        let bestSec: [Double?] = (0..<nSec).map { i in valid.compactMap { lapSecs($0)[safe: i] }.min() }
+        // a sector better than the same sector of your best lap is green, like the web's lap list
+        let bestLapSec: [Double] = valid.min { $0.time < $1.time }.map(lapSecs) ?? []
         // the average of the valid laps: a real figure, not a lap made of the best sectors
         let avg: Double? = valid.isEmpty ? nil : valid.map(\.time).reduce(0, +) / Double(valid.count)
         VStack(alignment: .leading, spacing: 10) {
@@ -428,7 +460,7 @@ struct SessionLaps: View {
                     Text(t("tap_lap")).font(.caption2).foregroundColor(Theme.muted)
                 }
                 ForEach(laps) { lap in
-                    NavigationLink(value: Route.lap(session, lap, laps)) { LapRow(lap: lap, best: best, bestSec: bestSec) }.buttonStyle(.plain)
+                    NavigationLink(value: Route.lap(session, lap, laps)) { LapRow(lap: lap, best: best, bestSec: bestSec, bestLapSec: bestLapSec, nSec: nSec) }.buttonStyle(.plain)
                 }
             }
         }
@@ -439,6 +471,8 @@ private struct LapRow: View {
     let lap: CloudLap
     let best: Double?
     let bestSec: [Double?]
+    let bestLapSec: [Double]
+    let nSec: Int
     var body: some View {
         Panel {
             HStack {
@@ -452,16 +486,25 @@ private struct LapRow: View {
                 Image(systemName: "chevron.right").foregroundColor(Theme.muted)
             }
             if !lap.drv.isEmpty { Text(lap.drv).font(.caption2).foregroundColor(Theme.accent).lineLimit(1) }
-            if !lap.sectors.isEmpty {
+            // one column per sector (S1, S2, S3…), the same place on every lap: purple the session's best, green better than your best lap's
+            if nSec > 0 {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(Array(lap.sectors.enumerated()), id: \.offset) { i, s in
-                            Text("S\(i + 1) " + String(format: "%.3f", s)).font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(lap.valid && i < bestSec.count && bestSec[i] == s ? Theme.purple : Theme.muted)
+                    HStack(spacing: 0) {
+                        ForEach(0..<nSec, id: \.self) { i in
+                            let s: Double? = lapSecs(lap)[safe: i]
+                            Text("S\(i + 1) " + (s.map { String(format: "%.3f", $0) } ?? "–")).font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(secColor(i, s)).frame(width: 84, alignment: .leading)
                         }
                     }
                 }
             }
         }
+    }
+
+    private func secColor(_ i: Int, _ s: Double?) -> Color {
+        guard let s else { return Theme.muted }
+        if lap.valid && i < bestSec.count && bestSec[i] == s { return Theme.purple }
+        if lap.valid && i < bestLapSec.count && bestLapSec.count == lapSecs(lap).count && s < bestLapSec[i] - 1e-4 { return Theme.good }
+        return Theme.muted
     }
 }
