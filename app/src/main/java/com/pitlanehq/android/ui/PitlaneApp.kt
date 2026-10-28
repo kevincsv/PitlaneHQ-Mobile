@@ -2806,12 +2806,14 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                     var rename by remember { mutableStateOf<String?>(null) }
                     var linkGuest by remember { mutableStateOf<String?>(null) }
                     val guestLinks = (u.opt("guestLinked") as? String ?: "").split(",").filter { it.isNotBlank() }.map { it.substringAfter("|") } // "gid|name,…", null when none
+                    // the games whose driver is linked to this account ("iracing,lmu"; a server without it: iRacing's when linked)
+                    val driverGames = (u.opt("driverGames") as? String)?.split(",")?.filter { it.isNotBlank() } ?: if (u.optInt("driverLinked") == 1) listOf("iracing") else emptyList()
                     if (guestLinks.isNotEmpty()) Text(t("admin_guest_linked", guestLinks.joinToString(", ")), color = Accent, fontSize = 12.sp)
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (u.optInt("verified") != 1) TextButton({ vm.adminAccount(id, "verify") }) { Text(t("admin_verify"), color = Accent) }
                         if (u.optInt("twoFactor") == 1) TextButton({ vm.adminAccount(id, "2fa-off") }) { Text(t("admin_2fa_off"), color = Accent) }
                         TextButton({ vm.adminAccount(id, "signout") }) { Text(t("admin_signout"), color = Accent) }
-                        if (u.optInt("driverLinked") == 1) TextButton({ vm.adminAccount(id, "unlink-driver") }) { Text(t("admin_unlink_driver"), color = Accent) }
+                        driverGames.forEach { g -> TextButton({ vm.adminAccount(id, "unlink-driver", g) }) { Text(t(if (g == "lmu") "admin_unlink_driver_lmu" else "admin_unlink_driver"), color = Accent) } }
                         TextButton({ rename = u.optString("display") }) { Text(t("admin_rename"), color = Accent) }
                         TextButton({ vm.adminUnlock("account", id, "users") }) { Text(t("admin_unblock"), color = Accent) }
                         TextButton({ linkGuest = "" }) { Text(t("admin_link_guest"), color = Accent) }

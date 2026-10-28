@@ -964,7 +964,7 @@ class AccountRepository(context: Context) {
     fun adminSince(id: String, since: Long?) { call("POST", "/community/admin/since", JSONObject().put("id", id).put("since", since ?: JSONObject.NULL)) }
     /** The admin tools: "models" (rebuild the coach models) or "unlock" (unblock the sign-ins). */
     fun adminTool(tool: String) { call("POST", "/community/admin/$tool", if (tool == "unlock") JSONObject().put("all", true) else JSONObject()) }
-    /** Help with an account: "verify", "2fa-off", "signout", "unlink-driver" or "rename" (with the new public name). */
+    /** Help with an account: "verify", "2fa-off", "signout", "unlink-driver" (with the game) or "rename" (with the new public name). */
     fun adminAccount(id: String, act: String, name: String? = null) { call("POST", "/community/admin/users/" + idPath(id) + "/" + act, JSONObject().apply { if (name != null) put("name", name) }) }
     /** Unblock one entry ("k") or one account's sign-in ("account"). */
     fun adminUnlock(key: String, value: String) { call("POST", "/community/admin/unlock", JSONObject().put(key, value)) }

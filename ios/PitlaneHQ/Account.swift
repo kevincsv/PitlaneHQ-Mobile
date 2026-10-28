@@ -1191,7 +1191,7 @@ final class Account: ObservableObject {
     func adminSince(_ id: String, _ since: Double?) async throws { _ = try await call("POST", "/community/admin/since", body: ["id": id, "since": since.map { $0 as Any } ?? NSNull()]) }
     /// the admin tools: "models" (rebuild the coach models) or "unlock" (unblock the sign-ins)
     func adminTool(_ tool: String) async throws { _ = try await call("POST", "/community/admin/" + tool, body: tool == "unlock" ? (["all": true] as [String: Any]) : [:]) }
-    /// help with an account: "verify", "2fa-off", "signout", "unlink-driver" or "rename" (with the new public name)
+    /// help with an account: "verify", "2fa-off", "signout", "unlink-driver" (with the game) or "rename" (with the new public name)
     func adminAccount(_ id: String, _ act: String, name: String? = nil) async throws { _ = try await call("POST", "/community/admin/users/" + idPath(id) + "/" + act, body: name.map { ["name": $0] as [String: Any] } ?? [:]) }
     /// unblock one entry ("k") or one account's sign-in ("account")
     func adminUnlock(_ key: String, _ value: String) async throws { _ = try await call("POST", "/community/admin/unlock", body: [key: value]) }

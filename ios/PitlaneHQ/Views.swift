@@ -4247,6 +4247,8 @@ struct AdminView: View {
         // the DRINKS drivers joined to this account ("gid|name,…")
         let guestLinks: [String] = str("guestLinked").split(separator: ",").map { String($0.split(separator: "|").last ?? "") }.filter { !$0.isEmpty }
         let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
+        // the games whose driver is linked to this account ("iracing,lmu"; a server without it: iRacing's when linked)
+        let driverGames: [String] = x["driverGames"] is String ? str("driverGames").split(separator: ",").map(String.init).filter { !$0.isEmpty } : (int("driverLinked") == 1 ? ["iracing"] : [])
         let ms0 = (x["memberSince"] as? NSNumber)?.doubleValue ?? 0, ms = ms0 > 0 ? ms0 : ((x["created"] as? NSNumber)?.doubleValue ?? 0)
         let name: String = str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")
         Text(name).font(.subheadline.bold()).foregroundColor(Theme.fg)
@@ -4259,7 +4261,7 @@ struct AdminView: View {
                 if int("verified") != 1 { Button(t("admin_verify")) { Task { try? await account.adminAccount(str("id"), "verify"); await load() } } }
                 if int("twoFactor") == 1 { Button(t("admin_2fa_off")) { Task { try? await account.adminAccount(str("id"), "2fa-off"); await load() } } }
                 Button(t("admin_signout")) { Task { try? await account.adminAccount(str("id"), "signout"); await load() } }
-                if int("driverLinked") == 1 { Button(t("admin_unlink_driver")) { Task { try? await account.adminAccount(str("id"), "unlink-driver"); await load() } } }
+                ForEach(driverGames, id: \.self) { g in Button(t(g == "lmu" ? "admin_unlink_driver_lmu" : "admin_unlink_driver")) { Task { try? await account.adminAccount(str("id"), "unlink-driver", name: g); await load() } } }
                 Button(t("admin_rename")) { newName = str("display"); renaming = (str("id"), str("display")) }
                 Button(t("admin_unblock")) { Task { try? await account.adminUnlock("account", str("id")); await load() } }
                 Button(t("admin_link_guest")) { linkName = ""; linking = str("id") }

@@ -19,6 +19,8 @@
   so My sessions, Laps and the Coach show "vs AI" on it like the PC and the web.
 - The admin panel's account card has "Link a DRINKS driver" (the driver's name; `adminAccount(id, "link-guest", name)`)
   and "Unlink DRINKS driver …" for each one joined (`guestLinked` in the accounts list, "gid|name,…").
+  Its own driver is linked per game: "Unlink iRacing driver" and "Unlink Le Mans Ultimate driver", one for each game
+  linked (`driverGames` in the accounts list, "iracing,lmu"; `adminAccount(id, "unlink-driver", game)`).
 - This repository is only the Android app (`app/`) and the iOS app (`ios/`). The PC app and the
   web/server (Cloudflare) live in the Pitwall-test repository; the apps talk to that server and
   must keep its protocol: account keys (PBKDF2 600 000 + HKDF, AES-GCM with "pitlanehq-v1"),
