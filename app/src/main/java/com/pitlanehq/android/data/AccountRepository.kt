@@ -243,15 +243,56 @@ class AccountRepository(context: Context) {
             .putBoolean("verified", j.optBoolean("verified", true))
             .putBoolean("admin", j.optBoolean("admin", false))
             .putBoolean("twoFactor", j.optBoolean("twoFactor", false))
+            .putBoolean("escrow", j.optBoolean("escrow", false))
             .apply()
+        escrowTried = false
         return runCatching { sync() }.getOrElse { storedState() }
+    }
+
+    // the data key goes to the server once (POST /account/escrow, with the account's email) after it opened the account's
+    // copy, so a sign-in with Steam or Discord needs no password. Tried once while the app runs, while the server keeps none
+    @Volatile private var escrowTried = false
+    private fun escrowUp() {
+        if (prefs.getBoolean("escrow", false) || escrowTried) return
+        escrowTried = true
+        val key = runCatching { dataKey() }.getOrNull()?.takeIf { it.size == 32 } ?: return
+        val body = JSONObject().put("key", key.joinToString("") { "%02x".format(it) })
+        email().takeIf { it.isNotEmpty() }?.let { body.put("email", it) }
+        runCatching { call("POST", "/account/escrow", body) }.onSuccess { prefs.edit().putBoolean("escrow", true).apply() }
+    }
+
+    /** The server's copy of the data key in a sign-in's answer ([j], dataKey), when it opens the account's data (or there
+     *  is none yet). A check that cannot run is tried again a moment later; one that never runs leaves it not verified
+     *  (null: the password once, as without a copy). */
+    private fun escrowKey(j: JSONObject): ByteArray? {
+        val hex = j.optString("dataKey", "")
+        if (!Regex("^[0-9a-f]{64}$").matches(hex)) return null
+        val key = ByteArray(32) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
+        val tok = j.optString("token", "").ifEmpty { return null }
+        repeat(3) { n ->
+            if (n > 0) Thread.sleep(1000)
+            val blob = try { JSONObject(call("GET", "/account/sync", bearer = tok)).optString("blob", "") } catch (e: Exception) { return@repeat }
+            return if (blob.isEmpty() || runCatching { Crypto.open(key, blob, Crypto.ACCOUNT_AAD) }.isSuccess) key else null
+        }
+        return null
+    }
+
+    /** Where a sign-in with Steam or Discord goes on: "code" (the authenticator's code), "key" (the password once) or "in"
+     *  (signed in with the server's copy of the data key, [state]). */
+    class Social(val step: String, val state: AccountState? = null)
+
+    // signed in by Steam or Discord: with the server's copy of the key when it opens the account, else the password comes next
+    private fun socialSigned(j: JSONObject): Social {
+        val key = escrowKey(j) ?: run { socialSession = j; return Social("key") }
+        socialSession = null
+        return Social("in", signedInKey(j.put("escrow", true), j.optString("email", "").trim().lowercase(), key))
     }
 
     // ---------- Sign in with Steam or Discord (steam.js, discord.js) ----------
     // The browser goes to Steam or Discord and comes back to this app by its own address (pitlanehq://steam?state=…&…,
     // pitlanehq://discord?…). The code each start gives stays here, in memory, by its state: a grant is only good with
-    // it, so another app that catches the address can do nothing. Steam or Discord says who; the data key still comes
-    // from the password, asked once on this phone (POST /account/key).
+    // it, so another app that catches the address can do nothing. Steam or Discord says who; the data key comes from the
+    // server's copy (dataKey), or from the password once on this phone when it has none (POST /account/key).
     /** A sign-in ("login") or a link ("link") under way with Steam or Discord ([prov]), and the code its grant needs. */
     class AuthStart(val prov: String, val kind: String, val code: String)
     private val starts = java.util.concurrent.ConcurrentHashMap<String, AuthStart>()
@@ -280,22 +321,22 @@ class AccountRepository(context: Context) {
     /** The start the browser came back for (by its state, used once), or null: another start, or one this app forgot. */
     fun takeStart(state: String, prov: String): AuthStart? = starts[state]?.takeIf { it.prov == prov }?.also { starts.remove(state) }
 
-    /** The grant of a sign-in: "key" (the password comes next) or "code" (the authenticator's code first). */
-    fun socialLogin(prov: String, grant: String, code: String, lang: String): String {
+    /** The grant of a sign-in: signed in, the password next, or the authenticator's code first ([Social]). */
+    fun socialLogin(prov: String, grant: String, code: String, lang: String): Social {
         val j = JSONObject(call("POST", "/account/login/$prov", JSONObject().put("grant", grant).put("code", code).put("device", "Android").put("lang", lang), auth = false))
-        if (j.optBoolean("twoFactor") && j.has("pending")) { socialPending = j.getString("pending"); return "code" }
-        socialSession = j
-        return "key"
+        if (j.optBoolean("twoFactor") && j.has("pending")) { socialPending = j.getString("pending"); return Social("code") }
+        return socialSigned(j)
     }
 
     /** A sign-up grant came back: its code stays for the new account's form. */
     fun keepSignup(code: String) { signupCode = code }
 
-    /** Two-step sign-in on: the authenticator's code, then the password. */
-    fun socialLoginCode(code: String) {
+    /** Two-step sign-in on: the authenticator's code, then signed in (or the password, without the server's copy of the key). */
+    fun socialLoginCode(code: String): Social {
         val p = socialPending ?: throw AppError("sign_in_again")
-        socialSession = JSONObject(call("POST", "/account/login/2fa", JSONObject().put("pending", p).put("code", code.trim()), auth = false))
+        val j = JSONObject(call("POST", "/account/login/2fa", JSONObject().put("pending", p).put("code", code.trim()), auth = false))
         socialPending = null
+        return socialSigned(j)
     }
 
     /** The password once on this phone: the server hands the data key wrapped with it, and it opens here. */
@@ -309,7 +350,8 @@ class AccountRepository(context: Context) {
             catch (e: AppError) { throw if (e.message == "the password is wrong") AppError("wrong_email_pw") else e }
         val key = runCatching { Crypto.open(k.wrap, r.getString("wrappedKey"), Crypto.ACCOUNT_AAD) }.getOrElse { throw AppError("wrong_email_pw") }
         socialSession = null
-        return signedInKey(s, email, key)
+        return signedInKey(s.put("escrow", false), email, key) // the server's copy (if any) did not open the account: this key goes up
+
     }
 
     /** A sign-in left halfway: its session (if any) is closed on the server. */
@@ -394,6 +436,7 @@ class AccountRepository(context: Context) {
         var files = 0
         if (blob.isNotEmpty()) {
             val all = JSONObject(String(Crypto.gunzip(Crypto.open(dataKey(), blob, Crypto.ACCOUNT_AAD))))
+            escrowUp()
             files = all.length()
             // Go writes the files as base64 strings
             // a bundle without races.json has no races: never keep an older copy of them
@@ -407,6 +450,7 @@ class AccountRepository(context: Context) {
             // an account with nothing in it yet: no races and no ratings from an earlier copy
             save("races", "[]")
             save("ratings", "{}")
+            escrowUp()
         }
         prefs.edit()
             .putInt("syncedFiles", files)
@@ -418,6 +462,8 @@ class AccountRepository(context: Context) {
             prefs.edit().putString("acctId", me.optString("id", "")).putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false))
                 .putBoolean("twoFactor", me.optBoolean("twoFactor", false)).putInt("recoveryLeft", me.optInt("recoveryLeft", 0))
                 .putBoolean("supporter", me.optBoolean("supporter", false)).putBoolean("supporterHidden", me.optBoolean("supporterHidden", false)).apply()
+            // only "none kept" is taken from the server: a copy that is not this phone's key must not stop this key going up
+            if (me.has("escrow") && !me.optBoolean("escrow")) prefs.edit().putBoolean("escrow", false).apply()
         }
         return storedState()
     }

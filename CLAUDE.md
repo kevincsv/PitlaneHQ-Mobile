@@ -24,7 +24,11 @@
 - This repository is only the Android app (`app/`) and the iOS app (`ios/`). The PC app and the
   web/server (Cloudflare) live in the Pitwall-test repository; the apps talk to that server and
   must keep its protocol: account keys (PBKDF2 600 000 + HKDF, AES-GCM with "pitlanehq-v1"),
-  live relay (`/live`, "e:" messages with "pitlanehq-live-v1", gzip JSON [event, data]).
+  live relay (`/live`, "e:" messages with "pitlanehq-live-v1", gzip JSON [event, data]). The data key also goes once to
+  the server (POST /account/escrow with the account's email, `escrowUp`, after a sync that opened the account), which keeps
+  it sealed with its own secret so Steam and Discord sign in without the password (the owner's choice): their answer
+  brings `dataKey` and `email`; the password is asked (`needKey`, POST /account/key) only when the server keeps none or its
+  copy does not open the account, and then this key goes up instead.
 - Android and iOS stay the same app: same screens, same features, same wording, and the PC's: Telemetry has the PC's
   Telemetry, Standings and Tyres (`Live` in PitlaneApp.kt, `LiveTabs.swift`, fed by `LiveField`); Analysis has Laps,
   Coach, My sessions and My races (`Analysis` in PitlaneApp.kt, `AnalysisView` and `Analysis.swift`), lap B is your own

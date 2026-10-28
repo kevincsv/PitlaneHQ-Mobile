@@ -494,13 +494,55 @@ final class Account: ObservableObject {
         defaults.set(display, forKey: "display")
         defaults.set(verified, forKey: "verified")
         defaults.set(twoFactor, forKey: "twoFactor")
+        defaults.set(j["escrow"] as? Bool ?? false, forKey: "escrow")
+        escrowTried = false
         signedIn = true
+    }
+
+    // the data key goes to the server once (POST /account/escrow, with the account's email) after it opened the account's
+    // copy, so a sign-in with Steam or Discord needs no password. Tried once while the app runs, while the server keeps none
+    private var escrowTried = false
+    private func escrowUp() async {
+        guard !defaults.bool(forKey: "escrow"), !escrowTried, let key = dataKey, key.count == 32 else { return }
+        escrowTried = true
+        var body: [String: Any] = ["key": key.map { String(format: "%02x", $0) }.joined()]
+        if !email.isEmpty { body["email"] = email }
+        if (try? await call("POST", "/account/escrow", body: body)) != nil { defaults.set(true, forKey: "escrow") }
+    }
+
+    /// The server's copy of the data key in a sign-in's answer (dataKey), when it opens the account's data (or there is
+    /// none yet). A check that cannot run is tried again a moment later; one that never runs leaves it not verified (nil:
+    /// the password once, as without a copy).
+    private func escrowKey(_ j: [String: Any]) async -> Data? {
+        let hex = str(j["dataKey"])
+        guard hex.count == 64, hex.allSatisfy({ "0123456789abcdef".contains($0) }), let tok = j["token"] as? String else { return nil }
+        let chars = Array(hex)
+        let key = Data((0..<32).map { UInt8(String(chars[$0 * 2...$0 * 2 + 1]), radix: 16)! })
+        for n in 0..<3 {
+            if n > 0 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+            guard let d = try? await call("GET", "/account/sync", bearer: tok), let o = try? obj(d) else { continue }
+            let blob = str(o["blob"])
+            return blob.isEmpty || (try? PLCrypto.open(key: key, sealed: blob, aad: PLCrypto.accountAAD)) != nil ? key : nil
+        }
+        return nil
+    }
+
+    /// Signed in by Steam or Discord: with the server's copy of the key when it opens the account, else the password comes next.
+    private func socialSigned(_ r: [String: Any]) async throws {
+        guard let key = await escrowKey(r) else { socialSession = r; socialNeedKey = true; return }
+        var j = r
+        j["escrow"] = true
+        try finishLogin(j, email: str(r["email"]).trimmingCharacters(in: .whitespaces).lowercased(), key: key)
+        socialSession = nil
+        socialNeedKey = false
+        await sync()
     }
 
     // ---------- Sign in with Steam or Discord (steam.js, discord.js), and linking them ----------
     // The sign-in sheet goes to Steam or Discord and closes on this app's own address (pitlanehq://steam?state=…&…,
     // pitlanehq://discord?…). The code each start gives stays here, in memory, with its state: a grant is only good with
-    // it. Steam or Discord says who; the data key still comes from the password, asked once on this phone (POST /account/key).
+    // it. Steam or Discord says who; the data key comes from the server's copy (dataKey), or from the password once on this
+    // phone when it has none (POST /account/key).
     private var signupCode: String?               // the code a sign-up grant (sid) is redeemed with
     private var socialPending: String?            // the authenticator's code comes next (two-step sign-in on)
     private var socialSession: [String: Any]?     // signed in by Steam or Discord, waiting for the password
@@ -551,24 +593,23 @@ final class Account: ObservableObject {
             guard !g.isEmpty, g != "0" else { socialError = prov + "_failed"; return }
             let r = try obj(await call("POST", "/account/login/\(prov)", body: ["grant": g, "code": code, "device": "iPhone", "lang": I18n.shared.lang], auth: false))
             if r["twoFactor"] as? Bool == true, let p = r["pending"] as? String { socialPending = p; socialNeedCode = true; return }
-            socialSession = r
-            socialNeedKey = true
+            try await socialSigned(r)
         } catch {
             socialError = errKey(error)
         }
     }
 
-    /// Two-step sign-in on: the authenticator's code, then the password.
+    /// Two-step sign-in on: the authenticator's code, then signed in (or the password, without the server's copy of the key).
     func socialLoginCode(_ code: String) async {
         guard let p = socialPending else { socialCancel(); socialError = "sign_in_again"; return }
         socialBusy = true
         socialError = nil
         defer { socialBusy = false }
         do {
-            socialSession = try obj(await call("POST", "/account/login/2fa", body: ["pending": p, "code": code.trimmingCharacters(in: .whitespaces)], auth: false))
+            let r = try obj(await call("POST", "/account/login/2fa", body: ["pending": p, "code": code.trimmingCharacters(in: .whitespaces)], auth: false))
             socialPending = nil
             socialNeedCode = false
-            socialNeedKey = true
+            try await socialSigned(r)
         } catch { socialError = errKey(error) }
     }
 
@@ -587,7 +628,9 @@ final class Account: ObservableObject {
             do { r = try obj(await call("POST", "/account/key", body: ["auth": keys.auth], bearer: tok)) }
             catch let x as AppError where x.key == "the password is wrong" { throw AppError(key: "wrong_email_pw") }
             guard let wrapped = r["wrappedKey"] as? String, let key = try? PLCrypto.open(key: keys.wrap, sealed: wrapped, aad: PLCrypto.accountAAD) else { throw AppError(key: "wrong_email_pw") }
-            try finishLogin(s, email: em, key: key)
+            var j = s
+            j["escrow"] = false // the server's copy (if any) did not open the account: this key goes up
+            try finishLogin(j, email: em, key: key)
             socialSession = nil
             socialNeedKey = false
             await sync()
@@ -728,10 +771,12 @@ final class Account: ObservableObject {
                 save("drivers", (all["drivers.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
                 save("notes", (all["notes.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
                 save("ratings", (all["ratings.json"] as? String).flatMap { Data(base64Encoded: $0) } ?? Data("{}".utf8))
+                await escrowUp()
             } else if (j["blob"] as? String ?? "").isEmpty {
                 // an account with nothing in it yet: no races and no ratings from an earlier copy
                 save("races", Data("[]".utf8))
                 save("ratings", Data("{}".utf8))
+                await escrowUp()
             }
             syncedFiles = files
             syncVersion = int(j["version"])
@@ -755,6 +800,8 @@ final class Account: ObservableObject {
                 defaults.set(verified, forKey: "verified")
                 defaults.set(twoFactor, forKey: "twoFactor")
                 defaults.set(recoveryLeft, forKey: "recoveryLeft")
+                // only "none kept" is taken from the server: a copy that is not this phone's key must not stop this key going up
+                if let e = me["escrow"] as? Bool, !e { defaults.set(false, forKey: "escrow") }
             }
             // a new version of the bundle: the races held here are dropped and read again from it (the ratings are
             // read from it each time a screen draws them)
