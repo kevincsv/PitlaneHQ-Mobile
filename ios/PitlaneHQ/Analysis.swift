@@ -34,7 +34,7 @@ struct LapAnalysis {
 /// What a lap was driven in, from its trace's flags, like the web's lap list ("traffic · wet track"); nil when nothing to say.
 func lapFlags(_ tr: Trace?) -> String? {
     let s: [String] = (tr?.f ?? []).compactMap { f in
-        switch f { case "traffic": return t("lap_traffic"); case "cold": return t("lap_cold"); case "wet": return t("lap_wet"); default: return nil }
+        switch f { case "traffic": return t("lap_traffic"); case "cold": return t("lap_cold"); case "wet": return t("lap_wet"); case "damp": return t("lap_damp"); case "rain": return t("lap_rain"); default: return nil }
     }
     return s.isEmpty ? nil : s.joined(separator: " · ")
 }

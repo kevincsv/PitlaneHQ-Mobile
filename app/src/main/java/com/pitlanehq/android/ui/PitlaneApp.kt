@@ -1324,7 +1324,7 @@ private fun LazyListScope.sectorItems(an: LapAnalysis) {
 
 /** What a lap was driven in, from its trace's flags, like the web's lap list ("traffic · wet track"); null when nothing to say. */
 private fun lapFlags(tr: Trace?): String? =
-    tr?.f?.mapNotNull { when (it) { "traffic" -> t("lap_traffic"); "cold" -> t("lap_cold"); "wet" -> t("lap_wet"); else -> null } }?.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+    tr?.f?.mapNotNull { when (it) { "traffic" -> t("lap_traffic"); "cold" -> t("lap_cold"); "wet" -> t("lap_wet"); "damp" -> t("lap_damp"); "rain" -> t("lap_rain"); else -> null } }?.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 
 /** The coach's top card: the gap to the reference, both times and what to work on first. */
 @Composable
@@ -1729,6 +1729,23 @@ private fun LicBadge(k: String?, sr: String? = null) {
 private fun MyBadges(a: AccountState) {
     if (a.admin) Status("ADMIN", Accent)
     if (a.supporter && !a.supporterHidden) SupBadge()
+}
+
+/** What a lap was driven in (the server's wet bits: 1 rain, 2 a wet track, 4 a damp one): small badges beside its time. */
+@Composable
+private fun WetBadges(w: Int) {
+    if (w and 7 == 0) return
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (w and 1 != 0) WetBadge("☂ " + t("badge_rain"), Color(0xFFB9D9FF), Color(0x224F9CFF))
+        if (w and 2 != 0) WetBadge("💧 " + t("badge_wet"), Blue, Color(0x334F9CFF))
+        else if (w and 4 != 0) WetBadge("💧 " + t("badge_damp"), Color(0xFF9FB4CC), Color(0x164F9CFF))
+    }
+}
+
+@Composable
+private fun WetBadge(label: String, fg: Color, bg: Color) {
+    Text(label, color = fg, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(bg).padding(horizontal = 6.dp, vertical = 1.dp))
 }
 
 /** The supporter badge: people who donate, given by hand by the owner of Pitlane HQ. */
@@ -2389,6 +2406,7 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        WetBadges(x.wet)
                         Text(name(x.alias) + (if (x.mine) " · " + t("you_badge") else ""), color = if (x.mine) Accent else Fg, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
                     }
                 }
@@ -2433,7 +2451,10 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
                         Text(x.car, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
-                    Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        WetBadges(x.wet)
+                    }
                 }
             }
         }
@@ -2490,14 +2511,21 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.combo ?: return
     val b by vm.board.collectAsState()
     val a by vm.account.collectAsState()
+    val whole by vm.boardWhole.collectAsState()
+    val cls by vm.boardCls.collectAsState()
     val all = b.data ?: emptyList()
     val list = all
     val top = all.firstOrNull()?.time
     // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
     val mineAll = all.indexOfFirst { it.mine }.let { i -> if (i >= 0) i else all.indexOfFirst { a.display.isNotBlank() && it.alias.equals(a.display, true) } }
-    Screen(x.track, x.car, back = { nav.popBackStack() }) {
+    Screen(x.track, if (vm.game == "lmu" && whole && cls != null) lmuClass(cls, x.car) else x.car, back = { nav.popBackStack() }) {
         item {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                // Le Mans Ultimate: this car's board, or each driver's best of any car of its class here
+                if (vm.game == "lmu" && cls != null) Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Chip(t("board_this_car"), !whole) { vm.setBoardWhole(x, false) }
+                    Chip(t("board_whole_class"), whole) { vm.setBoardWhole(x, true) }
+                }
                 TextButton({ vm.openTrack(x.trackId, x.track); nav.navigate("track") }) { Text(t("track_page"), color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
             }
         }
@@ -2527,11 +2555,13 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             if (lap.sup) SupBadge()
                             if (lap.mine) Text(t("you_badge"), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
+                        if (whole && !lap.car.isNullOrBlank()) Text(lap.car, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
                         if (!lap.hasTrace) Text(t("trace_not_shared"), color = Muted, fontSize = 10.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(lapTime(lap.time), color = if (i == 0) Purple else Fg, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        WetBadges(lap.wet)
                         if (top != null && i > 0) Text("+%.3f".format(lap.time - top), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     }
                 }

@@ -545,7 +545,25 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun loadBests() = load(bests) { val g = repo.bests(); allBests = g.data; Got(g.data.filter { it.game == game }, g.stale) }
     fun loadLaps(id: String) { laps.value = Loadable(); load(laps) { repo.laps(id) } }
     fun loadCombos() = load(combos) { repo.combos() }
-    fun loadBoard(c: Combo) { board.value = Loadable(); load(board) { repo.leaderboard(c.trackId, c.carId) } }
+    // Le Mans Ultimate: "This car / Whole class" (each driver's best of any car of this car's class here), kept while the app runs
+    val boardWhole = MutableStateFlow(false)
+    val boardCls = MutableStateFlow<String?>(null)
+    fun loadBoard(c: Combo) {
+        val lmu = game == "lmu"
+        board.value = Loadable(); boardCls.value = if (lmu) repo.boardClass(c.trackId, c.carId) else null
+        val whole = boardWhole.value
+        load(board) {
+            val known = if (lmu) repo.boardClass(c.trackId, c.carId) else null
+            if (whole && known != null) repo.classBoard(c.trackId, known)
+            else {
+                val g = repo.leaderboard(c.trackId, c.carId)
+                val cls = if (lmu) repo.boardClass(c.trackId, c.carId) else null
+                boardCls.value = cls
+                if (whole && cls != null) repo.classBoard(c.trackId, cls) else g
+            }
+        }
+    }
+    fun setBoardWhole(c: Combo, on: Boolean) { if (boardWhole.value == on) return; boardWhole.value = on; loadBoard(c) }
     // Community's recent records, and the track page (in development) of the track chosen
     val records = MutableStateFlow(Loadable<List<RecordItem>>())
     fun loadRecords() = load(records) { repo.records() }

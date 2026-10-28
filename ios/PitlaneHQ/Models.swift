@@ -161,6 +161,8 @@ struct RecordItem: Identifiable, Hashable {
     let prevTime: Double?
     let prevAlias: String?
     var cls: String? = nil
+    /// what the lap was driven in, as bits: 1 rain, 2 a wet track, 4 a damp one (the server's wet)
+    var wet: Int = 0
     var combo: Combo { Combo(trackId: trackId, track: track, carId: carId, car: car, laps: n, best: time, cat: cat, cls: cls) }
 }
 
@@ -197,6 +199,10 @@ struct CommunityLap: Identifiable, Hashable {
     var sup: Bool = false
     /// a rival of a race someone drove
     var field: Bool = false
+    /// the lap's car (a Le Mans Ultimate class board mixes the class's cars)
+    var car: String? = nil
+    /// what the lap was driven in, as bits: 1 rain, 2 a wet track, 4 a damp one (the server's wet)
+    var wet: Int = 0
 }
 
 /// A driver's profile: their nickname (never their iRacing name), license classes, recent races and laps on the leaderboards.

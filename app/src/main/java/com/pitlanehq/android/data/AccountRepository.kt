@@ -977,7 +977,7 @@ class AccountRepository(context: Context) {
         val p = r.optJSONObject("prev")
         return RecordItem(r.optString("id"), if (r.has("trackId")) r.optLong("trackId") else trackId, r.optStr("track") ?: track, r.optLong("carId"), r.optStr("car") ?: "", r.optStr("cat"),
             r.optDouble("time"), r.optLong("created"), r.optStr("alias") ?: "Driver", r.optInt("n"), r.optBoolean("hasTrace"), r.optBoolean("mine"), r.optBoolean("prof"), r.optBoolean("sup"),
-            p?.optDouble("time")?.takeIf { it > 0 }, p?.optStr("alias"), r.clsOf())
+            p?.optDouble("time")?.takeIf { it > 0 }, p?.optStr("alias"), r.clsOf(), r.optInt("wet"))
     }
 
     /** One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it. */
@@ -995,17 +995,32 @@ class AccountRepository(context: Context) {
         return Got(TrackPage(trackId, name, j.optInt("drivers"), j.optInt("laps"), lay, turns, (0 until cars.length()).map { recordOf(cars.getJSONObject(it), trackId, name) }), g.stale)
     }
 
+    /** Le Mans Ultimate's class of each car board the server named (its cls), for "This car / Whole class". */
+    private val boardCls = java.util.concurrent.ConcurrentHashMap<String, String>()
+    fun boardClass(trackId: Long, carId: Long): String? = boardCls["$game|$trackId|$carId"]
+
     /** One line per driver: their best lap. */
     fun leaderboard(trackId: Long, carId: Long): Got<List<CommunityLap>> {
         if (demo) return Got(Demo.board(trackId, carId))
         val g = cachedGet("/community/laps?game=$game&trackId=$trackId&carId=$carId")
+        JSONObject(g.data).optStr("cls")?.let { boardCls["$game|$trackId|$carId"] = it }
+        return boardOf(g)
+    }
+
+    /** Le Mans Ultimate's class board: each driver's best lap of any car of the class on the track, with its car. */
+    fun classBoard(trackId: Long, cls: String): Got<List<CommunityLap>> {
+        if (demo) return Got(emptyList())
+        return boardOf(cachedGet("/community/laps?game=$game&trackId=$trackId&cls=" + URLEncoder.encode(cls, "UTF-8")))
+    }
+
+    private fun boardOf(g: Got<String>): Got<List<CommunityLap>> {
         val a = JSONObject(g.data).optJSONArray("laps") ?: JSONArray()
         val seen = HashSet<String>()
         val out = ArrayList<CommunityLap>()
         for (i in 0 until a.length()) {
             val l = a.getJSONObject(i)
             val lap = CommunityLap(l.optString("id"), l.optString("alias", "Driver"), l.optDouble("time"), l.optLong("created"), l.optBoolean("hasTrace"), doubles(l.optJSONArray("sectors")), l.optBoolean("mine"),
-                l.optStr("lic"), l.optBoolean("prof"), l.optBoolean("sup"), l.optBoolean("field"))
+                l.optStr("lic"), l.optBoolean("prof"), l.optBoolean("sup"), l.optBoolean("field"), l.optStr("car"), l.optInt("wet"))
             if (lap.alias != "Anonymous" && !seen.add(lap.alias)) continue
             out.add(lap)
         }

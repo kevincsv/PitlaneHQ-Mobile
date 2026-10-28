@@ -88,6 +88,13 @@
   to the coach overlay" (`setCoachTurns`: the turns of the plan's first four steps, the module's `turns` on each
   `PlanItem` like the web's `planTurns`, else the fallback's four corners that lose the most, as `ui.coach.turns` with the track as `turnsTrack` in the account's settings.json, only when a PC has
   synced it and never in demo data; an error says its translated text).
+- A Le Mans Ultimate leaderboard has "This car / Whole class" like the PC and the web (`boardWhole`/`boardCls` in the
+  view model and `Account`, `classBoard`: GET /community/laps?cls= with the class the car board's answer names): the
+  class view is each driver's best lap of any car of that class on the track, with their car; the per-car boards, the
+  coach and the reference laps stay per car. iRacing has none. Every leaderboard, record and track page row shows what
+  its lap was driven in beside the time (`WetBadges`, the server's `wet` bits: 1 rain "Rain", 2 a wet track "Wet", 4 a
+  damp one "Damp"; rain goes with either), in every game; the lap labels say "damp track" and "rain" too. Only "wet"
+  keeps a lap from the model.
 - Track notes (`notes.json` in the account, the same the PC and the web keep): the track page shows the general note
   and the corner notes and writes the general one (`TrackNotesPanel`, `setTrackNote`: the bundle is read, only
   notes.json changes, sealed with the account's key, like driver notes); Account → Track notes lists them all. A

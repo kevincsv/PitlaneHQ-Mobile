@@ -1138,7 +1138,7 @@ final class Account: ObservableObject {
                           carId: (r["carId"] as? NSNumber)?.int64Value ?? 0, car: str(r["car"]), cat: r["cat"] as? String,
                           time: num(r["time"]) ?? 0, created: num(r["created"]) ?? 0, alias: (r["alias"] as? String) ?? "Driver", n: int(r["n"]),
                           hasTrace: r["hasTrace"] as? Bool ?? false, mine: r["mine"] as? Bool ?? false, prof: r["prof"] as? Bool ?? false, sup: r["sup"] as? Bool ?? false,
-                          prevTime: p.flatMap { pos($0["time"]) }, prevAlias: p?["alias"] as? String, cls: clsOf(r))
+                          prevTime: p.flatMap { pos($0["time"]) }, prevAlias: p?["alias"] as? String, cls: clsOf(r), wet: int(r["wet"]))
     }
 
     /// One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it.
@@ -1313,9 +1313,34 @@ final class Account: ObservableObject {
         }
         return pts.count >= 10 ? PitLane(n: n, pts: pts) : nil
     }
+    /// Le Mans Ultimate's class of each car board the server named (its cls), for "This car / Whole class"
+    private var boardCls: [String: String] = [:]
+    /// "Whole class" chosen on a Le Mans Ultimate leaderboard, kept while the app runs
+    @Published var boardWhole = false
+    func boardClass(trackId: Int64, carId: Int64) -> String? { game == "lmu" ? boardCls["\(game)|\(trackId)|\(carId)"] : nil }
+
+    /// A leaderboard as chosen: the car's, or in Le Mans Ultimate with "Whole class" each driver's best of any car of its class here.
+    func board(trackId: Int64, carId: Int64) async throws -> Got<[CommunityLap]> {
+        if boardWhole, let c = boardClass(trackId: trackId, carId: carId) { return try await classBoard(trackId: trackId, cls: c) }
+        let g = try await leaderboard(trackId: trackId, carId: carId)
+        if boardWhole, let c = boardClass(trackId: trackId, carId: carId) { return try await classBoard(trackId: trackId, cls: c) }
+        return g
+    }
+
+    /// Le Mans Ultimate's class board: each driver's best lap of any car of the class on the track, with its car.
+    func classBoard(trackId: Int64, cls: String) async throws -> Got<[CommunityLap]> {
+        if demo { return Got(data: []) }
+        return boardOf(try await cachedGet("/community/laps?game=\(game)&trackId=\(trackId)&cls=" + (cls.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? cls)))
+    }
+
     func leaderboard(trackId: Int64, carId: Int64) async throws -> Got<[CommunityLap]> {
         if demo { return Got(data: Demo.board(trackId: trackId, carId: carId)) }
         let g = try await cachedGet("/community/laps?game=\(game)&trackId=\(trackId)&carId=\(carId)")
+        if let c = (g.data as? [String: Any])?["cls"] as? String, !c.isEmpty { boardCls["\(game)|\(trackId)|\(carId)"] = c }
+        return boardOf(g)
+    }
+
+    private func boardOf(_ g: Got<Any>) -> Got<[CommunityLap]> {
         var seen = Set<String>()
         var out: [CommunityLap] = []
         for l in (g.data as? [String: Any])?["laps"] as? [[String: Any]] ?? [] {
@@ -1326,7 +1351,8 @@ final class Account: ObservableObject {
                 seen.insert(alias)
             }
             out.append(CommunityLap(id: str(l["id"]), alias: alias, time: t, created: num(l["created"]) ?? 0, hasTrace: (l["hasTrace"] as? Bool) ?? false, sectors: doubles(l["sectors"]), mine: (l["mine"] as? Bool) ?? false,
-                                    lic: l["lic"] as? String, prof: (l["prof"] as? Bool) ?? false, sup: (l["sup"] as? Bool) ?? false, field: (l["field"] as? Bool) ?? false))
+                                    lic: l["lic"] as? String, prof: (l["prof"] as? Bool) ?? false, sup: (l["sup"] as? Bool) ?? false, field: (l["field"] as? Bool) ?? false,
+                                    car: (l["car"] as? String).flatMap { $0.isEmpty ? nil : $0 }, wet: int(l["wet"])))
         }
         return Got(data: out.sorted { $0.time < $1.time }, stale: g.stale)
     }

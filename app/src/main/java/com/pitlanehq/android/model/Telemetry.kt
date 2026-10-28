@@ -137,7 +137,9 @@ data class Combo(val trackId: Long, val track: String, val carId: Long, val car:
 /** A record of the leaderboards: the fastest lap of a car and track, and the lap it beat (the second fastest), for
  *  Community's "Recent records" and the track page. */
 data class RecordItem(val id: String, val trackId: Long, val track: String, val carId: Long, val car: String, val cat: String?, val time: Double, val created: Long,
-    val alias: String, val n: Int, val hasTrace: Boolean, val mine: Boolean, val prof: Boolean, val sup: Boolean, val prevTime: Double?, val prevAlias: String?, val cls: String? = null) {
+    val alias: String, val n: Int, val hasTrace: Boolean, val mine: Boolean, val prof: Boolean, val sup: Boolean, val prevTime: Double?, val prevAlias: String?, val cls: String? = null,
+    /** what the lap was driven in, as bits: 1 rain, 2 a wet track, 4 a damp one (the server's wet) */
+    val wet: Int = 0) {
     val combo get() = Combo(trackId, track, carId, car, n, time, cat, cls)
 }
 
@@ -146,7 +148,11 @@ data class TrackPage(val trackId: Long, val track: String, val drivers: Int, val
 
 /** `mine`: the signed-in driver's own lap, also when it was shared anonymously (only they see that). */
 data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>, val mine: Boolean = false,
-    val lic: String? = null, val prof: Boolean = false, val sup: Boolean = false, val field: Boolean = false)
+    val lic: String? = null, val prof: Boolean = false, val sup: Boolean = false, val field: Boolean = false,
+    /** the lap's car (a Le Mans Ultimate class board mixes the class's cars) */
+    val car: String? = null,
+    /** what the lap was driven in, as bits: 1 rain, 2 a wet track, 4 a damp one (the server's wet) */
+    val wet: Int = 0)
 
 /** A driver's profile: their nickname (never their iRacing name), license classes, recent races and laps on the leaderboards. */
 data class DriverProfile(val name: String, val since: Long, val mine: Boolean, val admin: Boolean, val anonymous: Boolean, val supporter: Boolean, val supporterHidden: Boolean,

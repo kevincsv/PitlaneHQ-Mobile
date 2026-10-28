@@ -3140,6 +3140,24 @@ struct MyBadges: View {
     }
 }
 
+/// What a lap was driven in (the server's wet bits: 1 rain, 2 a wet track, 4 a damp one): small badges beside its time.
+struct WetBadges: View {
+    let w: Int
+    var body: some View {
+        if w & 7 != 0 {
+            HStack(spacing: 4) {
+                if w & 1 != 0 { badge("☂ " + t("badge_rain"), Color(red: 0xB9 / 255, green: 0xD9 / 255, blue: 1), 0.13) }
+                if w & 2 != 0 { badge("💧 " + t("badge_wet"), Theme.blue, 0.2) }
+                else if w & 4 != 0 { badge("💧 " + t("badge_damp"), Color(red: 0x9F / 255, green: 0xB4 / 255, blue: 0xCC / 255), 0.09) }
+            }
+        }
+    }
+    private func badge(_ label: String, _ fg: Color, _ bg: Double) -> some View {
+        Text(label).font(.system(size: 9, weight: .bold)).foregroundColor(fg).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 1)
+            .background(Color(red: 0x4F / 255, green: 0x9C / 255, blue: 1).opacity(bg)).clipShape(Capsule())
+    }
+}
+
 /// The supporter badge: people who donate, given by hand by the owner of Pitlane HQ.
 struct SupBadge: View {
     var body: some View {
@@ -3749,6 +3767,7 @@ struct RecordCard: View {
             Spacer(minLength: 4)
             VStack(alignment: .trailing, spacing: 2) {
                 Text(lapTime(x.time)).font(.system(size: 15, weight: .bold, design: .monospaced)).foregroundColor(Theme.purple)
+                WetBadges(w: x.wet)
                 Text(name(x.alias) + (x.mine ? " · " + t("you_badge") : "")).font(.system(size: 12, weight: .semibold)).foregroundColor(x.mine ? Theme.accent : Theme.fg).lineLimit(1)
             }
         }
@@ -3822,7 +3841,10 @@ struct TrackPageView: View {
                                         Text([catName(account.game, catOf(account.game, x.cat, x.cls, x.car)), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
                                     }
                                     Spacer()
-                                    Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                                    VStack(alignment: .trailing, spacing: 2) {
+                                        Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                                        WetBadges(w: x.wet)
+                                    }
                                 }
                             }
                         }
@@ -3885,14 +3907,23 @@ struct ComboView: View {
         let top = laps.first?.time
         // the server marks the signed-in driver's own lap (anonymous ones too); older servers: by the public name
         let mine = laps.firstIndex { $0.mine } ?? laps.firstIndex { !account.display.isEmpty && $0.alias.caseInsensitiveCompare(account.display) == .orderedSame }
-        Screen(title: combo.track, sub: combo.car) {
+        // Le Mans Ultimate: this car's board, or each driver's best of any car of its class here
+        let cls = account.boardClass(trackId: combo.trackId, carId: combo.carId)
+        let whole = account.boardWhole && cls != nil
+        Screen(title: combo.track, sub: whole ? lmuClass(cls, combo.car) : combo.car) {
             // its track page
             HStack {
+                if cls != nil {
+                    HStack(spacing: 6) {
+                        wholeChip(t("board_this_car"), false)
+                        wholeChip(t("board_whole_class"), true)
+                    }
+                }
                 Spacer()
                 NavigationLink(value: Route.track(TrackRef(id: combo.trackId, name: combo.track))) { Text(t("track_page")).font(.caption.bold()).foregroundColor(Theme.accent) }
                     .buttonStyle(.plain)
             }
-            LoadState(loading: board.loading, error: board.error, stale: board.stale) { Task { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
+            LoadState(loading: board.loading, error: board.error, stale: board.stale) { Task { await load() } }
             if board.data != nil {
                 Panel {
                     if mine == 0 && laps.count > 1 {
@@ -3917,12 +3948,14 @@ struct ComboView: View {
                                 if lap.sup { SupBadge() }
                                 if lap.mine { Text(t("you_badge")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.accent) }
                             }
+                            if whole, let car = lap.car { Text(car).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1) }
                             if !lap.sectors.isEmpty { Text(lap.sectors.map { String(format: "%.3f", $0) }.joined(separator: "  ")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted) }
                             if !lap.hasTrace { Text(t("trace_not_shared")).font(.system(size: 10)).foregroundColor(Theme.muted) }
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 0) {
                             Text(lapTime(lap.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(i == 0 ? Theme.purple : Theme.fg)
+                            WetBadges(w: lap.wet)
                             if let top, i > 0 { Text(String(format: "+%.3f", lap.time - top)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
                         }
                     }
@@ -3932,7 +3965,22 @@ struct ComboView: View {
                 .disabled(!lap.prof)
             }
         }
-        .task { if board.data == nil { await board.load { try await account.leaderboard(trackId: combo.trackId, carId: combo.carId) } } }
+        .task { if board.data == nil { await load() } }
+    }
+
+    private func load() async { await board.load { try await account.board(trackId: combo.trackId, carId: combo.carId) } }
+
+    private func wholeChip(_ label: String, _ on: Bool) -> some View {
+        let sel = account.boardWhole == on
+        return Button {
+            guard account.boardWhole != on else { return }
+            account.boardWhole = on
+            Task { await load() }
+        } label: {
+            Text(label).font(.system(size: 11, weight: .bold)).foregroundColor(sel ? Theme.bg : Theme.muted)
+                .padding(.horizontal, 10).padding(.vertical, 5).background(sel ? Theme.accent : Theme.surface2).clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
