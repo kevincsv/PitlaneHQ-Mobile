@@ -1055,9 +1055,10 @@ final class Account: ObservableObject {
     }
     /// The model's references for a car and track (`/community/model`): the record (the fastest lap really driven) and the
     /// next level for a lap of `lapTime` (the driver just ahead), each a trace every 5 m with its time and, when known, its line.
-    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double, game gm: String? = nil) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?, corners: [CornerCard]) {
+    /// `cmp` is lap A's tyre compound: the server gives that compound's references when it has them apart.
+    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double, game gm: String? = nil, cmp: Int = 0) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?, corners: [CornerCard]) {
         if demo || trackId <= 0 || carId <= 0 { return (nil, nil, []) }
-        guard let m = try? await cachedGet("/community/model?game=\(gm ?? game)&trackId=\(trackId)&carId=\(carId)").data as? [String: Any] else { return (nil, nil, []) }
+        guard let m = try? await cachedGet("/community/model?game=\(gm ?? game)&trackId=\(trackId)&carId=\(carId)&cmp=\(cmp)").data as? [String: Any] else { return (nil, nil, []) }
         // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
         let cards: [CornerCard] = ((m["corners"] as? [[String: Any]]) ?? []).map { o in
             func d(_ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }

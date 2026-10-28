@@ -26,7 +26,9 @@
 - Android and iOS stay the same app: same screens, same features, same wording, and the PC's: Telemetry has the PC's
   Telemetry, Standings and Tyres (`Live` in PitlaneApp.kt, `LiveTabs.swift`, fed by `LiveField`); Analysis has Laps,
   Coach, My sessions and My races (`Analysis` in PitlaneApp.kt, `AnalysisView` and `Analysis.swift`), lap B is your own
-  best, the model's next level or its record (`modelRefs`), and each driver is measured against their own laps.
+  best, the model's next level or its record (`modelRefs`, asked for lap A's tyre compound, `Trace.cmp` from its
+  "cmp:<n>" flag: the server gives that compound's references when it has them apart), and each driver is measured
+  against their own laps.
   The corner tips (`corners` in LapMath.kt and Models.swift, texts `tip_*`) follow the measured facts like the PC's
   and the web's: braking later than the reference and arriving slower at the apex is one mistake whatever phase pays
   for it (`tip_brake_late_apex`); with the same braking point the tip is about the brake (harder at first, trail,

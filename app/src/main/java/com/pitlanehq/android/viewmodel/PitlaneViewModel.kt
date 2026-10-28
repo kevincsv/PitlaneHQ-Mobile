@@ -595,7 +595,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             if (kind == RefKind.MY_BEST) ownBest()
             else {
                 // the model's references, like the PC and the web: the next level, else the record
-                val mr = c?.let { runCatching { repo.modelRefs(it.trackId, it.carId, lap.time, gm) }.getOrNull() }
+                val mr = c?.let { runCatching { repo.modelRefs(it.trackId, it.carId, lap.time, gm, tr?.cmp ?: 0) }.getOrNull() }
                 val rec = mr?.rec; val lvl = mr?.lvl
                 cards = mr?.corners ?: emptyList()
                 val pick = if (kind == RefKind.LEVEL) lvl ?: rec else rec
@@ -629,7 +629,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
             val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId, gm) }.getOrNull() else null
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
-            if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time, gm).corners }.getOrDefault(emptyList())
+            if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time, gm, tr?.cmp ?: 0).corners }.getOrDefault(emptyList())
             Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards, coach = coach, habits = habits))
         }
     }

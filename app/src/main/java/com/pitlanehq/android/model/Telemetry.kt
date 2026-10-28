@@ -115,6 +115,8 @@ data class Trace(val bin: Double, val rows: List<DoubleArray>, val x: List<Doubl
         val pts = inc[2 * i + 1].toInt()
         Incident(inc[2 * i], pts, incK.getOrNull(i) ?: when { pts >= 4 -> "contact"; pts == 2 -> "loss"; else -> "off" })
     }
+    /** The tyre compound of the lap: its "cmp:<n>" flag when the car has several, else the first (0), like the web's. */
+    val cmp: Int get() = f.firstOrNull { Regex("cmp:\\d+").matches(it) }?.substring(4)?.toIntOrNull() ?: 0
     /** The shape of the track: where the car was at every row (Pitlane HQ 0.5 and later record it). */
     val hasShape get() = x != null && y != null && x.size == rows.size && x.size > 10
     val speedKph get() = rows.map { it[0] * 3.6 }

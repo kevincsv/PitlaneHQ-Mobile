@@ -707,10 +707,11 @@ class AccountRepository(context: Context) {
      * The model's references for a lap time, as the PC and the web take them: the record (the fastest lap really
      * driven) and the next level (the real lap of the driver just ahead, 0.3–3 % faster). Their points come every 5 m
      * (the record) or every 10 m (the next level, put back to 5 m like the web's up()); null when there is none.
+     * [cmp] is lap A's tyre compound: the server gives that compound's references when it has them apart.
      */
-    fun modelRefs(trackId: Long, carId: Long, lapTime: Double, g: String = game): ModelRefs {
+    fun modelRefs(trackId: Long, carId: Long, lapTime: Double, g: String = game, cmp: Int = 0): ModelRefs {
         if (demo || trackId <= 0 || carId <= 0) return ModelRefs(null, null)
-        val m = runCatching { JSONObject(cachedGet("/community/model?game=$g&trackId=$trackId&carId=$carId").data) }.getOrNull() ?: return ModelRefs(null, null)
+        val m = runCatching { JSONObject(cachedGet("/community/model?game=$g&trackId=$trackId&carId=$carId&cmp=$cmp").data) }.getOrNull() ?: return ModelRefs(null, null)
         // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
         val cards = m.optJSONArray("corners")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
             CornerCard(o.optDouble("d", 0.0), o.optDouble("apex", 0.0), o.optDouble("b0", 0.0), o.optDouble("b1", 0.0), o.optDouble("v0", 0.0), o.optDouble("v1", 0.0), o.optInt("n", 0)) } } ?: emptyList()
