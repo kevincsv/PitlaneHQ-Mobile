@@ -9,6 +9,9 @@ targets:
     platform: iOS
     sources:
       - path: PitlaneHQ
+      # the web's lap analysis and coach, the copy the app runs until it downloads the newest (tools/sync-analysis.sh)
+      - path: Resources/pitwall-analysis.js
+        buildPhase: resources
     scheme: {}
     info:
       path: PitlaneHQ/Info.plist

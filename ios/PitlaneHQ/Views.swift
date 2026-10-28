@@ -324,7 +324,9 @@ private struct BrakeRow: View {
             (gear, Theme.fg),
             ((k.lost >= 0 ? "+" : "−") + String(format: "%.3f", abs(k.lost)), k.lost > 0.02 ? Theme.bad : k.lost < -0.02 ? Theme.good : Theme.muted),
         ]
-        let tip: String? = k.lost > 0.03 ? k.tip.map { tipShort(fillArgs(t($0), k.args)) } : nil
+        // the web's own "what to do" when the corner comes from pitwall-analysis.js (a copy without it, its tip in a few
+        // words), else the fallback's tip in a few words
+        let tip: String? = k.text != nil ? (k.todo ?? (k.lost > 0.03 ? k.text.map(tipShort) : nil)) : k.lost > 0.03 ? k.tip.map { tipShort(fillArgs(t($0), k.args)) } : nil
         HStack(alignment: .center, spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { i, cell in
                 Text(cell.0).font(.system(size: 11, weight: i == 0 ? .bold : .regular, design: .monospaced)).foregroundColor(i == 0 && on ? Theme.accent : cell.1).lineLimit(1)
@@ -2024,7 +2026,7 @@ struct AnalysisView: View {
         coachBusy = true
         coachErr = nil
         do {
-            let a = try await account.analyse(session: s, lap: best, all: ls, kind: .level)
+            let a = try await account.analyse(session: s, lap: best, all: ls, kind: .level, withLaps: true)
             if coachKey == key { coach = a }
         } catch {
             coachErr = (error as? AppError)?.key ?? error.localizedDescription
@@ -2221,6 +2223,8 @@ struct LapView: View {
     @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
     @State private var layout: ([Double], [Double])? // the community's layout, the map's road when the lap has no path
     @State private var coachOff: Set<String> = [] // the kinds of tip an admin turned off for a speed of corner (coach_off)
+    @State private var js: [String: JsResult]? // the web's analysis (pitwall-analysis.js), by language
+    private var jsNow: JsResult? { js?[I18n.shared.lang] }
 
     private func load() async {
         loading = true
@@ -2236,6 +2240,7 @@ struct LapView: View {
             turns = a.turns
             layout = a.layout
             coachOff = a.coach?.off ?? []
+            js = a.js
         } catch {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
@@ -2265,7 +2270,7 @@ struct LapView: View {
             // every corner as a small bar under the key facts, like the web's analyzer: touch one to read it on the map and the charts
             if let trace, ref != nil {
                 let cc = compare(trace, ref)
-                let cs = corners(cc, turns: turns)
+                let cs = jsNow?.corners ?? corners(cc, turns: turns)
                 if !cs.isEmpty { CornerStrip(cs: cs, lapLen: Double(cc.speedA.count) * cc.step, pick: $pick) }
             }
             // the car card: what this car does on other tracks against this lap, like the web's coach
@@ -2276,7 +2281,7 @@ struct LapView: View {
                     if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
-                    if trace.hasShape || layout != nil { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns, road: layout) }
+                    if trace.hasShape || layout != nil { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns, road: layout, cs: jsNow?.corners) }
                     Chart(title: t("speed") + " (km/h)", series: speedSeries(c, refName), step: c.step, fmt: { String(format: "%.0f", $0) },
                           pick: $pick, card: card)
                     if let delta = c.delta {
@@ -2287,15 +2292,17 @@ struct LapView: View {
                           step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1,
                           pick: $pick)
                     if ref != nil {
-                        let bcs = corners(c, turns: turns, off: coachOff)
+                        let bcs = jsNow?.corners ?? corners(c, turns: turns, off: coachOff)
                         if !bcs.isEmpty { BrakeTable(cs: bcs, lapLen: Double(c.speedA.count) * c.step, pick: $pick) }
-                        PhaseCoach(c: c, turns: turns)
+                        PhaseCoach(c: c, turns: turns, cs0: jsNow?.corners)
                     }
                 } else if error == nil {
                     EmptyNote(text: t("no_trace"))
                 }
             }
-            if !lap.sectors.isEmpty { SectorTable(a: lap.sectors, b: refSectors) }
+            // the web's sectors (the game's when both laps have them, else thirds of the lap from the traces), else the game's
+            if let s = jsNow?.secs, !s.isEmpty { SectorTable(a: s.map { $0.0 }, b: s.map { $0.1 }) }
+            else if !lap.sectors.isEmpty { SectorTable(a: lap.sectors, b: refSectors) }
         }
         .task(id: kind) { await load() }
     }
@@ -2325,7 +2332,7 @@ struct TrackMapView: View {
     private let rings: [Corner]
     private let minX: Double, maxX: Double, minY: Double, maxY: Double
 
-    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = [], road: ([Double], [Double])? = nil) {
+    init(c: Compared, trace: Trace, pick: Binding<Double?>, turns: [Double] = [], road: ([Double], [Double])? = nil, cs: [Corner]? = nil) {
         self.c = c
         self.trace = trace
         self._pick = pick
@@ -2341,7 +2348,8 @@ struct TrackMapView: View {
         bin = useB ? c.step : (own ? trace.bin : Double(c.speedA.count - 1) * c.step / Double(max(1, rx.count - 1)))
         brkA = brakePoints(c.brkA, c.step)
         brkB = brakePoints(c.brkB, c.step)
-        rings = c.delta != nil ? corners(c, turns: turns).filter { $0.lost > 0.05 } : []
+        // the coach's rings: the web's corners that cost time (Models.swift's when the phone cannot run the web's analysis)
+        rings = c.delta != nil ? (cs ?? corners(c, turns: turns)).filter { $0.lost > 0.05 } : []
         minX = xs.min() ?? 0; maxX = xs.max() ?? 1; minY = ys.min() ?? 0; maxY = ys.max() ?? 1
     }
 
@@ -2628,9 +2636,10 @@ struct TrackMapView: View {
 struct PhaseCoach: View {
     let c: Compared
     var turns: [Double] = []
+    var cs0: [Corner]? = nil   // the web's corners (pitwall-analysis.js), else Models.swift's
 
     var body: some View {
-        let cs = corners(c, turns: turns)
+        let cs = cs0 ?? corners(c, turns: turns)
         VStack(alignment: .leading, spacing: 10) {
             if cs.isEmpty { fallback } else { phases(cs) }
         }
@@ -2681,7 +2690,7 @@ struct PhaseCoach: View {
         }
     }
 
-    private func tipText(_ k: Corner) -> String { fill(t(k.tip ?? ""), k.args) }
+    private func tipText(_ k: Corner) -> String { k.text ?? fill(t(k.tip ?? ""), k.args) }
     private func fill(_ s0: String, _ args: [String]) -> String {
         var s = s0
         for (i, a) in args.enumerated() { s = s.replacingOccurrences(of: "{\(i)}", with: a) }

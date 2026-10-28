@@ -1,5 +1,9 @@
 package com.pitlanehq.android.model
 
+// The lap analysis and the coach the phone shows are the web's own, web/dist/pitwall-analysis.js run in a JavaScript engine
+// (data/AnalysisJs.kt, JsAnalysis.kt): its corners, tips, plan and sectors. The analysis here is the fallback, used only
+// when the engine cannot run (a phone whose WebView has no JavaScriptSandbox), and for the charts' own grid.
+
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.min
@@ -100,7 +104,8 @@ fun compare(a: Trace, b: Trace?, step0: Double = 10.0): Compared {
  * One corner in four phases, as driver coaches read data: braking (brake point, how hard), entry
  * (releasing the brake into the turn, trail braking, coasting), apex (minimum speed) and exit (when
  * the throttle comes back). [tip] is an I18n key with [args], about the phase that loses the most.
- * The same analysis as the web's braking coach.
+ * The same analysis as the web's braking coach; [text] is the tip as pitwall-analysis.js wrote it (the line's included),
+ * in the app's language, when the corner comes from there.
  */
 data class Corner(
     val n: Int, val atM: Int, val lost: Double, val phases: Map<String, Double>, val phase: String?,
@@ -110,7 +115,9 @@ data class Corner(
     val cls: String = "",       // the corner's speed there: slow (under 80 km/h), medium (under 150), fast
     // the braking points table (like the web's): A's brake point against B's (m, + A later; null without one within 100 m),
     // the speed at each lap's slowest point (km/h), the gear there, and whether B takes the corner without braking (a lift)
-    val dd: Int? = null, val vA: Double? = null, val vB: Double = 0.0, val gearA: Int = 0, val gearB: Int = 0, val lift: Boolean = false
+    val dd: Int? = null, val vA: Double? = null, val vB: Double = 0.0, val gearA: Int = 0, val gearB: Int = 0, val lift: Boolean = false,
+    val text: String? = null,   // the tip written by pitwall-analysis.js; null for the fallback's, whose tip is an I18n key
+    val todo: String? = null    // what the braking points table says to do there, written by pitwall-analysis.js (null for the fallback's)
 )
 
 /** A tip in a few words for the braking points table: without its figures in brackets (the columns carry them) and, of two
@@ -125,7 +132,8 @@ fun tipShort(text: String): String {
 /** The corner card the model learnt (`corners` in /community/model): where the fastest drivers of this car and track
  *  brake (b0..b1, metres from the line) and how fast they pass the slowest point (v0..v1, m/s) of one corner of the
  *  record lap, from n drivers' best laps. A hint beside a tip, never a lap to compare with. */
-data class CornerCard(val d: Double, val apex: Double, val b0: Double, val b1: Double, val v0: Double, val v1: Double, val n: Int) {
+data class CornerCard(val d: Double, val apex: Double, val b0: Double, val b1: Double, val v0: Double, val v1: Double, val n: Int,
+                      val spread: Double = 0.0) {  // how far apart the drivers' times are there: how hard the corner is (the plan weighs by it)
     /** the card of a corner whose slowest point is at [apexM] metres (within 60 m), or null */
     companion object { fun of(cards: List<CornerCard>, apexM: Int): CornerCard? = cards.filter { kotlin.math.abs(it.apex - apexM) <= 60 }.minByOrNull { kotlin.math.abs(it.apex - apexM) } }
 }

@@ -31,7 +31,13 @@ data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, va
     // here brake and how fast they take each corner): the thumbs on a tip and the hint beside it
     val session: CloudSession? = null, val trackId: Long = 0, val carId: Long = 0, val corners: List<CornerCard> = emptyList(),
     // what the coach learnt from everyone (the tips turned off, how many drivers each helped) and this driver's habits
-    val coach: CoachInfo? = null, val habits: List<Habit> = emptyList())
+    val coach: CoachInfo? = null, val habits: List<Habit> = emptyList(),
+    // the web's analysis of these two laps (pitwall-analysis.js) in each language: its corners, tips, plan and sectors are
+    // what the screens show; null when the phone cannot run it, and the screens use LapMath
+    val js: Map<String, JsResult>? = null) {
+    /** the web's analysis in the app's language */
+    val jsNow: JsResult? get() = js?.get(com.pitlanehq.android.ui.I18n.lang)
+}
 
 /** The pit lane of a track (from laps through the pits): [5 m point of a lap of n points, metres to the left of the track]. */
 data class PitLane(val n: Int, val pts: List<Pair<Int, Double>>)
@@ -588,6 +594,10 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             val card = (c ?: combos.firstOrNull { it.car.equals(s.car, true) })?.let { runCatching { repo.carCard(it.carId, gm) }.getOrNull() }
             var fastest = false
             var cards: List<CornerCard> = emptyList()
+            // lap B's path as the web's analysis takes it: a model reference's own (the web's, lineXY and its origin when it has
+            // none), else the trace's
+            var modelPath = false
+            var refPath: LapPath? = null
             // each driver against their own laps (DRINKS mode: a friend's lap against that friend's best)
             val ownBest = {
                 val best = all.filter { it.valid && it.time > 0 && it.id != lap.id && it.drv == lap.drv }.minByOrNull { it.time }
@@ -608,6 +618,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                 if (pick != null && pick.second < lap.time - 0.001) {
                     ref = pick.first
                     refTime = pick.second
+                    modelPath = true
+                    refPath = if (pick === lvl) mr?.lvlXY else mr?.recXY
                     label = if (pick === lvl) "▲ " + com.pitlanehq.android.ui.t("next_level") else "★ " + com.pitlanehq.android.ui.t("record")
                 } else {
                     // nobody known is faster here (this lap is the record) or nobody known at all: like the web's coach,
@@ -625,7 +637,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                 val bx = bt?.x; val by = bt?.y
                 if (bx != null && by != null && kotlin.math.abs(bx.size - r0.rows.size) <= 6) {
                     fun fit(v: List<Double>) = List(r0.rows.size) { v[minOf(it, v.size - 1)] }
-                    ref = r0.copy(x = fit(bx), y = fit(by))
+                    ref = r0.copy(x = fit(bx), y = fit(by), g = bt.g)
                 }
             }
             // the official turn numbers of this track, when an admin has placed them on its map (else the corners are counted)
@@ -636,7 +648,17 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId, gm) }.getOrNull() else null
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
             if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time, gm, tr?.cmp ?: 0).corners }.getOrDefault(emptyList())
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards, coach = coach, habits = habits))
+            // the web's own analysis of the two laps, the same corners, tips, plan and sectors as the PC's
+            // (the module counts a point every 5 m: other traces, the demo data's, go to LapMath). The coach also hands it the
+            // session's laps, like the web's: how steady each corner is gives the plan its consistency steps.
+            val rB = ref; val tB = refTime
+            val js = if (tr != null && rB != null && tB != null && JsAnalysis.runs(tr) && JsAnalysis.runs(rB)) runCatching {
+                val w = CoachWeights(coach?.w ?: emptyMap(), coach?.ask ?: emptyMap(), coach?.off ?: emptySet(), repo.coachMeWeights(), habits.map { Triple(it.kind, it.tracks, it.sessions) })
+                val laps = if (into === this@PitlaneViewModel.coach) repo.sessionTraces(s.id).filter { it.first && JsAnalysis.runs(it.second) }.map { JsAnalysis.sessionLap(it.second, it.first) } else emptyList()
+                repo.analysisJs.analyse(JsAnalysis.lap(tr, lap.time, lap.sectors), JsAnalysis.lap(rB, tB, refSec, if (modelPath) refPath else JsAnalysis.pathOf(rB)),
+                    JsAnalysis.ctx("en", turns, w, cards), laps)
+            }.getOrNull() else null
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards, coach = coach, habits = habits, js = js))
         }
     }
 

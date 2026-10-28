@@ -719,7 +719,8 @@ func compare(_ a: Trace, _ b: Trace?, step step0: Double = 10) -> Compared {
 /// One corner in four phases, as driver coaches read data: braking (brake point, how hard), entry
 /// (releasing the brake into the turn, trail braking, coasting), apex (minimum speed) and exit (when
 /// the throttle comes back). `tip` is an I18n key with `args`, about the phase that loses the most.
-/// The same analysis as the web's braking coach and Android's LapMath.kt.
+/// The same analysis as the web's braking coach and Android's LapMath.kt; `text` is the tip as pitwall-analysis.js wrote it
+/// (the line's included), in the app's language, when the corner comes from there.
 struct Corner: Hashable {
     let n: Int
     let atM: Int
@@ -742,6 +743,8 @@ struct Corner: Hashable {
     var gearA: Int = 0
     var gearB: Int = 0
     var lift: Bool = false
+    var text: String? = nil     // the tip written by pitwall-analysis.js; nil for the fallback's, whose tip is an I18n key
+    var todo: String? = nil     // what the braking points table says to do there, written by pitwall-analysis.js (nil for the fallback's)
 }
 
 /// A tip in a few words for the braking points table: without its figures in brackets (the columns carry them) and, of two
@@ -761,6 +764,7 @@ func tipShort(_ text: String) -> String {
 /// record lap, from n drivers' best laps. A hint beside a tip, never a lap to compare with.
 struct CornerCard: Hashable {
     let d: Double, apex: Double, b0: Double, b1: Double, v0: Double, v1: Double, n: Int
+    var spread: Double = 0  // how far apart the drivers' times are there: how hard the corner is (the plan weighs by it)
     /// the card of a corner whose slowest point is at `apexM` metres (within 60 m), or nil
     static func of(_ cards: [CornerCard], apexM: Int) -> CornerCard? {
         cards.filter { abs($0.apex - Double(apexM)) <= 60 }.min { abs($0.apex - Double(apexM)) < abs($1.apex - Double(apexM)) }
@@ -790,6 +794,9 @@ struct CoachInfo {
     let conf: [String: (Int, Int)]
     let confidence: Bool
     let min: Int
+    // what reorders the plan (w) and the metres a braking tip asks for (ask), by "kind|cls", for pitwall-analysis.js
+    var w: [String: Double] = [:]
+    var ask: [String: Double] = [:]
 }
 /// A kind of tip that repeats across the driver's tracks.
 struct Habit: Hashable {
@@ -798,6 +805,9 @@ struct Habit: Hashable {
     let sessions: Int
 }
 
+// The lap analysis and the coach the phone shows are the web's own, web/dist/pitwall-analysis.js run in JavaScriptCore
+// (AnalysisJs.swift): its corners, tips, plan and sectors. This analysis is the fallback, used only when the engine cannot
+// run it, and the charts' own grid.
 func corners(_ c: Compared, turns: [Double] = [], off: Set<String> = []) -> [Corner] {
     guard let tB = c.tB, let sB = c.speedB, let bB = c.brkB, let hB = c.thrB else { return [] }
     let n = [c.tA.count, tB.count, sB.count, bB.count, hB.count, c.brkA.count, c.thrA.count, c.speedA.count].min() ?? 0

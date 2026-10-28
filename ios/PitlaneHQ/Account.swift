@@ -1089,13 +1089,15 @@ final class Account: ObservableObject {
     /// The model's references for a car and track (`/community/model`): the record (the fastest lap really driven) and the
     /// next level for a lap of `lapTime` (the driver just ahead), each a trace every 5 m with its time and, when known, its line.
     /// `cmp` is lap A's tyre compound: the server gives that compound's references when it has them apart.
-    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double, game gm: String? = nil, cmp: Int = 0) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?, corners: [CornerCard]) {
-        if demo || trackId <= 0 || carId <= 0 { return (nil, nil, []) }
-        guard let m = try? await cachedGet("/community/model?game=\(gm ?? game)&trackId=\(trackId)&carId=\(carId)&cmp=\(cmp)").data as? [String: Any] else { return (nil, nil, []) }
+    /// recXY and lvlXY: the path the web's analysis gives each reference (pitwall-model.js: the record's idealXY, else the
+    /// fastest line lineXY; the next level's own, else lineXY), whatever its length, with its origin g.
+    func modelRefs(trackId: Int64, carId: Int64, lapTime: Double, game gm: String? = nil, cmp: Int = 0) async -> (rec: (Trace, Double)?, lvl: (Trace, Double)?, corners: [CornerCard], recXY: LapPath?, lvlXY: LapPath?) {
+        if demo || trackId <= 0 || carId <= 0 { return (nil, nil, [], nil, nil) }
+        guard let m = try? await cachedGet("/community/model?game=\(gm ?? game)&trackId=\(trackId)&carId=\(carId)&cmp=\(cmp)").data as? [String: Any] else { return (nil, nil, [], nil, nil) }
         // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
         let cards: [CornerCard] = ((m["corners"] as? [[String: Any]]) ?? []).map { o in
             func d(_ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
-            return CornerCard(d: d("d"), apex: d("apex"), b0: d("b0"), b1: d("b1"), v0: d("v0"), v1: d("v1"), n: (o["n"] as? NSNumber)?.intValue ?? 0)
+            return CornerCard(d: d("d"), apex: d("apex"), b0: d("b0"), b1: d("b1"), v0: d("v0"), v1: d("v1"), n: (o["n"] as? NSNumber)?.intValue ?? 0, spread: d("spread"))
         }
         // the model's bins are [speed, time, throttle, brake, gear, steering]; a trace row is [speed, throttle, brake, gear, steering, time]
         func row(_ b: [Any]) -> [Double] {
@@ -1111,12 +1113,22 @@ final class Account: ObservableObject {
             return (x, y, g != nil && g!.count == 2 ? g : nil)
         }
         func num0(_ o: [String: Any], _ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
+        // a path as the web takes it: x and y of any length (the line of another lap), its origin g
+        func path(_ o: Any?) -> LapPath? {
+            guard let o = o as? [String: Any], let x = nums(o["x"]), let y = nums(o["y"]) else { return nil }
+            let g = nums(o["g"])
+            return LapPath(x: x, y: y, g: g != nil && g!.count == 2 ? g : nil)
+        }
+        let lineXY = path(m["lineXY"])
+        var recXY: LapPath? = nil
+        var lvlXY: LapPath? = nil
         var rec: (Trace, Double)? = nil
         if let ideal = m["ideal"] as? [[Any]], ideal.count > 40, num0(m, "idealTime") > 0 {
             let rows = ideal.map(row)
             var tr = Trace(bin: 5, rows: rows)
             if let p = xy(m["idealXY"], rows.count) ?? xy(m["lineXY"], rows.count) { tr.x = p.x; tr.y = p.y; tr.g = p.g }
             rec = (tr, num0(m, "idealTime"))
+            recXY = path(m["idealXY"]) ?? lineXY
         }
         var lvl: (Trace, Double)? = nil
         let nb = (m["nb"] as? NSNumber)?.intValue ?? 0
@@ -1147,12 +1159,26 @@ final class Account: ObservableObject {
                         oy.append(ry[k]); oy.append((ry[k] + ry[n]) / 2)
                     }
                     if ox.count >= cut.count { tr.x = Array(ox.prefix(cut.count)); tr.y = Array(oy.prefix(cut.count)) }
+                    lvlXY = LapPath(x: nb > 0 ? Array(ox.prefix(nb)) : ox, y: nb > 0 ? Array(oy.prefix(nb)) : oy, g: tr.g)
                 }
+                if lvlXY == nil { lvlXY = lineXY }
                 if tr.x == nil, let p = xy(m["lineXY"], cut.count) { tr.x = p.x; tr.y = p.y; tr.g = p.g }
                 lvl = (tr, tm)
             }
         }
-        return (rec, lvl, cards)
+        return (rec, lvl, cards, recXY, lvlXY)
+    }
+
+    /// The laps of a session with their traces, in one call (/api/sessions/:id?traces=1), as the web's coach takes them
+    /// (laps with a trace and a time): whether each is valid, and its trace. Empty when they cannot be read; never kept on
+    /// the phone (each lap's own trace is).
+    func sessionTraces(_ sessionId: String) async -> [(Bool, Trace)] {
+        if demo { return Demo.laps(sessionId).compactMap { l in Demo.trace(l.id).map { (l.valid, $0) } } }
+        guard let d = try? await call("GET", "/api/sessions/" + idPath(sessionId) + "?traces=1"),
+              let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any], let a = o["laps"] as? [[String: Any]] else { return [] }
+        return a.filter { ($0["time"] as? NSNumber)?.doubleValue ?? 0 > 0 }.compactMap { l in
+            parseTrace(l["trace"]).map { (((l["valid"] as? NSNumber)?.intValue ?? 0) == 1, $0) }
+        }
     }
     /// A thumb on one of the coach's tips (1 up, -1 down, 0 takes it back), kept with the account on the server (coachtips.js).
     func rateTip(trackId: Int64, carId: Int64, sid: String, started: Double, n: Int, apexM: Int, kind: String, cls: String, up: Int, game gm: String? = nil) async {
@@ -1166,15 +1192,27 @@ final class Account: ObservableObject {
         if demo { return nil }
         guard let j = try? await cachedGet("/community/coach/weights").data as? [String: Any] else { return nil }
         let off = Set((j["off"] as? [String]) ?? [])
-        var conf: [String: (Int, Int)] = [:]
-        for b in (j["buckets"] as? [[String: Any]]) ?? [] { conf["\(str(b["kind"]))|\(str(b["cls"]))"] = (int(b["win"]), int(b["n"])) }
-        return CoachInfo(off: off, conf: conf, confidence: (j["confidence"] as? Bool) ?? false, min: (j["min"] as? NSNumber)?.intValue ?? 30)
+        var conf: [String: (Int, Int)] = [:], w: [String: Double] = [:], ask: [String: Double] = [:]
+        for b in (j["buckets"] as? [[String: Any]]) ?? [] {
+            let k = "\(str(b["kind"]))|\(str(b["cls"]))"
+            conf[k] = (int(b["win"]), int(b["n"]))
+            let bw = (b["w"] as? NSNumber)?.doubleValue ?? 0
+            w[k] = bw > 0 ? bw : 1
+            if let a = (b["ask"] as? NSNumber)?.doubleValue, a > 0 { ask[k] = a }
+        }
+        return CoachInfo(off: off, conf: conf, confidence: (j["confidence"] as? Bool) ?? false, min: (j["min"] as? NSNumber)?.intValue ?? 30, w: w, ask: ask)
     }
     /// The driver's own memory: the kinds of tip that repeat across their tracks (habits), the most repeated first.
     func coachHabits() async -> [Habit] {
         if demo { return [] }
         guard let j = try? await cachedGet("/community/coach/me").data as? [String: Any], let a = j["habits"] as? [[String: Any]] else { return [] }
         return a.map { Habit(kind: str($0["kind"]), tracks: int($0["tracks"]), sessions: int($0["sessions"])) }
+    }
+    /// The driver's own weights of the coach's tips, by "kind|cls" (/community/coach/me), for the plan's order.
+    func coachMeWeights() async -> [String: Double] {
+        if demo { return [:] }
+        guard let j = try? await cachedGet("/community/coach/me").data as? [String: Any], let w = j["w"] as? [String: Any] else { return [:] }
+        return w.compactMapValues { ($0 as? NSNumber)?.doubleValue }
     }
     func turns(trackId: Int64, game gm: String? = nil) async -> [Double] {
         if demo || trackId <= 0 { return [] }

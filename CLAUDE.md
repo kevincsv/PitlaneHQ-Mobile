@@ -31,7 +31,22 @@
   best, the model's next level or its record (`modelRefs`, asked for lap A's tyre compound, `Trace.cmp` from its
   "cmp:<n>" flag: the server gives that compound's references when it has them apart), and each driver is measured
   against their own laps.
-  The corner tips (`corners` in LapMath.kt and Models.swift, texts `tip_*`) follow the measured facts like the PC's
+  The lap analysis and the coach are the web's own file, `web/dist/pitwall-analysis.js` of the Pitwall-test repository,
+  run on the phone (Android's JavaScriptSandbox, `data/AnalysisJs.kt`; iOS's JavaScriptCore, `AnalysisJs.swift`): the
+  phones turn both laps into the web's shape (`JsAnalysis.lap`), hand it the official turns, the coach's weights and
+  habits and the model's corner cards (`JsAnalysis.ctx`), and show its corners, tips, plan and sectors in their own
+  screens (`js`/`jsNow` in `LapAnalysis`, the tip as `text` on `Corner`, `PlanItem`), in the three languages from one
+  run. They download pitlanehq.app/pitwall-analysis.js at most every six hours (its ETag) and keep it on disk; the
+  copy in the app (`app/src/main/assets/` and `ios/Resources/`, refreshed with `tools/sync-analysis.sh` whenever the
+  file changes in Pitwall-test) runs until a download succeeds. The phones feed it what the web feeds it: lap B's path is
+  the web's (a model reference's own, else the model's fastest line `lineXY` with its origin g, `recXY`/`lvlXY` in
+  `modelRefs`; never the driver's own path, which only draws the fallback's line), and the coach hands it the session's
+  laps (`sessionTraces`, /api/sessions/:id?traces=1, as `ctx.laps`, one call each on Android), so the plan's consistency
+  steps and the "same braking point every lap" tip are the PC's. Only a copy whose `VERSION` and answer's `v` are the
+  ones the app was built for (`JsAnalysis.VERSION`/`version`, 1) is kept and read. LapMath.kt and Models.swift are only
+  the fallback, when the engine cannot run (a WebView without the sandbox) or a trace is not one point every 5 m (the
+  demo data's), and the charts' own grid.
+  The corner tips (the fallback's `corners` in LapMath.kt and Models.swift, texts `tip_*`) follow the measured facts like the PC's
   and the web's: braking later than the reference and arriving slower at the apex is one mistake whatever phase pays
   for it (`tip_brake_late_apex`); with the same braking point the tip is about the brake (harder at first, trail,
   `tip_brake_same`), never "brake later"; an apex reached as fast as the reference's says the time goes before it
@@ -44,9 +59,10 @@
   up to the lap's time, `lapSecs`/`secs`, as the web's `lapSecsOf`; purple the session's best, green a valid lap's one better
   than your best lap's), the lap analysis has the braking points table of lap A against lap B per corner (`BrakeTable`: the
   turn, where each brakes, Δ m, red when A brakes 3 m or more before B, the speed at each apex, the gear, the loss and what
-  to do, `tipShort` of the corner's own tip, the tips an admin turned off giving way like everywhere; a row reads that
-  corner on the map and the charts), and the coach's plan has "Take the plan to the coach overlay" (`setCoachTurns`: the
-  plan's corners as `ui.coach.turns` with the track as `turnsTrack` in the account's settings.json, only when a PC has
+  to do, the module's `todo` on each corner, else `tipShort` of the fallback's own tip, the tips an admin turned off
+  giving way like everywhere; a row reads that corner on the map and the charts), and the coach's plan has "Take the plan
+  to the coach overlay" (`setCoachTurns`: the turns of the plan's first four steps, the module's `turns` on each
+  `PlanItem` like the web's `planTurns`, else the fallback's four corners that lose the most, as `ui.coach.turns` with the track as `turnsTrack` in the account's settings.json, only when a PC has
   synced it and never in demo data; an error says its translated text).
 - Track notes (`notes.json` in the account, the same the PC and the web keep): the track page shows the general note
   and the corner notes and writes the general one (`TrackNotesPanel`, `setTrackNote`: the bundle is read, only

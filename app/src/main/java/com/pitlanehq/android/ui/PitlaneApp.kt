@@ -1257,7 +1257,7 @@ private fun CornerTip(k: Corner, an: LapAnalysis? = null, vm: PitlaneViewModel? 
         val ratings = vm?.tipRatings?.collectAsState()?.value
         val mine = if (an?.session != null) ratings?.get(an.session.id + ":" + k.apexM) ?: 0 else 0
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t(tip, *k.args.toTypedArray()), fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Text(k.text ?: t(tip, *k.args.toTypedArray()), fontSize = 13.sp, modifier = Modifier.weight(1f))
             if (an?.session != null && vm != null) listOf(1 to "👍", -1 to "👎").forEach { (up, g) ->
                 Text(g, fontSize = 12.sp, modifier = Modifier.padding(start = 4.dp).clip(RoundedCornerShape(6.dp))
                     .border(1.dp, if (mine == up) Accent else Line, RoundedCornerShape(6.dp)).clickable { vm.rateTip(an, k, up) }.padding(horizontal = 5.dp, vertical = 3.dp)
@@ -1276,6 +1276,24 @@ private fun CornerTip(k: Corner, an: LapAnalysis? = null, vm: PitlaneViewModel? 
 
 /** Lap A's sectors against lap B's. */
 private fun LazyListScope.sectorItems(an: LapAnalysis) {
+    // the web's sectors (the game's when both laps have them, else thirds of the lap from the traces), else the game's
+    val js = an.jsNow?.secs?.takeIf { it.isNotEmpty() }
+    if (js != null) {
+        item { Section(t("sectors")) }
+        item {
+            Panel {
+                js.forEachIndexed { i, (sv, r) ->
+                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                        Text("S${i + 1}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(40.dp))
+                        Text("%.3f".format(sv), fontFamily = FontFamily.Monospace, color = Accent, modifier = Modifier.weight(1f))
+                        Text("%.3f".format(r), fontFamily = FontFamily.Monospace, color = Blue, modifier = Modifier.weight(1f))
+                        Text("%+.3f".format(sv - r), fontFamily = FontFamily.Monospace, color = if (sv <= r) Good else Bad)
+                    }
+                }
+            }
+        }
+        return
+    }
     if (an.lap.sectors.isEmpty()) return
     item { Section(t("sectors")) }
     item {
@@ -1329,11 +1347,13 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
     val tr = an.trace
     val refName = an.refLabel.ifBlank { t("ref") }
     val c0 = tr?.let { compare(it, an.ref) }
-    val cs0 = if (c0 != null && an.ref != null) corners(c0, an.turns, an.coach?.off ?: emptySet()) else emptyList()
+    // the web's corners and tips (pitwall-analysis.js); LapMath's only when the phone cannot run it
+    val cs0 = an.jsNow?.coach ?: if (c0 != null && an.ref != null) corners(c0, an.turns, an.coach?.off ?: emptySet()) else emptyList()
     val lose0 = cs0.filter { it.tip != null && it.lost > 0.03 }.sortedByDescending { it.lost }
     if (cs0.isNotEmpty()) item { CoachGap(an, refName, lose0.firstOrNull(), vm) }
     // the driver's habit first: a kind of tip that repeats on several of their tracks
-    an.habits.firstOrNull()?.takeIf { it.tracks >= 3 }?.let { h -> item { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions), fontSize = 13.sp) } } }
+    // (the web's plan already starts with it)
+    if (an.jsNow?.plan?.any { it.k == "habit" } != true) an.habits.firstOrNull()?.takeIf { it.tracks >= 3 }?.let { h -> item { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions), fontSize = 13.sp) } } }
     if (cs0.isEmpty()) item {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Metric(t("you") + " · L${an.lap.n}", lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent, sub = lapFlags(an.trace))
@@ -1345,8 +1365,9 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
     if (an.fastest) item { Text(t("coach_fastest"), color = Good, fontSize = 12.sp) }
     if (tr == null) { item { Empty(t("no_trace")) }; return }
     val c = compare(tr, an.ref)
-    val cs = if (an.ref != null) corners(c, an.turns, an.coach?.off ?: emptySet()) else emptyList()
+    val cs = an.jsNow?.coach ?: if (an.ref != null) corners(c, an.turns, an.coach?.off ?: emptySet()) else emptyList()
     val lose = cs.filter { it.tip != null && it.lost > 0.03 }.sortedByDescending { it.lost }
+    val plan = an.jsNow?.plan
     if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
     else if (cs.isNotEmpty()) {
         item {
@@ -1362,7 +1383,30 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
                 Panel(Modifier.padding(top = 8.dp)) { if (k == null) Text(t("corner_pick"), color = Muted, fontSize = 12.sp) else CornerTip(k, an, vm) }
             }
         }
-        if (lose.isNotEmpty()) item {
+        // the web's plan: what to work on first, what it is worth, why and how
+        if (!plan.isNullOrEmpty()) item {
+            Panel {
+                Section(t("coach_plan").uppercase())
+                Text(t("coach_plan_note"), color = Muted, fontSize = 11.sp)
+                plan.take(4).forEachIndexed { i, p ->
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                        Text("${i + 1}.", color = Accent, fontWeight = FontWeight.Black, modifier = Modifier.width(22.dp))
+                        Column(Modifier.weight(1f)) {
+                            Row {
+                                Text(p.t, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                if (p.gain > 0) Text((if (p.k == "cons") "±" else "+") + "%.2f s".format(p.gain), color = if (p.k == "cons") Accent else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                            }
+                            if (p.why.isNotEmpty()) Text(p.why, color = Muted, fontSize = 12.sp)
+                            if (p.how.isNotEmpty()) Text("→ " + p.how, fontSize = 12.sp)
+                        }
+                    }
+                }
+                // the turns of the plan's first four steps, like the web's planTurns
+                val turns = plan.take(4).flatMap { it.turns }.distinct().map { "T$it" }
+                if (vm != null && turns.isNotEmpty()) PlanToOverlay(vm, turns, an.trackId)
+            }
+        }
+        else if (lose.isNotEmpty()) item {
             Panel {
                 Section(t("coach_plan").uppercase())
                 Text(t("coach_plan_note"), color = Muted, fontSize = 11.sp)
@@ -1374,7 +1418,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
                                 Text(t("corner_n", k.n) + (k.phase?.let { " · " + t("phase_$it") } ?: ""), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
                                 Text("+%.2f s".format(k.lost), color = Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                             }
-                            k.tip?.let { Text(t(it, *k.args.toTypedArray()), color = Muted, fontSize = 12.sp) }
+                            k.tip?.let { Text(k.text ?: t(it, *k.args.toTypedArray()), color = Muted, fontSize = 12.sp) }
                         }
                     }
                 }
@@ -1383,7 +1427,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
             }
         }
     }
-    if (tr.hasShape || an.layout != null) item { TrackMap(c, tr, pick, an.turns, an.layout, onPick) }
+    if (tr.hasShape || an.layout != null) item { TrackMap(c, tr, pick, an.turns, an.layout, an.jsNow?.corners, onPick) }
     sectorItems(an)
     if (lose.isNotEmpty()) {
         item { Section(t("coach_top").uppercase()) }
@@ -1455,7 +1499,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
             // every corner as a small bar under the key facts, like the web's analyzer: press one to read it on the map and the charts
             if (an.trace != null && an.ref != null) {
                 val cc = compare(an.trace, an.ref)
-                val cs = corners(cc, an.turns, an.coach?.off ?: emptySet())
+                val cs = an.jsNow?.corners ?: corners(cc, an.turns, an.coach?.off ?: emptySet())
                 if (cs.isNotEmpty()) item { CornerStrip(cs, cc.step, pick) { pick = it } }
             }
             // the car card: what this car does on other tracks (its hardest braking, where the fast drivers shift up, its
@@ -1467,7 +1511,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 if (an.ref == null) item { Text(t("no_reference"), color = Muted, fontSize = 12.sp) }
                 val refName = an.refLabel.ifBlank { t("ref") }
                 val card: @Composable (Int) -> Unit = { i -> PointCard(c, i, refName, an.lap.sectors, an.refSectors) }
-                if (an.trace.hasShape || an.layout != null) item { TrackMap(c, an.trace, pick, an.turns, an.layout) { pick = it } }
+                if (an.trace.hasShape || an.layout != null) item { TrackMap(c, an.trace, pick, an.turns, an.layout, an.jsNow?.corners) { pick = it } }
                 item {
                     Chart(t("speed") + " (km/h)", listOfNotNull(Series(t("you"), c.speedA, Accent), c.speedB?.let { Series(refName, it, Blue) }), c.step, { "%.0f".format(it) },
                         sel = pick, onSel = { pick = it }, card = card)
@@ -1478,7 +1522,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     sel = pick, onSel = { pick = it }) }
                 if (an.ref != null) {
                     // the coach in four phases (braking, entry, apex, exit), like the web's
-                    val cs = corners(c, an.turns, an.coach?.off ?: emptySet())
+                    val cs = an.jsNow?.corners ?: corners(c, an.turns, an.coach?.off ?: emptySet())
                     if (cs.isEmpty()) {
                         item { Section(t("where_time")) }
                         val ls = losses(c)
@@ -1692,7 +1736,7 @@ private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; 
  * or drag on it to read that point: the charts follow it.
  */
 @Composable
-private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), road: Pair<List<Double>, List<Double>>? = null, onSel: (Int) -> Unit) {
+private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), road: Pair<List<Double>, List<Double>>? = null, cs: List<Corner>? = null, onSel: (Int) -> Unit) {
     // the road is the reference's path when both laps have one (B runs along the middle, A beside it by how far it was
     // from B); else this lap's own; else the track's layout drawn by the community (road). Its points are the compared
     // grid's then (c.step), the trace's (tr.bin), or the lap's length over the layout's points
@@ -1709,7 +1753,8 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
     val dpx = with(LocalDensity.current) { 1.dp.toPx() }
     val brkA = remember(c) { brakePoints(c.brkA, c.step) }
     val brkB = remember(c) { brakePoints(c.brkB, c.step) }
-    val rings = remember(c, turns) { if (c.delta != null) corners(c, turns).filter { it.lost > .05 } else emptyList() }
+    // the coach's rings: the web's corners that cost time (LapMath's when the phone cannot run the web's analysis)
+    val rings = remember(c, turns, cs) { if (c.delta != null) (cs ?: corners(c, turns)).filter { it.lost > .05 } else emptyList() }
     val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
     val incPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0x63, 0x63); textSize = labelPx; isFakeBoldText = true; isAntiAlias = true } }
     val secPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0xFF, 0xB0, 0x2E); textSize = labelPx * 1.1f; isFakeBoldText = true; isAntiAlias = true } }
@@ -3586,7 +3631,9 @@ private fun BrakeTable(cs: List<Corner>, step: Double, sel: Int?, onSel: (Int) -
                             Text(v, color = if (i == 0 && on) Accent else col, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = if (i == 0) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
                                 textAlign = if (i == 0) TextAlign.Start else TextAlign.End, modifier = Modifier.width(w[i].dp).padding(end = if (i == 0) 0.dp else 6.dp))
                         }
-                        val tip = k.tip?.takeIf { k.lost > .03 }?.let { tipShort(t(it, *k.args.toTypedArray())) }
+                        // the web's own "what to do" when the corner comes from pitwall-analysis.js (a copy without it, its tip in a few
+                        // words), else the fallback's tip in a few words
+                        val tip = if (k.text != null) k.todo ?: k.text.takeIf { k.lost > .03 }?.let(::tipShort) else k.tip?.takeIf { k.lost > .03 }?.let { tipShort(t(it, *k.args.toTypedArray())) }
                         Text(tip ?: "–", color = if (tip == null) Muted else Fg, fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.width(210.dp).padding(start = 6.dp))
                     }
                 }
