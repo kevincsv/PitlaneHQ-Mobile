@@ -253,8 +253,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
                     g == "0" && q["new"] == "1" && sid.isNotEmpty() -> { repo.keepSignup(start.code); AuthUi(prov, newName = q[if (prov == "discord") "name" else "persona"].orEmpty(), sid = sid) }
                     g == "0" && q["relink"] == "1" -> AuthUi(prov, error = "discord_relink_login")
                     g.isEmpty() || g == "0" -> AuthUi(prov, error = prov + "_failed")
-                    repo.socialLogin(prov, g, start.code, I18n.lang) == "code" -> AuthUi(prov, needCode = true)
-                    else -> AuthUi(prov, needKey = true)
+                    else -> socialStep(prov, repo.socialLogin(prov, g, start.code, I18n.lang))
                 }
             } catch (e: Exception) {
                 authUi.value = AuthUi(prov, error = errKey(e))
@@ -291,9 +290,16 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         authUi.value = authUi.value.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.socialLoginCode(code) }
-                .onSuccess { authUi.value = authUi.value.copy(busy = false, needCode = false, needKey = true) }
+                .onSuccess { authUi.value = socialStep(authUi.value.prov, it) }
                 .onFailure { e -> authUi.value = if (e.message == "sign_in_again") AuthUi(error = "sign_in_again") else authUi.value.copy(busy = false, error = errKey(e)) }
         }
+    }
+
+    /** Where a sign-in with Steam or Discord goes on: signed in (the server's copy of the key), the code or the password. */
+    private fun socialStep(prov: String, s: AccountRepository.Social): AuthUi = when (s.step) {
+        "code" -> AuthUi(prov, needCode = true)
+        "in" -> { s.state?.let { _account.value = it }; demo.value = repo.demo; loadRaces(); resumeLive(); AuthUi() }
+        else -> AuthUi(prov, needKey = true)
     }
 
     /** The password once on this phone after Steam or Discord: the data key, and you are in. */
