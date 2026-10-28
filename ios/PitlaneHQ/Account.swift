@@ -478,15 +478,20 @@ final class Account: ObservableObject {
     }
 
     /// The server's copy of the data key in a sign-in's answer (dataKey), when it opens the account's data (or there is
-    /// none yet); a server that cannot be reached says nothing against it.
+    /// none yet). A check that cannot run is tried again a moment later; one that never runs leaves it not verified (nil:
+    /// the password once, as without a copy).
     private func escrowKey(_ j: [String: Any]) async -> Data? {
         let hex = str(j["dataKey"])
         guard hex.count == 64, hex.allSatisfy({ "0123456789abcdef".contains($0) }), let tok = j["token"] as? String else { return nil }
         let chars = Array(hex)
         let key = Data((0..<32).map { UInt8(String(chars[$0 * 2...$0 * 2 + 1]), radix: 16)! })
-        guard let d = try? await call("GET", "/account/sync", bearer: tok), let o = try? obj(d) else { return key }
-        let blob = str(o["blob"])
-        return blob.isEmpty || (try? PLCrypto.open(key: key, sealed: blob, aad: PLCrypto.accountAAD)) != nil ? key : nil
+        for n in 0..<3 {
+            if n > 0 { try? await Task.sleep(nanoseconds: 1_000_000_000) }
+            guard let d = try? await call("GET", "/account/sync", bearer: tok), let o = try? obj(d) else { continue }
+            let blob = str(o["blob"])
+            return blob.isEmpty || (try? PLCrypto.open(key: key, sealed: blob, aad: PLCrypto.accountAAD)) != nil ? key : nil
+        }
+        return nil
     }
 
     /// Signed in by Steam or Discord: with the server's copy of the key when it opens the account, else the password comes next.
@@ -762,7 +767,8 @@ final class Account: ObservableObject {
                 defaults.set(verified, forKey: "verified")
                 defaults.set(twoFactor, forKey: "twoFactor")
                 defaults.set(recoveryLeft, forKey: "recoveryLeft")
-                if let e = me["escrow"] as? Bool { defaults.set(e, forKey: "escrow") }
+                // only "none kept" is taken from the server: a copy that is not this phone's key must not stop this key going up
+                if let e = me["escrow"] as? Bool, !e { defaults.set(false, forKey: "escrow") }
             }
             // a new version of the bundle: the races held here are dropped and read again from it (the ratings are
             // read from it each time a screen draws them)

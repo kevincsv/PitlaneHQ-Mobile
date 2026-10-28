@@ -255,13 +255,19 @@ class AccountRepository(context: Context) {
     }
 
     /** The server's copy of the data key in a sign-in's answer ([j], dataKey), when it opens the account's data (or there
-     *  is none yet); a server that cannot be reached says nothing against it. */
+     *  is none yet). A check that cannot run is tried again a moment later; one that never runs leaves it not verified
+     *  (null: the password once, as without a copy). */
     private fun escrowKey(j: JSONObject): ByteArray? {
         val hex = j.optString("dataKey", "")
         if (!Regex("^[0-9a-f]{64}$").matches(hex)) return null
         val key = ByteArray(32) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
-        val blob = try { JSONObject(call("GET", "/account/sync", bearer = j.getString("token"))).optString("blob", "") } catch (e: Exception) { return key }
-        return if (blob.isEmpty() || runCatching { Crypto.open(key, blob, Crypto.ACCOUNT_AAD) }.isSuccess) key else null
+        val tok = j.optString("token", "").ifEmpty { return null }
+        repeat(3) { n ->
+            if (n > 0) Thread.sleep(1000)
+            val blob = try { JSONObject(call("GET", "/account/sync", bearer = tok)).optString("blob", "") } catch (e: Exception) { return@repeat }
+            return if (blob.isEmpty() || runCatching { Crypto.open(key, blob, Crypto.ACCOUNT_AAD) }.isSuccess) key else null
+        }
+        return null
     }
 
     /** Where a sign-in with Steam or Discord goes on: "code" (the authenticator's code), "key" (the password once) or "in"
@@ -449,7 +455,8 @@ class AccountRepository(context: Context) {
             prefs.edit().putString("acctId", me.optString("id", "")).putString("display", me.optString("display", "")).putBoolean("verified", me.optBoolean("verified", true)).putBoolean("admin", me.optBoolean("admin", false))
                 .putBoolean("twoFactor", me.optBoolean("twoFactor", false)).putInt("recoveryLeft", me.optInt("recoveryLeft", 0))
                 .putBoolean("supporter", me.optBoolean("supporter", false)).putBoolean("supporterHidden", me.optBoolean("supporterHidden", false)).apply()
-            if (me.has("escrow")) prefs.edit().putBoolean("escrow", me.optBoolean("escrow")).apply()
+            // only "none kept" is taken from the server: a copy that is not this phone's key must not stop this key going up
+            if (me.has("escrow") && !me.optBoolean("escrow")) prefs.edit().putBoolean("escrow", false).apply()
         }
         return storedState()
     }
