@@ -4,6 +4,15 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.7.0 beta
+
+- Signing in with Steam or Discord no longer asks for your password.
+- The lap analysis has a braking table of lap A against lap B, with the gear, the time lost and what to do.
+- The lap list shows S1, S2 and S3.
+- The coach's plan goes to the coach overlay on your PC with one button.
+- The lap analysis and the coach give the same corners, tips and plan as the PC and the web.
+- Fixes and improvements.
+
 ## 0.6.1 beta
 
 - The lap analysis and the coach say when a lap was driven in traffic, on cold tyres or on a wet track.
