@@ -4,6 +4,12 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.7.1 beta
+
+- Le Mans Ultimate leaderboards show the whole class too, with each driver's car.
+- Laps driven in the rain or on a wet or damp track carry a badge on the leaderboards.
+- Fixes and improvements.
+
 ## 0.7.0 beta
 
 - Signing in with Steam or Discord no longer asks for your password.
