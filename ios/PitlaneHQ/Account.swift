@@ -1061,7 +1061,7 @@ final class Account: ObservableObject {
         // the corner card: where the fastest drivers here brake and how fast they take each corner of the record lap
         let cards: [CornerCard] = ((m["corners"] as? [[String: Any]]) ?? []).map { o in
             func d(_ k: String) -> Double { (o[k] as? NSNumber)?.doubleValue ?? 0 }
-            return CornerCard(d: d("d"), apex: d("apex"), b0: d("b0"), b1: d("b1"), v0: d("v0"), v1: d("v1"), n: (o["n"] as? NSNumber)?.intValue ?? 0)
+            return CornerCard(d: d("d"), apex: d("apex"), b0: d("b0"), b1: d("b1"), v0: d("v0"), v1: d("v1"), n: (o["n"] as? NSNumber)?.intValue ?? 0, spread: d("spread"))
         }
         // the model's bins are [speed, time, throttle, brake, gear, steering]; a trace row is [speed, throttle, brake, gear, steering, time]
         func row(_ b: [Any]) -> [Double] {
@@ -1132,15 +1132,27 @@ final class Account: ObservableObject {
         if demo { return nil }
         guard let j = try? await cachedGet("/community/coach/weights").data as? [String: Any] else { return nil }
         let off = Set((j["off"] as? [String]) ?? [])
-        var conf: [String: (Int, Int)] = [:]
-        for b in (j["buckets"] as? [[String: Any]]) ?? [] { conf["\(str(b["kind"]))|\(str(b["cls"]))"] = (int(b["win"]), int(b["n"])) }
-        return CoachInfo(off: off, conf: conf, confidence: (j["confidence"] as? Bool) ?? false, min: (j["min"] as? NSNumber)?.intValue ?? 30)
+        var conf: [String: (Int, Int)] = [:], w: [String: Double] = [:], ask: [String: Double] = [:]
+        for b in (j["buckets"] as? [[String: Any]]) ?? [] {
+            let k = "\(str(b["kind"]))|\(str(b["cls"]))"
+            conf[k] = (int(b["win"]), int(b["n"]))
+            let bw = (b["w"] as? NSNumber)?.doubleValue ?? 0
+            w[k] = bw > 0 ? bw : 1
+            if let a = (b["ask"] as? NSNumber)?.doubleValue, a > 0 { ask[k] = a }
+        }
+        return CoachInfo(off: off, conf: conf, confidence: (j["confidence"] as? Bool) ?? false, min: (j["min"] as? NSNumber)?.intValue ?? 30, w: w, ask: ask)
     }
     /// The driver's own memory: the kinds of tip that repeat across their tracks (habits), the most repeated first.
     func coachHabits() async -> [Habit] {
         if demo { return [] }
         guard let j = try? await cachedGet("/community/coach/me").data as? [String: Any], let a = j["habits"] as? [[String: Any]] else { return [] }
         return a.map { Habit(kind: str($0["kind"]), tracks: int($0["tracks"]), sessions: int($0["sessions"])) }
+    }
+    /// The driver's own weights of the coach's tips, by "kind|cls" (/community/coach/me), for the plan's order.
+    func coachMeWeights() async -> [String: Double] {
+        if demo { return [:] }
+        guard let j = try? await cachedGet("/community/coach/me").data as? [String: Any], let w = j["w"] as? [String: Any] else { return [:] }
+        return w.compactMapValues { ($0 as? NSNumber)?.doubleValue }
     }
     func turns(trackId: Int64, game gm: String? = nil) async -> [Double] {
         if demo || trackId <= 0 { return [] }

@@ -31,7 +31,13 @@ data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, va
     // here brake and how fast they take each corner): the thumbs on a tip and the hint beside it
     val session: CloudSession? = null, val trackId: Long = 0, val carId: Long = 0, val corners: List<CornerCard> = emptyList(),
     // what the coach learnt from everyone (the tips turned off, how many drivers each helped) and this driver's habits
-    val coach: CoachInfo? = null, val habits: List<Habit> = emptyList())
+    val coach: CoachInfo? = null, val habits: List<Habit> = emptyList(),
+    // the web's analysis of these two laps (pitwall-analysis.js) in each language: its corners, tips, plan and sectors are
+    // what the screens show; null when the phone cannot run it, and the screens use LapMath
+    val js: Map<String, JsResult>? = null) {
+    /** the web's analysis in the app's language */
+    val jsNow: JsResult? get() = js?.get(com.pitlanehq.android.ui.I18n.lang)
+}
 
 /** The pit lane of a track (from laps through the pits): [5 m point of a lap of n points, metres to the left of the track]. */
 data class PitLane(val n: Int, val pts: List<Pair<Int, Double>>)
@@ -630,7 +636,13 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId, gm) }.getOrNull() else null
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
             if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time, gm).corners }.getOrDefault(emptyList())
-            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards, coach = coach, habits = habits))
+            // the web's own analysis of the two laps, the same corners, tips, plan and sectors as the PC's
+            val rB = ref; val tB = refTime
+            val js = if (tr != null && rB != null && tB != null) runCatching {
+                val w = CoachWeights(coach?.w ?: emptyMap(), coach?.ask ?: emptyMap(), coach?.off ?: emptySet(), repo.coachMeWeights(), habits.map { Triple(it.kind, it.tracks, it.sessions) })
+                repo.analysisJs.analyse(JsAnalysis.lap(tr, lap.time, lap.sectors), JsAnalysis.lap(rB, tB, refSec), JsAnalysis.ctx("en", turns, w, cards))
+            }.getOrNull() else null
+            Got(LapAnalysis(lap, tr, ref, label, refTime, refSec, card, turns, fastest = fastest, layout = layout, session = s, trackId = c?.trackId ?: 0, carId = c?.carId ?: 0, corners = cards, coach = coach, habits = habits, js = js))
         }
     }
 

@@ -27,7 +27,16 @@
   Telemetry, Standings and Tyres (`Live` in PitlaneApp.kt, `LiveTabs.swift`, fed by `LiveField`); Analysis has Laps,
   Coach, My sessions and My races (`Analysis` in PitlaneApp.kt, `AnalysisView` and `Analysis.swift`), lap B is your own
   best, the model's next level or its record (`modelRefs`), and each driver is measured against their own laps.
-  The corner tips (`corners` in LapMath.kt and Models.swift, texts `tip_*`) follow the measured facts like the PC's
+  The lap analysis and the coach are the web's own file, `web/dist/pitwall-analysis.js` of the Pitwall-test repository,
+  run on the phone (Android's JavaScriptSandbox, `data/AnalysisJs.kt`; iOS's JavaScriptCore, `AnalysisJs.swift`): the
+  phones turn both laps into the web's shape (`JsAnalysis.lap`), hand it the official turns, the coach's weights and
+  habits and the model's corner cards (`JsAnalysis.ctx`), and show its corners, tips, plan and sectors in their own
+  screens (`js`/`jsNow` in `LapAnalysis`, the tip as `text` on `Corner`, `PlanItem`), in the three languages from one
+  run. They download pitlanehq.app/pitwall-analysis.js at most every six hours (its ETag) and keep it on disk; the
+  copy in the app (`app/src/main/assets/` and `ios/Resources/`, refreshed with `tools/sync-analysis.sh` whenever the
+  file changes in Pitwall-test) runs until a download succeeds. LapMath.kt and Models.swift are only the fallback, when
+  the engine cannot run (a WebView without the sandbox), and the charts' own grid.
+  The corner tips (the fallback's `corners` in LapMath.kt and Models.swift, texts `tip_*`) follow the measured facts like the PC's
   and the web's: braking later than the reference and arriving slower at the apex is one mistake whatever phase pays
   for it (`tip_brake_late_apex`); with the same braking point the tip is about the brake (harder at first, trail,
   `tip_brake_same`), never "brake later"; an apex reached as fast as the reference's says the time goes before it

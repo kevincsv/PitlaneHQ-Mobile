@@ -24,6 +24,11 @@ struct LapAnalysis {
     // what the coach learnt from everyone (the tips turned off, how many drivers each helped) and this driver's habits
     var coach: CoachInfo?
     var habits: [Habit] = []
+    // the web's analysis of these two laps (pitwall-analysis.js) in each language: its corners, tips, plan and sectors are
+    // what the screens show; nil when it cannot run, and the screens use Models.swift
+    var js: [String: JsResult]? = nil
+    /// the web's analysis in the app's language
+    var jsNow: JsResult? { js?[I18n.shared.lang] }
 }
 
 /// What a lap was driven in, from its trace's flags, like the web's lap list ("traffic · wet track"); nil when nothing to say.
@@ -100,6 +105,13 @@ extension Account {
             r.y = (0..<r.rows.count).map { by[min($0, by.count - 1)] }
             a.ref = r
         }
+        // the web's own analysis of the two laps, the same corners, tips, plan and sectors as the PC's
+        if let tr = a.trace, let rb = a.ref, let tb = a.refTime {
+            let me = await coachMeWeights()
+            let w = CoachWeights(w: a.coach?.w ?? [:], ask: a.coach?.ask ?? [:], off: a.coach?.off ?? [], me: me, habits: a.habits)
+            a.js = await AnalysisJs.shared.analyse(a: JsAnalysis.lap(tr, time: lap.time, sectors: lap.sectors), b: JsAnalysis.lap(rb, time: tb, sectors: a.refSectors),
+                                                   ctx: JsAnalysis.ctx(lang: "en", turns: a.turns, w: w, cards: a.corners))
+        }
         return a
     }
 }
@@ -146,7 +158,7 @@ struct CornerTipView: View {
             }
             if let tip = k.tip {
                 HStack(alignment: .top, spacing: 6) {
-                    Text(fillArgs(t(tip), k.args)).font(.subheadline)
+                    Text(k.text ?? fillArgs(t(tip), k.args)).font(.subheadline)
                     Spacer(minLength: 0)
                     if let s = an?.session {
                         let key = s.id + ":" + String(k.apexM)
@@ -195,7 +207,30 @@ private struct PlanRow: View {
                     Spacer()
                     Text(String(format: "+%.2f s", k.lost)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.bad)
                 }
-                if let tip = k.tip { Text(fillArgs(t(tip), k.args)).font(.caption).foregroundColor(Theme.muted) }
+                if let tip = k.tip { Text(k.text ?? fillArgs(t(tip), k.args)).font(.caption).foregroundColor(Theme.muted) }
+            }
+        }
+        .padding(.top, 4)
+    }
+}
+
+/// One step of the web's plan: what to work on, what it is worth, why and how.
+private struct PlanItemRow: View {
+    let i: Int
+    let p: PlanItem
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text("\(i + 1).").font(.subheadline.weight(.black)).foregroundColor(Theme.accent).frame(width: 22, alignment: .leading)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(p.t).font(.subheadline.bold())
+                    Spacer()
+                    if p.gain > 0 {
+                        Text((p.k == "cons" ? "±" : "+") + String(format: "%.2f s", p.gain)).font(.system(size: 12, design: .monospaced)).foregroundColor(p.k == "cons" ? Theme.accent : Theme.bad)
+                    }
+                }
+                if !p.why.isEmpty { Text(p.why).font(.caption).foregroundColor(Theme.muted) }
+                if !p.how.isEmpty { Text("→ " + p.how).font(.caption) }
             }
         }
         .padding(.top, 4)
@@ -267,7 +302,8 @@ struct CoachBody: View {
         VStack(alignment: .leading, spacing: 10) {
             if !cs0.isEmpty { CoachGap(an: an, refName: refName, first: lose0.first) }
             // the driver's habit first: a kind of tip that repeats on several of their tracks
-            if let h = an.habits.first, h.tracks >= 3 { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions)).font(.subheadline) } }
+            // (the web's plan already starts with it)
+            if an.jsNow?.plan.contains(where: { $0.k == "habit" }) != true, let h = an.habits.first, h.tracks >= 3 { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions)).font(.subheadline) } }
             else { HStack(spacing: 8) {
                 Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent, sub: lapFlags(an.trace))
                 Metric(label: refName, value: lapTime(an.refTime), color: Theme.blue)
@@ -280,6 +316,8 @@ struct CoachBody: View {
     }
 
     private func gapCorners() -> [Corner] {
+        // the web's corners and tips (pitwall-analysis.js); Models.swift's only when the phone cannot run it
+        if let js = an.jsNow { return js.coach }
         guard let tr = an.trace, an.ref != nil else { return [] }
         return corners(compare(tr, an.ref), turns: an.turns, off: an.coach?.off ?? [])
     }
@@ -294,7 +332,14 @@ struct CoachBody: View {
         CornerStrip(cs: cs, lapLen: lapLen, pick: $pick, title: false)
         let k: Corner? = picked(cs, lapLen)
         Panel { if let k { CornerTipView(k: k, an: an) } else { Text(t("corner_pick")).font(.caption).foregroundColor(Theme.muted) } }
-        if !lose.isEmpty {
+        // the web's plan: what to work on first, what it is worth, why and how
+        if let plan = an.jsNow?.plan, !plan.isEmpty {
+            Panel {
+                SectionLabel(text: t("coach_plan").uppercased())
+                Text(t("coach_plan_note")).font(.caption2).foregroundColor(Theme.muted)
+                ForEach(Array(plan.prefix(4).enumerated()), id: \.offset) { i, p in PlanItemRow(i: i, p: p) }
+            }
+        } else if !lose.isEmpty {
             Panel {
                 SectionLabel(text: t("coach_plan").uppercased())
                 Text(t("coach_plan_note")).font(.caption2).foregroundColor(Theme.muted)
@@ -318,12 +363,14 @@ struct CoachBody: View {
 
     @ViewBuilder private func details(_ tr: Trace) -> some View {
         let c = compare(tr, an.ref)
-        let cs: [Corner] = an.ref != nil ? corners(c, turns: an.turns, off: an.coach?.off ?? []) : []
+        let cs: [Corner] = an.jsNow?.coach ?? (an.ref != nil ? corners(c, turns: an.turns, off: an.coach?.off ?? []) : [])
         let lose = cs.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
         if an.ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
         else if !cs.isEmpty { summary(cs, lose, c) }
-        if tr.hasShape || an.layout != nil { TrackMapView(c: c, trace: tr, pick: $pick, turns: an.turns, road: an.layout) }
-        if !an.lap.sectors.isEmpty { SectorTable(a: an.lap.sectors, b: an.refSectors) }
+        if tr.hasShape || an.layout != nil { TrackMapView(c: c, trace: tr, pick: $pick, turns: an.turns, road: an.layout, cs: an.jsNow?.corners) }
+        // the web's sectors (the game's when both laps have them, else thirds of the lap from the traces), else the game's
+        if let s = an.jsNow?.secs, !s.isEmpty { SectorTable(a: s.map { $0.0 }, b: s.map { $0.1 }) }
+        else if !an.lap.sectors.isEmpty { SectorTable(a: an.lap.sectors, b: an.refSectors) }
         if !lose.isEmpty {
             SectionLabel(text: t("coach_top").uppercased())
             ForEach(Array(lose.prefix(3)), id: \.self) { k in

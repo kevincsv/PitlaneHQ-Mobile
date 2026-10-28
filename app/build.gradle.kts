@@ -49,4 +49,6 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.squareup.okhttp3:okhttp:5.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // the lap analysis and the coach of the PC and the web (pitwall-analysis.js), run on the phone
+    implementation("androidx.javascriptengine:javascriptengine:1.0.0")
 }
