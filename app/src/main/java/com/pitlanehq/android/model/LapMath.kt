@@ -107,8 +107,20 @@ data class Corner(
     val coastA: Double, val coastB: Double, val tip: String?, val args: List<Any>,
     val lineTip: String? = null, val lineArgs: List<Any> = emptyList(),  // what the line says, besides the tip
     val apexM: Int = atM,       // the reference's slowest point, metres from the line: the same corner on the server (coachtips.js)
-    val cls: String = ""        // the corner's speed there: slow (under 80 km/h), medium (under 150), fast
+    val cls: String = "",       // the corner's speed there: slow (under 80 km/h), medium (under 150), fast
+    // the braking points table (like the web's): A's brake point against B's (m, + A later; null without one within 100 m),
+    // the speed at each lap's slowest point (km/h), the gear there, and whether B takes the corner without braking (a lift)
+    val dd: Int? = null, val vA: Double? = null, val vB: Double = 0.0, val gearA: Int = 0, val gearB: Int = 0, val lift: Boolean = false
 )
+
+/** A tip in a few words for the braking points table: without its figures in brackets (the columns carry them) and, of two
+ *  sentences, the one that says what to do (the last, unless it is only the measurement and the first is not), like the web's tipShort. */
+fun tipShort(text: String): String {
+    val q = text.replace(Regex("\\s*\\([^)]*\\)"), "").trim().split(Regex("\\.\\s+")).map { it.trim().removeSuffix(".").trim() }.filter { it.isNotEmpty() }
+    if (q.size < 2) return q.firstOrNull() ?: ""
+    val num = Regex("\\d")
+    return if (num.containsMatchIn(q.last()) && !num.containsMatchIn(q.first())) q.first() else q.last()
+}
 
 /** The corner card the model learnt (`corners` in /community/model): where the fastest drivers of this car and track
  *  brake (b0..b1, metres from the line) and how fast they pass the slowest point (v0..v1, m/s) of one corner of the
@@ -303,7 +315,9 @@ fun corners(c: Compared, turns: List<Double> = emptyList(), off: Set<String> = e
             }
         }
         Corner(if (z.turn >= 0) z.turn + 1 else turnNo(turns, zmin * c.step, n * c.step, idx + 1), (zi * c.step).toInt(), lost, ph, phase, coastA, coastB, tip, args, lineKey, lineArgs,
-            apexM = (zmin * c.step).toInt(), cls = cls)
+            apexM = (zmin * c.step).toInt(), cls = cls,
+            dd = ja?.let { ((it - zi) * c.step).toInt() }, vA = aMin?.let { c.speedA[it] }, vB = vb,
+            gearA = c.gearA?.getOrNull(aMin ?: zmin)?.toInt() ?: 0, gearB = c.gearB?.getOrNull(zmin)?.toInt() ?: 0, lift = z.lift)
     }
 }
 

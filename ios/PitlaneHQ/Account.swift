@@ -311,6 +311,36 @@ final class Account: ObservableObject {
         }
     }
 
+    /// The coach's plan to the coach overlay of your PC, like the web: the overlay's chosen corners (`ui.coach.turns`, "T4")
+    /// in the account's settings.json, the PC's own settings, which it takes at its next sync. Only that value changes and
+    /// the bundle goes back sealed with your key. False when the account has no settings from a PC yet (nothing to reach).
+    func setCoachTurns(_ turns: [String]) async throws -> Bool {
+        if demo { return true }
+        guard let dk = dataKey else { throw AppError.signedOut }
+        for attempt in 0..<3 {
+            let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/sync")) as? [String: Any] ?? [:]
+            guard let blob = j["blob"] as? String, !blob.isEmpty else { return false }
+            var all = try JSONSerialization.jsonObject(with: PLCrypto.gunzip(PLCrypto.open(key: dk, sealed: blob, aad: PLCrypto.accountAAD))) as? [String: Any] ?? [:]
+            guard var st = (all["settings.json"] as? String).flatMap({ Data(base64Encoded: $0) }).flatMap({ try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }) else { return false }
+            var ui = st["ui"] as? [String: Any] ?? [:]
+            var coach = ui["coach"] as? [String: Any] ?? [:]
+            coach["turns"] = turns
+            ui["coach"] = coach
+            st["ui"] = ui
+            all["settings.json"] = try JSONSerialization.data(withJSONObject: st).base64EncodedString()
+            let sealed = try PLCrypto.seal(key: dk, plain: PLCrypto.gzip(JSONSerialization.data(withJSONObject: all)), aad: PLCrypto.accountAAD)
+            do {
+                let r = try JSONSerialization.jsonObject(with: await call("PUT", "/account/sync", body: ["blob": sealed, "base": j["version"] ?? 0])) as? [String: Any] ?? [:]
+                syncVersion = int(r["version"])
+                defaults.set(syncVersion, forKey: "syncVersion")
+                return true
+            } catch let e as AppError where e.key.lowercased().contains("conflict") && attempt < 2 {
+                continue // another device wrote the account meanwhile: read it again and redo the change on top
+            }
+        }
+        return false
+    }
+
     // ---------- saved copies (sealed with the account's data key) ----------
 
     private func file(_ name: String) -> URL { dir.appendingPathComponent(String(name.map { $0.isLetter || $0.isNumber || "_.-".contains($0) ? $0 : "_" }.prefix(120))) }

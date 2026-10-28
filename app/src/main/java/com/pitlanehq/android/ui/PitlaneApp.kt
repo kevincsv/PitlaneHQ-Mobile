@@ -1190,6 +1190,8 @@ private fun LazyListScope.lapItems(vm: PitlaneViewModel, nav: NavHostController,
     val nSec = laps.maxOfOrNull { it.sectors.size } ?: 0
     // fastest time of each sector over the valid laps, shown in purple like in the sim
     val bestSec = (0 until nSec).map { i -> valid.mapNotNull { it.sectors.getOrNull(i) }.filter { it > 0 }.minOrNull() }
+    // a sector better than the same sector of your best lap is green, like the web's lap list
+    val bestLapSec = valid.minByOrNull { it.time }?.sectors ?: emptyList()
     // the average of the valid laps: a real figure, not a lap made of the best sectors
     val avg = if (valid.isNotEmpty()) valid.map { it.time }.average() else null
     item {
@@ -1215,12 +1217,20 @@ private fun LazyListScope.lapItems(vm: PitlaneViewModel, nav: NavHostController,
                 Icon(Icons.Default.ChevronRight, null, tint = Muted)
             }
             if (lap.drv.isNotEmpty()) Text(lap.drv, color = Accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (lap.sectors.isNotEmpty()) {
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    lap.sectors.forEachIndexed { i, sv ->
+            // one column per sector (S1, S2, S3…), the same place on every lap: purple the session's best, green better than your best lap's
+            if (nSec > 0) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())) {
+                    (0 until nSec).forEach { i ->
+                        val sv = lap.sectors.getOrNull(i)?.takeIf { it > 0 }
+                        val bl = bestLapSec.getOrNull(i)
                         Text(
-                            "S${i + 1} " + "%.3f".format(sv), fontSize = 11.sp, fontFamily = FontFamily.Monospace,
-                            color = if (lap.valid && sv == bestSec.getOrNull(i)) Purple else Muted
+                            "S${i + 1} " + (sv?.let { "%.3f".format(it) } ?: "–"), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(84.dp),
+                            color = when {
+                                sv == null -> Muted
+                                lap.valid && sv == bestSec.getOrNull(i) -> Purple
+                                lap.valid && bl != null && bestLapSec.size == lap.sectors.size && sv < bl - 1e-4 -> Good
+                                else -> Muted
+                            }
                         )
                     }
                 }
@@ -1365,6 +1375,8 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
                         }
                     }
                 }
+                val turns = lose.take(4).map { "T${it.n}" }.distinct()
+                if (vm != null && turns.isNotEmpty()) PlanToOverlay(vm, turns)
             }
         }
     }
@@ -1478,6 +1490,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             }
                         }
                     } else {
+                        item { BrakeTable(cs, c.step, pick) { pick = it } }
                         val tot = PHASE_KEYS.associateWith { k -> cs.sumOf { maxOf(0.0, it.phases[k] ?: 0.0) } }
                         val worst = tot.maxBy { it.value }
                         item { Section(t("by_phase")) }
@@ -3516,6 +3529,61 @@ private fun CornerStrip(cs: List<Corner>, step: Double, sel: Int?, title: Boolea
                     }
                     Text("T${k.n}", color = if (on) Accent else Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
                     Text((if (k.lost >= 0) "+" else "−") + "%.2f".format(kotlin.math.abs(k.lost)), color = col, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                }
+            }
+        }
+    }
+}
+
+/** "Take the plan to the coach overlay", like the web's: the plan's corners become the coach overlay's chosen ones on your
+ *  PC (the account's settings, which the PC takes at its next sync), and a short line says so. */
+@Composable
+private fun PlanToOverlay(vm: PitlaneViewModel, turns: List<String>) {
+    var busy by remember(turns) { mutableStateOf(false) }
+    var msg by remember(turns) { mutableStateOf<String?>(null) }
+    TextButton({ busy = true; vm.planToOverlay(turns) { ok, err -> busy = false; msg = err ?: if (ok) t("plan_sent", turns.joinToString(", ")) else t("plan_no_pc") } }, enabled = !busy,
+        modifier = Modifier.padding(top = 4.dp)) { Text(t("plan_to_overlay"), color = Accent, fontSize = 13.sp) }
+    msg?.let { Text(it, color = Muted, fontSize = 12.sp) }
+}
+
+/** The braking points of lap A against lap B, like the web's analyzer: per corner (its official turn), where each lap brakes,
+ *  the gap in metres (+ A later), the speed at each apex, the gear there, the time lost and what to do (the tip in a few
+ *  words). A row reads that corner on the map and the charts. */
+@Composable
+private fun BrakeTable(cs: List<Corner>, step: Double, sel: Int?, onSel: (Int) -> Unit) {
+    val w = listOf(40, 62, 62, 44, 54, 54, 44, 58)
+    val heads = listOf(t("bt_turn"), t("bt_brake_a"), t("bt_brake_b"), "Δ m", t("bt_apex_a"), t("bt_apex_b"), t("gear"), t("bt_loss"))
+    Panel {
+        Section(t("brake_points"))
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState())) {
+            Column {
+                Row(Modifier.padding(bottom = 4.dp)) {
+                    heads.forEachIndexed { i, h -> Text(h.uppercase(), color = Muted, fontSize = 9.sp, maxLines = 1, textAlign = if (i == 0) TextAlign.Start else TextAlign.End, modifier = Modifier.width(w[i].dp).padding(end = if (i == 0) 0.dp else 6.dp)) }
+                    Text(t("bt_todo").uppercase(), color = Muted, fontSize = 9.sp, maxLines = 1, modifier = Modifier.width(210.dp).padding(start = 6.dp))
+                }
+                cs.forEach { k ->
+                    val idx = (k.atM / step).roundToInt()
+                    val on = sel != null && kotlin.math.abs(sel - idx) <= 2
+                    val dd = if (k.lift) null else k.dd
+                    val gear = if (k.gearA >= 1 && k.gearB >= 1 && k.gearA != k.gearB) "${k.gearA} / ${k.gearB}" else if (k.gearA >= 1) "${k.gearA}" else if (k.gearB >= 1) "${k.gearB}" else "–"
+                    val cells = listOf(
+                        "T${k.n}" to Fg,
+                        (k.dd?.let { "${k.atM + it} m" } ?: "–") to Fg,
+                        (if (k.lift) t("bt_lift") else "${k.atM} m") to (if (k.lift) Muted else Fg),
+                        (if (dd == null) "–" else if (kotlin.math.abs(dd) < 3) "≈ 0" else (if (dd > 0) "+" else "−") + kotlin.math.abs(dd)) to (if (dd != null && dd <= -3) Bad else Muted),
+                        (k.vA?.let { "%.0f".format(it) } ?: "–") to Fg,
+                        "%.0f".format(k.vB) to Fg,
+                        gear to Fg,
+                        ((if (k.lost >= 0) "+" else "−") + "%.3f".format(kotlin.math.abs(k.lost))) to (if (k.lost > .02) Bad else if (k.lost < -.02) Good else Muted)
+                    )
+                    Row(Modifier.clip(RoundedCornerShape(6.dp)).background(if (on) Surface2 else Color.Transparent).clickable { onSel(idx) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        cells.forEachIndexed { i, (v, col) ->
+                            Text(v, color = if (i == 0 && on) Accent else col, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = if (i == 0) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
+                                textAlign = if (i == 0) TextAlign.Start else TextAlign.End, modifier = Modifier.width(w[i].dp).padding(end = if (i == 0) 0.dp else 6.dp))
+                        }
+                        val tip = k.tip?.takeIf { k.lost > .03 }?.let { tipShort(t(it, *k.args.toTypedArray())) }
+                        Text(tip ?: "–", color = if (tip == null) Muted else Fg, fontSize = 11.sp, lineHeight = 14.sp, modifier = Modifier.width(210.dp).padding(start = 6.dp))
+                    }
                 }
             }
         }

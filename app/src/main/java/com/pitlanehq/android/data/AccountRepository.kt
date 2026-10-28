@@ -527,6 +527,38 @@ class AccountRepository(context: Context) {
         }
     }
 
+    /**
+     * The coach's plan to the coach overlay of your PC, like the web: the overlay's chosen corners (`ui.coach.turns`, "T4")
+     * in the account's settings.json, the PC's own settings, which it takes at its next sync. Only that value changes and
+     * the bundle goes back sealed with your key. False when the account has no settings from a PC yet (nothing to reach).
+     */
+    fun setCoachTurns(turns: List<String>): Boolean {
+        if (demo) return true
+        for (attempt in 0..2) {
+            val j = JSONObject(call("GET", "/account/sync"))
+            val blob = j.optString("blob", "")
+            if (blob.isEmpty()) return false
+            val all = JSONObject(String(Crypto.gunzip(Crypto.open(dataKey(), blob, Crypto.ACCOUNT_AAD))))
+            val st = all.optString("settings.json").takeIf { it.isNotEmpty() }?.let { runCatching { JSONObject(String(Base64.decode(it, Base64.DEFAULT))) }.getOrNull() } ?: return false
+            val ui = st.optJSONObject("ui") ?: JSONObject()
+            val coach = ui.optJSONObject("coach") ?: JSONObject()
+            coach.put("turns", JSONArray(turns))
+            ui.put("coach", coach)
+            st.put("ui", ui)
+            all.put("settings.json", Base64.encodeToString(st.toString().toByteArray(), Base64.NO_WRAP))
+            val sealed = Crypto.seal(dataKey(), Crypto.gzip(all.toString().toByteArray()), Crypto.ACCOUNT_AAD)
+            try {
+                val r = JSONObject(call("PUT", "/account/sync", JSONObject().put("blob", sealed).put("base", j.optLong("version", 0))))
+                prefs.edit().putLong("syncVersion", r.optLong("version", 0)).apply()
+                return true
+            } catch (e: AppError) {
+                // another device wrote the account meanwhile: read it again and redo the change on top
+                if (attempt == 2 || e.message?.contains("conflict", true) != true) throw e
+            }
+        }
+        return false
+    }
+
     private fun nameKey(name: String) = name.trim().lowercase().split(Regex("\\s+")).filter { it.isNotEmpty() }.joinToString(" ").let { if (it.isEmpty()) "" else "n:$it" }
 
     // only what the phone shows, newest first: races.json also has braking points and more
