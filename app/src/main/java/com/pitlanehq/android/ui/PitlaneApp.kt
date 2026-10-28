@@ -1280,6 +1280,10 @@ private fun LazyListScope.sectorItems(an: LapAnalysis) {
     }
 }
 
+/** What a lap was driven in, from its trace's flags, like the web's lap list ("traffic · wet track"); null when nothing to say. */
+private fun lapFlags(tr: Trace?): String? =
+    tr?.f?.mapNotNull { when (it) { "traffic" -> t("lap_traffic"); "cold" -> t("lap_cold"); "wet" -> t("lap_wet"); else -> null } }?.takeIf { it.isNotEmpty() }?.joinToString(" · ")
+
 /** The coach's top card: the gap to the reference, both times and what to work on first. */
 @Composable
 private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?, vm: PitlaneViewModel? = null) {
@@ -1292,6 +1296,7 @@ private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?, vm: Pitla
                     color = if (d == null) Fg else if (d <= 0) Good else Bad, modifier = Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End) {
                     Text(t("you") + " · L${an.lap.n}  " + lapTime(an.lap.time), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    lapFlags(an.trace)?.let { Text(it, color = Muted, fontSize = 10.sp) }
                     Text(lapTime(an.refTime), color = Blue, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
             }
@@ -1318,7 +1323,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
     an.habits.firstOrNull()?.takeIf { it.tracks >= 3 }?.let { h -> item { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions), fontSize = 13.sp) } } }
     if (cs0.isEmpty()) item {
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Metric(t("you") + " · L${an.lap.n}", lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent)
+            Metric(t("you") + " · L${an.lap.n}", lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent, sub = lapFlags(an.trace))
             Metric(refName, lapTime(an.refTime), Modifier.weight(1f).fillMaxHeight(), Blue)
             val d = an.refTime?.let { an.lap.time - it }
             Metric(t("delta"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight(), if (d == null) Fg else if (d <= 0) Good else Bad)
@@ -1426,7 +1431,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
         if (an != null) {
             item {
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Metric(t("you"), lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent)
+                    Metric(t("you"), lapTime(an.lap.time), Modifier.weight(1f).fillMaxHeight(), Accent, sub = lapFlags(an.trace))
                     Metric(an.refLabel.ifBlank { t("ref") }, lapTime(an.refTime), Modifier.weight(1f).fillMaxHeight(), Blue)
                     val d = an.refTime?.let { an.lap.time - it }
                     Metric(t("delta"), d?.let { "%+.3f".format(it) } ?: "—", Modifier.weight(1f).fillMaxHeight(), if (d == null) Fg else if (d <= 0) Good else Bad)

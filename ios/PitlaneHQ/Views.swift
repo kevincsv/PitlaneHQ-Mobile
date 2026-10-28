@@ -2189,7 +2189,7 @@ struct LapView: View {
             }
             LoadState(loading: loading, error: error) { Task { await load() } }
             HStack(spacing: 8) {
-                Metric(label: t("you"), value: lapTime(lap.time), color: Theme.accent)
+                Metric(label: t("you"), value: lapTime(lap.time), color: Theme.accent, sub: lapFlags(trace))
                 Metric(label: refLabel.isEmpty ? t("ref") : refLabel, value: lapTime(refTime), color: Theme.blue)
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
             }

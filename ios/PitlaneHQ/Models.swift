@@ -99,6 +99,9 @@ struct Trace {
     var hasShape: Bool { x != nil && y != nil && x!.count == rows.count && x!.count > 10 }
     /// What each incident was: "off", "loss", "light" (light contact) or "contact" (older laps: by the points).
     var incK: [String] = []
+    /// What the lap was driven in, as the PC tags it: "traffic" (a car close ahead), "cold" (the first lap of a run),
+    /// "wet" (the track at least lightly wet); "cmp:<n>" (the tyre compound) is never shown.
+    var f: [String] = []
     var incidents: [(d: Double, pts: Int, kind: String)] {
         (0..<(inc.count / 2)).map { i in
             let pts = Int(inc[2 * i + 1])

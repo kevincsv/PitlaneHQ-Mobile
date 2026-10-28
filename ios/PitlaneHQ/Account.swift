@@ -975,6 +975,7 @@ final class Account: ObservableObject {
         }
         if let inc = t["inc"] as? [NSNumber] { tr.inc = inc.map(\.doubleValue) }
         if let k = t["incK"] as? [String] { tr.incK = k }
+        if let f = t["f"] as? [String] { tr.f = f }
         return tr
     }
 

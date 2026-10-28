@@ -26,6 +26,14 @@ struct LapAnalysis {
     var habits: [Habit] = []
 }
 
+/// What a lap was driven in, from its trace's flags, like the web's lap list ("traffic · wet track"); nil when nothing to say.
+func lapFlags(_ tr: Trace?) -> String? {
+    let s: [String] = (tr?.f ?? []).compactMap { f in
+        switch f { case "traffic": return t("lap_traffic"); case "cold": return t("lap_cold"); case "wet": return t("lap_wet"); default: return nil }
+    }
+    return s.isEmpty ? nil : s.joined(separator: " · ")
+}
+
 private func fillArgs(_ s0: String, _ args: [String]) -> String {
     var s = s0
     for (i, a) in args.enumerated() { s = s.replacingOccurrences(of: "{\(i)}", with: a) }
@@ -209,6 +217,7 @@ struct CoachGap: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(t("you") + " · L\(an.lap.n)  " + lapTime(an.lap.time)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.accent)
+                    if let fl = lapFlags(an.trace) { Text(fl).font(.system(size: 10)).foregroundColor(Theme.muted) }
                     Text(lapTime(an.refTime)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.blue)
                 }
             }
@@ -260,7 +269,7 @@ struct CoachBody: View {
             // the driver's habit first: a kind of tip that repeats on several of their tracks
             if let h = an.habits.first, h.tracks >= 3 { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions)).font(.subheadline) } }
             else { HStack(spacing: 8) {
-                Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent)
+                Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent, sub: lapFlags(an.trace))
                 Metric(label: refName, value: lapTime(an.refTime), color: Theme.blue)
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
             }
