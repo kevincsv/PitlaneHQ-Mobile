@@ -1958,7 +1958,7 @@ struct AnalysisView: View {
         coachBusy = true
         coachErr = nil
         do {
-            let a = try await account.analyse(session: s, lap: best, all: ls, kind: .level)
+            let a = try await account.analyse(session: s, lap: best, all: ls, kind: .level, withLaps: true)
             if coachKey == key { coach = a }
         } catch {
             coachErr = (error as? AppError)?.key ?? error.localizedDescription

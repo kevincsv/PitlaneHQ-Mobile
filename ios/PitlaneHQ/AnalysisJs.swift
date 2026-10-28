@@ -29,21 +29,51 @@ struct CoachWeights {
     var habits: [Habit] = []
 }
 
+/// A lap's path as the web's analysis takes it (xy): x east and y north in metres, g its origin [lat, lon] when it comes from
+/// the game's position. Its length may differ from the lap's points (the model's fastest line, lineXY).
+struct LapPath {
+    let x: [Double]
+    let y: [Double]
+    let g: [Double]?
+}
+
 enum JsAnalysis {
+    /// The shape of the module's answer this app reads; another one (a newer pitwall-analysis.js) is not run and Models.swift is used.
+    static let version = 1
+
     private static func num(_ v: Double) -> Any { v.isFinite ? v : NSNull() }
 
-    /// A lap in the web's shape: one point every 5 m, [speed m/s, lap time s, throttle, brake, gear, steering], its path and origin.
-    static func lap(_ tr: Trace, time: Double, sectors: [Double]) -> [String: Any] {
+    /// The module counts a point every 5 m: a trace of other points (the demo data's 10 m) goes to Models.swift instead.
+    static func runs(_ tr: Trace) -> Bool { abs(tr.bin - 5) < 1e-6 }
+
+    /// A trace's own path, when it has one.
+    static func pathOf(_ tr: Trace) -> LapPath? {
+        guard let x = tr.x, let y = tr.y else { return nil }
+        return LapPath(x: x, y: y, g: tr.g?.count == 2 ? tr.g : nil)
+    }
+
+    /// A lap in the web's shape: one point every 5 m, [speed m/s, lap time s, throttle, brake, gear, steering], and its path
+    /// (the trace's own unless another is given: a model reference takes the web's, lineXY with its origin).
+    static func lap(_ tr: Trace, time: Double, sectors: [Double]) -> [String: Any] { lap(tr, time: time, sectors: sectors, path: pathOf(tr)) }
+
+    static func lap(_ tr: Trace, time: Double, sectors: [Double], path: LapPath?) -> [String: Any] {
         func at(_ r: [Double], _ k: Int) -> Any { num(k < r.count ? r[k] : 0) }
         let bins: [[Any]] = tr.rows.map { r in [at(r, 0), at(r, 5), at(r, 1), at(r, 2), at(r, 3), at(r, 4), NSNull()] }
         var o: [String: Any] = ["bins": bins, "maxBin": tr.rows.count - 1, "time": time]
         if !sectors.isEmpty { o["sectors"] = sectors.map { num($0) } }
-        if let x = tr.x, let y = tr.y, x.count == y.count, x.count > 10 {
+        if let x = path?.x, let y = path?.y, x.count == y.count, x.count > 10 {
             var p: [String: Any] = ["x": x.map { num($0) }, "y": y.map { num($0) }, "g": NSNull()]
-            if let g = tr.g, g.count == 2 { p["g"] = g }
+            if let g = path?.g, g.count == 2 { p["g"] = g }
             o["xy"] = p
         }
         return o
+    }
+
+    /// One lap of the session for the coach's plan (ctx.laps, how steady each corner is): only what it reads, the speed
+    /// and the lap time at every point, and whether the lap is valid.
+    static func sessionLap(_ tr: Trace, valid: Bool) -> [String: Any] {
+        func at(_ r: [Double], _ k: Int) -> Any { num(k < r.count ? r[k] : 0) }
+        return ["bins": tr.rows.map { r in [at(r, 0), at(r, 5)] }, "maxBin": tr.rows.count - 1, "valid": valid]
     }
 
     /// The context the analysis reads: the language, the official turns, what the coach learnt and the model's corner cards.
@@ -57,10 +87,10 @@ enum JsAnalysis {
         ]
     }
 
-    /// The call the engine evaluates, after the file itself: the answer in English, Spanish and Portuguese (so a change of
-    /// language in Settings needs no new run), as one JSON string.
-    static func call(_ a: String, _ b: String, _ ctx: String) -> String {
-        "(function(A,B,c){var o={};['en','es','pt'].forEach(function(l){c.lang=l;o[l]=PW_ANALYSIS.analyse(A,B,c)});return JSON.stringify(o)})(\(a),\(b),\(ctx))"
+    /// The call the engine evaluates, after the file itself: the analysis with the session's laps in ctx.laps, in English,
+    /// Spanish and Portuguese (so a change of language in Settings needs no new run), as one JSON string.
+    static func call(_ a: String, _ b: String, _ ctx: String, _ laps: String) -> String {
+        "(function(A,B,c,L){var o={};c.laps=L;['en','es','pt'].forEach(function(l){c.lang=l;o[l]=PW_ANALYSIS.analyse(A,B,c)});return JSON.stringify(o)})(\(a),\(b),\(ctx),\(laps))"
     }
 
     private static func dbl(_ v: Any?) -> Double { (v as? NSNumber)?.doubleValue ?? 0 }
@@ -79,7 +109,7 @@ enum JsAnalysis {
     }
 
     private static func one(_ j: [String: Any]) -> JsResult? {
-        guard let coach = j["coach"] as? [String: Any] else { return nil }
+        guard (j["v"] as? NSNumber)?.intValue == version, let coach = j["coach"] as? [String: Any] else { return nil }
         func list(_ v: Any?) -> [[String: Any]] { v as? [[String: Any]] ?? [] }
         return JsResult(
             corners: list(j["corners"]).map(corner), coach: list(coach["cs"]).map(corner),
@@ -87,7 +117,8 @@ enum JsAnalysis {
             secs: list(coach["secs"]).map { (dbl($0["a"]), dbl($0["b"])) })
     }
 
-    /// The analysis' answer as the screens' own structures, by language; nil when it is not one.
+    /// The analysis' answer as the screens' own structures, by language; nil when it is not one, or not the shape this app
+    /// was built for (its v).
     static func parse(_ s: String) -> [String: JsResult]? {
         guard let d = s.data(using: .utf8), let root = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
         var out: [String: JsResult] = [:]
@@ -117,7 +148,10 @@ final class AnalysisJs {
         return dir.appendingPathComponent(AnalysisJs.name)
     }
 
-    private func valid(_ s: String) -> Bool { s.count > 2000 && s.contains("PW_ANALYSIS") }
+    // a copy that is the module and gives the shape this app reads (its VERSION); a newer shape is never kept nor run
+    private func valid(_ s: String) -> Bool {
+        s.count > 2000 && s.contains("PW_ANALYSIS") && s.range(of: "\\bVERSION\\s*=\\s*\(JsAnalysis.version)\\b", options: .regularExpression) != nil
+    }
 
     /// The file to run: the downloaded copy when there is a good one, else the app's own.
     private func source() -> String? {
@@ -166,13 +200,15 @@ final class AnalysisJs {
         return s
     }
 
-    /// Lap A against lap B as the web analyses them, by language, or nil (the screens then use Models.swift).
-    func analyse(a: [String: Any], b: [String: Any], ctx: [String: Any]) async -> [String: JsResult]? {
+    /// Lap A against lap B as the web analyses them, with the session's `laps` (JsAnalysis.sessionLap) for the coach's plan,
+    /// by language, or nil (the screens then use Models.swift).
+    func analyse(a: [String: Any], b: [String: Any], ctx: [String: Any], laps: [[String: Any]] = []) async -> [String: JsResult]? {
         // the newest copy is fetched beside it, never in the way: this run uses the one on disk, the next one the new
         Task.detached(priority: .background) { await self.refresh() }
         func json(_ o: [String: Any]) -> String? { (try? JSONSerialization.data(withJSONObject: o)).flatMap { String(data: $0, encoding: .utf8) } }
-        guard let ja = json(a), let jb = json(b), let jc = json(ctx) else { return nil }
-        let code = JsAnalysis.call(ja, jb, jc)
+        guard let ja = json(a), let jb = json(b), let jc = json(ctx),
+              let jl = (try? JSONSerialization.data(withJSONObject: laps)).flatMap({ String(data: $0, encoding: .utf8) }) else { return nil }
+        let code = JsAnalysis.call(ja, jb, jc, jl)
         let s: String? = await withCheckedContinuation { k in queue.async { k.resume(returning: self.run(code)) } }
         return s.flatMap { JsAnalysis.parse($0) }
     }

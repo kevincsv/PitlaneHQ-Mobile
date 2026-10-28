@@ -32,7 +32,9 @@ class AnalysisJs(private val context: Context, private val client: OkHttpClient)
     private var failures = 0       // the engine failing again and again: the fallback for the rest of the run
     private val fetching = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    private fun valid(s: String) = s.length > 2000 && s.contains("PW_ANALYSIS")
+    // a copy that is the module and gives the shape this app reads (its VERSION); a newer shape is never kept nor run
+    private val version = Regex("\\bVERSION\\s*=\\s*" + JsAnalysis.VERSION + "\\b")
+    private fun valid(s: String) = s.length > 2000 && s.contains("PW_ANALYSIS") && version.containsMatchIn(s)
 
     /** The file to run: the downloaded copy when there is a good one, else the app's own. */
     private fun source(): String = runCatching { file.readText() }.getOrNull()?.takeIf(::valid)
@@ -61,14 +63,15 @@ class AnalysisJs(private val context: Context, private val client: OkHttpClient)
         isolate = null; sandbox = null; loaded = ""
     }
 
-    /** Evaluates [code] after the file (once per isolate); its result as a string, or null when the engine cannot. */
+    /** Evaluates [codes] in order after the file (once per isolate); the last one's result as a string, or null when the
+     *  engine cannot. */
     @Synchronized
-    private fun run(code: String): String? {
+    private fun run(codes: List<String>): String? {
         if (failures >= 3 || !JavaScriptSandbox.isSupported()) return null
         return try {
             val sb = sandbox ?: JavaScriptSandbox.createConnectedInstanceAsync(context).get(15, TimeUnit.SECONDS).also { sandbox = it }
             // without this feature a call is limited by Android's transaction size: a long lap pair goes to the fallback
-            if (code.length > 400_000 && !sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)) return null
+            if (codes.any { it.length > 400_000 } && !sb.isFeatureSupported(JavaScriptSandbox.JS_FEATURE_EVALUATE_WITHOUT_TRANSACTION_LIMIT)) return null
             val src = source()
             val key = src.length.toString() + ":" + src.hashCode()
             var iso = isolate
@@ -78,7 +81,9 @@ class AnalysisJs(private val context: Context, private val client: OkHttpClient)
                 iso.evaluateJavaScriptAsync(src + "\n;typeof PW_ANALYSIS").get(15, TimeUnit.SECONDS)
                 isolate = iso; loaded = key
             }
-            iso.evaluateJavaScriptAsync(code).get(20, TimeUnit.SECONDS).also { failures = 0 }
+            var out = ""
+            for (code in codes) out = iso.evaluateJavaScriptAsync(code).get(20, TimeUnit.SECONDS)
+            out.also { failures = 0 }
         } catch (e: Throwable) {
             failures++
             close()
@@ -86,10 +91,11 @@ class AnalysisJs(private val context: Context, private val client: OkHttpClient)
         }
     }
 
-    /** Lap A against lap B as the web analyses them, or null (the screens then use LapMath). Call it off the main thread. */
-    fun analyse(a: JSONObject, b: JSONObject, ctx: JSONObject): Map<String, JsResult>? {
+    /** Lap A against lap B as the web analyses them, with the session's [laps] (JsAnalysis.sessionLap) for the coach's plan,
+     *  or null (the screens then use LapMath). Call it off the main thread. */
+    fun analyse(a: JSONObject, b: JSONObject, ctx: JSONObject, laps: List<JSONObject> = emptyList()): Map<String, JsResult>? {
         // the newest copy is fetched beside it, never in the way: this run uses the one on disk, the next one the new
         if (!fetching.getAndSet(true)) Thread { try { refresh() } finally { fetching.set(false) } }.start()
-        return run(JsAnalysis.call(a, b, ctx))?.let { JsAnalysis.parse(it) }
+        return run(JsAnalysis.calls(a, b, ctx, laps))?.let { JsAnalysis.parse(it) }
     }
 }

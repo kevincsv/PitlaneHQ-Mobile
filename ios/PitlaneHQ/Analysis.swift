@@ -54,8 +54,9 @@ extension Account {
 
     /// Opens a lap and its lap B, like the PC and the web: the driver's own best lap of the session (DRINKS mode: a
     /// friend's lap against that friend's best), or the model's next level or record; when nobody known is faster,
-    /// your own best lap.
-    func analyse(session: CloudSession, lap: CloudLap, all: [CloudLap], kind: RefKind) async throws -> LapAnalysis {
+    /// your own best lap. The coach (withLaps) also hands the web's analysis the session's laps, like the web's: how steady
+    /// each corner is gives the plan its consistency steps.
+    func analyse(session: CloudSession, lap: CloudLap, all: [CloudLap], kind: RefKind, withLaps: Bool = false) async throws -> LapAnalysis {
         var a = LapAnalysis(lap: lap)
         a.session = session
         a.trace = try await lapTrace(lap.id)
@@ -72,6 +73,10 @@ extension Account {
         // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
         if let tc = c, !(a.trace?.hasShape ?? false) { a.layout = await trackLayout(trackId: tc.trackId, game: gm) }
         let own = all.filter { $0.valid && $0.time > 0 && $0.id != lap.id && $0.drv == lap.drv }.min { $0.time < $1.time }
+        // lap B's path as the web's analysis takes it: a model reference's own (the web's, lineXY and its origin when it has
+        // none), else the trace's
+        var modelPath = false
+        var refPath: LapPath? = nil
         if kind == .myBest {
             (a.ref, a.refLabel, a.refTime, a.refSectors) = await ownRef(own)
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
@@ -79,10 +84,14 @@ extension Account {
         } else {
             var rec: (Trace, Double)? = nil
             var lvl: (Trace, Double)? = nil
+            var recXY: LapPath? = nil
+            var lvlXY: LapPath? = nil
             if let c {
                 let m = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time, game: gm)
                 rec = m.rec
                 lvl = m.lvl
+                recXY = m.recXY
+                lvlXY = m.lvlXY
                 a.corners = m.corners
             }
             let pick = kind == .level ? (lvl ?? rec) : rec
@@ -90,6 +99,8 @@ extension Account {
                 a.ref = p.0
                 a.refTime = p.1
                 a.refLabel = kind == .level && lvl != nil ? "▲ " + t("next_level") : "★ " + t("record")
+                modelPath = true
+                refPath = kind == .level && lvl != nil ? lvlXY : recXY
             } else {
                 // nobody known is faster here (this lap is the record) or nobody known at all: like the web's coach,
                 // your own best lap of the session is lap B
@@ -103,14 +114,19 @@ extension Account {
            !bx.isEmpty, abs(bx.count - r.rows.count) <= 6 {
             r.x = (0..<r.rows.count).map { bx[min($0, bx.count - 1)] }
             r.y = (0..<r.rows.count).map { by[min($0, by.count - 1)] }
+            r.g = bt.g
             a.ref = r
         }
-        // the web's own analysis of the two laps, the same corners, tips, plan and sectors as the PC's
-        if let tr = a.trace, let rb = a.ref, let tb = a.refTime {
+        // the web's own analysis of the two laps, the same corners, tips, plan and sectors as the PC's (the module counts a
+        // point every 5 m: other traces, the demo data's, go to Models.swift)
+        if let tr = a.trace, let rb = a.ref, let tb = a.refTime, JsAnalysis.runs(tr), JsAnalysis.runs(rb) {
             let me = await coachMeWeights()
             let w = CoachWeights(w: a.coach?.w ?? [:], ask: a.coach?.ask ?? [:], off: a.coach?.off ?? [], me: me, habits: a.habits)
-            a.js = await AnalysisJs.shared.analyse(a: JsAnalysis.lap(tr, time: lap.time, sectors: lap.sectors), b: JsAnalysis.lap(rb, time: tb, sectors: a.refSectors),
-                                                   ctx: JsAnalysis.ctx(lang: "en", turns: a.turns, w: w, cards: a.corners))
+            var laps: [[String: Any]] = []
+            if withLaps { laps = await sessionTraces(session.id).filter { $0.0 && JsAnalysis.runs($0.1) }.map { JsAnalysis.sessionLap($0.1, valid: $0.0) } }
+            a.js = await AnalysisJs.shared.analyse(a: JsAnalysis.lap(tr, time: lap.time, sectors: lap.sectors),
+                                                   b: JsAnalysis.lap(rb, time: tb, sectors: a.refSectors, path: modelPath ? refPath : JsAnalysis.pathOf(rb)),
+                                                   ctx: JsAnalysis.ctx(lang: "en", turns: a.turns, w: w, cards: a.corners), laps: laps)
         }
         return a
     }
@@ -304,7 +320,7 @@ struct CoachBody: View {
             // the driver's habit first: a kind of tip that repeats on several of their tracks
             // (the web's plan already starts with it)
             if an.jsNow?.plan.contains(where: { $0.k == "habit" }) != true, let h = an.habits.first, h.tracks >= 3 { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions)).font(.subheadline) } }
-            else { HStack(spacing: 8) {
+            if cs0.isEmpty { HStack(spacing: 8) {
                 Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent, sub: lapFlags(an.trace))
                 Metric(label: refName, value: lapTime(an.refTime), color: Theme.blue)
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)

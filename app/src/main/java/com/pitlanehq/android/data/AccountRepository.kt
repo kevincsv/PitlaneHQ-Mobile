@@ -60,7 +60,10 @@ class Got<T>(val data: T, val stale: Boolean = false)
  * sealed with an Android Keystore key.
  */
 /** The model's references for a lap: the record and the next level (each a trace with its time), and the corner card. */
-data class ModelRefs(val rec: Pair<Trace, Double>?, val lvl: Pair<Trace, Double>?, val corners: List<CornerCard> = emptyList())
+data class ModelRefs(val rec: Pair<Trace, Double>?, val lvl: Pair<Trace, Double>?, val corners: List<CornerCard> = emptyList(),
+                     // the path the web's analysis gives each reference (pitwall-model.js: the record's idealXY, else the
+                     // fastest line lineXY; the next level's own, else lineXY), whatever its length, with its origin g
+                     val recXY: LapPath? = null, val lvlXY: LapPath? = null)
 
 /** What the coach learnt from everyone's tips: the tips turned off, how many drivers each bucket helped, the confidence switch. */
 data class CoachInfo(val off: Set<String>, val conf: Map<String, Pair<Int, Int>>, val confidence: Boolean, val min: Int,
@@ -725,6 +728,13 @@ class AccountRepository(context: Context) {
             val x = o.optJSONArray("x")?.let { doubles(it) } ?: return null; val y = o.optJSONArray("y")?.let { doubles(it) } ?: return null
             return if (x.size == n && y.size == n) Triple(x, y, o.optJSONArray("g")?.let { doubles(it) }?.takeIf { it.size == 2 }) else null
         }
+        // a path as the web takes it: x and y of any length (the line of another lap), its origin g
+        fun path(o: JSONObject?): LapPath? {
+            val x = o?.optJSONArray("x")?.let { doubles(it) } ?: return null; val y = o.optJSONArray("y")?.let { doubles(it) } ?: return null
+            return LapPath(x, y, o.optJSONArray("g")?.let { doubles(it) }?.takeIf { it.size == 2 })
+        }
+        val lineXY = path(m.optJSONObject("lineXY"))
+        var recXY: LapPath? = null; var lvlXY: LapPath? = null
         var rec: Pair<Trace, Double>? = null
         val ideal = m.optJSONArray("ideal")
         val idealTime = m.optDouble("idealTime", 0.0)
@@ -732,6 +742,7 @@ class AccountRepository(context: Context) {
             val rows = (0 until ideal.length()).mapNotNull { ideal.optJSONArray(it)?.let { b -> row(b) } }
             val p = xy(m.optJSONObject("idealXY"), rows.size) ?: xy(m.optJSONObject("lineXY"), rows.size)
             rec = Trace(5.0, rows, p?.first, p?.second, g = p?.third) to idealTime
+            recXY = path(m.optJSONObject("idealXY")) ?: lineXY
         }
         var lvl: Pair<Trace, Double>? = null
         val lad = m.optJSONArray("ladder")
@@ -760,12 +771,24 @@ class AccountRepository(context: Context) {
                     val ox = ArrayList<Double>(); val oy = ArrayList<Double>()
                     rx.forEachIndexed { k, v -> val n = if (k + 1 < rx.size) k + 1 else k; ox.add(v); ox.add((v + rx[n]) / 2); oy.add(ry[k]); oy.add((ry[k] + ry[n]) / 2) }
                     if (ox.size >= cut.size) { px = ox.take(cut.size); py = oy.take(cut.size) }
+                    lvlXY = LapPath(if (nb > 0) ox.take(nb) else ox, if (nb > 0) oy.take(nb) else oy, pg)
                 }
+                if (lvlXY == null) lvlXY = lineXY
                 if (px == null) xy(m.optJSONObject("lineXY"), cut.size)?.let { px = it.first; py = it.second; pg = it.third }
                 lvl = Trace(5.0, cut, px, py, g = pg) to t
             }
         }
-        return ModelRefs(rec, lvl, cards)
+        return ModelRefs(rec, lvl, cards, recXY, lvlXY)
+    }
+
+    /** The laps of a session with their traces, in one call (/api/sessions/:id?traces=1), as the web's coach takes them
+     *  (laps with a trace and a time): whether each is valid, and its trace. Empty when they cannot be read; never kept on
+     *  the phone (each lap's own trace is). */
+    fun sessionTraces(sessionId: String): List<Pair<Boolean, Trace>> {
+        if (demo) return Demo.laps(sessionId).map { l -> l.valid to Demo.trace(l.id) }
+        val a = runCatching { JSONObject(call("GET", "/api/sessions/" + idPath(sessionId) + "?traces=1")).optJSONArray("laps") }.getOrNull() ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optDouble("time", 0.0) > 0 }
+            .mapNotNull { l -> parseTrace(l.optJSONObject("trace"))?.let { (l.optInt("valid", 0) == 1) to it } }
     }
 
     /** A thumb on one of the coach's tips (1 up, -1 down, 0 takes it back), kept with the account on the server (coachtips.js). */

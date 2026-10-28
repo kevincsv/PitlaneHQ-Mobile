@@ -34,8 +34,14 @@
   screens (`js`/`jsNow` in `LapAnalysis`, the tip as `text` on `Corner`, `PlanItem`), in the three languages from one
   run. They download pitlanehq.app/pitwall-analysis.js at most every six hours (its ETag) and keep it on disk; the
   copy in the app (`app/src/main/assets/` and `ios/Resources/`, refreshed with `tools/sync-analysis.sh` whenever the
-  file changes in Pitwall-test) runs until a download succeeds. LapMath.kt and Models.swift are only the fallback, when
-  the engine cannot run (a WebView without the sandbox), and the charts' own grid.
+  file changes in Pitwall-test) runs until a download succeeds. The phones feed it what the web feeds it: lap B's path is
+  the web's (a model reference's own, else the model's fastest line `lineXY` with its origin g, `recXY`/`lvlXY` in
+  `modelRefs`; never the driver's own path, which only draws the fallback's line), and the coach hands it the session's
+  laps (`sessionTraces`, /api/sessions/:id?traces=1, as `ctx.laps`, one call each on Android), so the plan's consistency
+  steps and the "same braking point every lap" tip are the PC's. Only a copy whose `VERSION` and answer's `v` are the
+  ones the app was built for (`JsAnalysis.VERSION`/`version`, 1) is kept and read. LapMath.kt and Models.swift are only
+  the fallback, when the engine cannot run (a WebView without the sandbox) or a trace is not one point every 5 m (the
+  demo data's), and the charts' own grid.
   The corner tips (the fallback's `corners` in LapMath.kt and Models.swift, texts `tip_*`) follow the measured facts like the PC's
   and the web's: braking later than the reference and arriving slower at the apex is one mistake whatever phase pays
   for it (`tip_brake_late_apex`); with the same braking point the tip is about the brake (harder at first, trail,

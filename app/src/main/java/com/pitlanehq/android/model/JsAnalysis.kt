@@ -17,21 +17,43 @@ data class JsResult(val corners: List<Corner>, val coach: List<Corner>, val plan
 data class CoachWeights(val w: Map<String, Double> = emptyMap(), val ask: Map<String, Double> = emptyMap(), val off: Set<String> = emptySet(),
                         val me: Map<String, Double> = emptyMap(), val habits: List<Triple<String, Int, Int>> = emptyList())
 
+/** A lap's path as the web's analysis takes it (xy): x east and y north in metres, g its origin [lat, lon] when it comes from
+ *  the game's position. Its length may differ from the lap's points (the model's fastest line, lineXY). */
+data class LapPath(val x: List<Double>, val y: List<Double>, val g: List<Double>?)
+
 object JsAnalysis {
-    /** A lap in the web's shape: one point every 5 m, [speed m/s, lap time s, throttle, brake, gear, steering], its path and origin. */
-    fun lap(tr: Trace, time: Double, sectors: List<Double>): JSONObject {
+    /** The shape of the module's answer this app reads; another one (a newer pitwall-analysis.js) is not run and LapMath is used. */
+    const val VERSION = 1
+
+    /** The module counts a point every 5 m: a trace of other points (the demo data's 10 m) goes to LapMath instead. */
+    fun runs(tr: Trace) = kotlin.math.abs(tr.bin - 5.0) < 1e-6
+
+    /** A trace's own path, when it has one. */
+    fun pathOf(tr: Trace): LapPath? { val x = tr.x; val y = tr.y; return if (x != null && y != null) LapPath(x, y, tr.g?.takeIf { it.size == 2 }) else null }
+
+    /** A lap in the web's shape: one point every 5 m, [speed m/s, lap time s, throttle, brake, gear, steering], and its path
+     *  (the trace's own unless another is given: a model reference takes the web's, lineXY with its origin). */
+    fun lap(tr: Trace, time: Double, sectors: List<Double>, path: LapPath? = pathOf(tr)): JSONObject {
         val bins = JSONArray()
         for (r in tr.rows) bins.put(JSONArray().put(num(r[0])).put(num(r.getOrElse(5) { 0.0 })).put(num(r.getOrElse(1) { 0.0 })).put(num(r.getOrElse(2) { 0.0 }))
             .put(num(r.getOrElse(3) { 0.0 })).put(num(r.getOrElse(4) { 0.0 })).put(JSONObject.NULL))
         val o = JSONObject().put("bins", bins).put("maxBin", tr.rows.size - 1).put("time", time)
         if (sectors.isNotEmpty()) o.put("sectors", JSONArray().apply { sectors.forEach { put(num(it)) } })
-        val x = tr.x; val y = tr.y
+        val x = path?.x; val y = path?.y
         if (x != null && y != null && x.size == y.size && x.size > 10) {
             val p = JSONObject().put("x", JSONArray().apply { x.forEach { put(num(it)) } }).put("y", JSONArray().apply { y.forEach { put(num(it)) } })
-            p.put("g", tr.g?.takeIf { it.size == 2 }?.let { g -> JSONArray().put(g[0]).put(g[1]) } ?: JSONObject.NULL)
+            p.put("g", path.g?.takeIf { it.size == 2 }?.let { g -> JSONArray().put(g[0]).put(g[1]) } ?: JSONObject.NULL)
             o.put("xy", p)
         }
         return o
+    }
+
+    /** One lap of the session for the coach's plan (ctx.laps, how steady each corner is): only what it reads, the speed
+     *  and the lap time at every point, and whether the lap is valid. */
+    fun sessionLap(tr: Trace, valid: Boolean): JSONObject {
+        val bins = JSONArray()
+        for (r in tr.rows) bins.put(JSONArray().put(num(r[0])).put(num(r.getOrElse(5) { 0.0 })))
+        return JSONObject().put("bins", bins).put("maxBin", tr.rows.size - 1).put("valid", valid)
     }
 
     private fun num(v: Double): Any = if (v.isFinite()) v else JSONObject.NULL
@@ -47,10 +69,12 @@ object JsAnalysis {
             .put("cards", JSONArray().apply { cards.forEach { put(JSONObject().put("apex", it.apex).put("spread", it.spread)) } })
     }
 
-    /** The call the engine evaluates, after the file itself: the answer in English, Spanish and Portuguese (so a change of
+    /** What the engine evaluates, in order, after the file itself: the session's laps one call each (a call is limited in
+     *  size on older WebViews), then the analysis with them in ctx.laps, in English, Spanish and Portuguese (so a change of
      *  language in Settings needs no new run), as one JSON string. */
-    fun call(a: JSONObject, b: JSONObject, ctx: JSONObject) =
-        "(function(A,B,c){var o={};['en','es','pt'].forEach(function(l){c.lang=l;o[l]=PW_ANALYSIS.analyse(A,B,c)});return JSON.stringify(o)})($a,$b,$ctx)"
+    fun calls(a: JSONObject, b: JSONObject, ctx: JSONObject, laps: List<JSONObject>): List<String> =
+        listOf("var __PWL=[];true") + laps.map { "__PWL.push($it);true" } +
+            "(function(A,B,c){var o={};c.laps=__PWL;['en','es','pt'].forEach(function(l){c.lang=l;o[l]=PW_ANALYSIS.analyse(A,B,c)});__PWL=[];return JSON.stringify(o)})($a,$b,$ctx)"
 
     private fun corner(o: JSONObject): Corner {
         val ph = o.optJSONObject("ph")
@@ -65,10 +89,11 @@ object JsAnalysis {
         )
     }
 
-    /** The analysis' answer as the screens' own structures, by language; null when it is not one. */
+    /** The analysis' answer as the screens' own structures, by language; null when it is not one, or not the shape this
+     *  app was built for (its v). */
     fun parse(s: String): Map<String, JsResult>? = runCatching {
         val root = JSONObject(s)
-        listOf("en", "es", "pt").associateWith { one(root.getJSONObject(it)) }
+        listOf("en", "es", "pt").associateWith { l -> root.getJSONObject(l).also { require(it.optInt("v", 0) == VERSION) }.let(::one) }
     }.getOrNull()
 
     private fun one(j: JSONObject): JsResult {
