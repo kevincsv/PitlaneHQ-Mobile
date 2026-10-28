@@ -113,6 +113,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         askGame = false
         if (g == game) return
         game = g
+        track("game:$g")
         repo.game = g
         // every list shows the new game: the account's from what is already here, the community's read again
         races.value = races.value.copy(data = allRaces.filter { it.game == g })
@@ -414,6 +415,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun onForeground() {
         startMinuteSync()
+        startUsage()
+        track("game:$game")
         val a = _account.value
         resumeLive()
         if (!a.signedIn || a.busy || demo.value) return
@@ -463,13 +466,26 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Admins: see the app as a normal user (to test it), or go back to the admin view. */
-    fun setAsUser(on: Boolean) {
+    /** Admins: admin mode on this phone (off by default: the app as everyone sees it), on to see what is for admins. */
+    fun setAdminMode(on: Boolean) {
         if (!_account.value.realAdmin) return
-        repo.asUser = on
+        val wasDemo = demo.value
+        repo.adminMode = on
         _account.value = repo.storedState()
-        demo.value = repo.demo
+        if (wasDemo && !repo.demo) setDemo(false) else demo.value = repo.demo
     }
+
+    // ---------- what the drivers use: counted on the phone, sent every 5 minutes on the screen and when it goes away ----------
+    /** One use of a screen ("view:laps"), an action ("act:compare") or a game ("game:lmu"); never in demo data. */
+    fun track(key: String) { if (!demo.value) repo.use(key) }
+    private var usageJob: Job? = null
+    private fun startUsage() {
+        usageJob?.cancel()
+        usageJob = viewModelScope.launch(Dispatchers.IO) {
+            while (true) { delay(5 * 60_000L); runCatching { repo.sendUsage() } }
+        }
+    }
+    private fun sendUsageNow() { usageJob?.cancel(); usageJob = null; viewModelScope.launch(Dispatchers.IO) { runCatching { repo.sendUsage() } } }
 
     fun setDemo(on: Boolean) {
         if (on && !_account.value.admin) return
@@ -511,6 +527,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     /** The coach's plan to the coach overlay of your PC (its chosen corners in the account's settings): [done] gets whether
      *  it reached the account (false: no PC has synced settings yet) or the error. */
     fun planToOverlay(turns: List<String>, trackId: Long, done: (Boolean, String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        track("act:plan_to_overlay")
         val r = runCatching { repo.setCoachTurns(turns, trackId) }
         withContext(Dispatchers.Main) { done(r.getOrDefault(false), r.exceptionOrNull()?.message) }
     }
@@ -707,11 +724,14 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (!_account.value.signedIn) { live.stop(); return }
         if (liveScreens > 0) live.start() else if (!demo.value) live.startPresence() else live.stop()
     }
-    fun onBackground() { minuteJob?.cancel(); minuteJob = null; live.stop() }
-    fun liveWatch(m: LiveMode, code: String = "") = live.watch(m, code)
-    fun liveShare(on: Boolean, new: Boolean = false) = live.share(on, new)
+    fun onBackground() { minuteJob?.cancel(); minuteJob = null; live.stop(); sendUsageNow() }
+    fun liveWatch(m: LiveMode, code: String = "") {
+        if (m == LiveMode.OWN) track("act:connect") else if (m == LiveMode.CODE) track("act:watch_code")
+        live.watch(m, code)
+    }
+    fun liveShare(on: Boolean, new: Boolean = false) { if (on) track("act:share_code"); live.share(on, new) }
     fun liveAskAgain() = live.askAgain()
-    fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean) = live.setDrinks(on, guest, guestAuto)
+    fun setDrinks(on: Boolean, guest: String, guestAuto: Boolean) { if (on) track("act:drinks"); live.setDrinks(on, guest, guestAuto) }
     // a new DRINKS name is checked first: names used by other people on Pitlane HQ are refused
     val drinksTaken = MutableStateFlow<String?>(null)
     fun setDrinksGuest(name: String, known: List<String>) {
@@ -729,13 +749,38 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun forgetDrinksGuest(name: String) = live.forgetDrinksGuest(name)
     // admin profile
-    data class AdminState(val kind: String, val items: List<org.json.JSONObject>? = null, val error: String? = null)
-    val admin = MutableStateFlow(AdminState("uploads"))
-    fun loadAdmin(kind: String) {
-        admin.value = AdminState(kind)
+    // the sections, the PC's: summary (the key numbers and the analytics), users, feedback, content (the shared items),
+    // sessions, coach, server (the mail, the tools and the blocked sign-ins). [items] is the section's rows; [extra] the
+    // summary's status, the server's status, the coach's answer.
+    data class AdminState(val kind: String, val items: List<org.json.JSONObject>? = null, val error: String? = null,
+                          val extra: org.json.JSONObject? = null, val days: Int = 14)
+    val admin = MutableStateFlow(AdminState("summary"))
+    fun loadAdmin(kind: String, days: Int = admin.value.days) {
+        admin.value = AdminState(kind, days = days)
         viewModelScope.launch(Dispatchers.IO) {
-            admin.value = runCatching { AdminState(kind, repo.adminList(kind)) }.getOrElse { AdminState(kind, error = it.message ?: "server_down") }
+            admin.value = runCatching {
+                when (kind) {
+                    // the analytics may not be there yet (an older server): the key numbers still show
+                    "summary" -> AdminState(kind, listOfNotNull(runCatching { repo.adminAnalytics(days) }.getOrNull()), extra = repo.adminStatus(), days = days)
+                    "users" -> {
+                        val use = runCatching { repo.adminAnalytics(30) }.getOrNull()?.optJSONArray("users")
+                        val byId = (0 until (use?.length() ?: 0)).mapNotNull { use!!.optJSONObject(it) }.associateBy { it.optString("id") }
+                        AdminState(kind, repo.adminList("users").onEach { u -> byId[u.optString("id")]?.let { u.put("_use", it) } }, days = days)
+                    }
+                    "feedback" -> AdminState(kind, repo.adminFeedback(), days = days)
+                    "content" -> AdminState(kind, repo.adminList("uploads"), days = days)
+                    "coach" -> repo.adminCoach().let { c -> AdminState(kind, (0 until (c.optJSONArray("buckets")?.length() ?: 0)).mapNotNull { c.optJSONArray("buckets")!!.optJSONObject(it) }.sortedByDescending { it.optInt("n") }, extra = c, days = days) }
+                    "server" -> AdminState(kind, repo.adminList("blocked"), extra = repo.adminStatus(), days = days)
+                    else -> AdminState(kind, repo.adminList(kind), days = days)
+                }
+            }.getOrElse { AdminState(kind, error = it.message ?: "server_down", days = days) }
         }
+    }
+    fun adminCoachOff(kind: String, cls: String, off: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminCoachOff(kind, cls, off) }; loadAdmin("coach") }
+    }
+    fun adminCoachConfidence(on: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminCoachConfidence(on) }; loadAdmin("coach") }
     }
     fun adminSince(id: String, since: Long?) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminSince(id, since) }; loadAdmin("users") }
@@ -747,13 +792,13 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminUnlock(key, value) }; loadAdmin(reload) }
     }
     fun adminTool(tool: String) {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminTool(tool) }; loadAdmin("status") }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminTool(tool) }; loadAdmin("server") }
     }
     fun adminDeleteUser(id: String) {
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminDeleteUser(id) }; loadAdmin("users") }
     }
     fun adminDelete(kind: String, id: String) {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminDelete(kind, id) }; loadAdmin("uploads") }
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.adminDelete(kind, id) }; loadAdmin("content") }
     }
 
     override fun onCleared() {

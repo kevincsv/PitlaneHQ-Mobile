@@ -26,6 +26,7 @@ struct LiveTabsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Tabs(labels: [t("tab_telemetry"), t("tab_standings"), t("tab_tyres")], selected: $sub)
+                .onChange(of: sub) { v in Usage.count("view:" + ["live", "standings", "tyres"][min(max(v, 0), 2)]) }
             switch sub {
             case 0:
                 // Basic, Full (the lap's traces too) or Compare laps, live, like the PC and the web

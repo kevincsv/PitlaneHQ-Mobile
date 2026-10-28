@@ -28,6 +28,39 @@ struct Got<T> {
     var stale = false
 }
 
+// ---------- what the drivers use (the admin panel's analytics) ----------
+
+/// Counted on this phone ("view:laps", "act:compare", "game:lmu") until the server has them (POST /community/usage);
+/// never in demo data, only signed in.
+enum Usage {
+    private static let key = "usage"
+    private static let lock = NSLock()
+    private static let pattern = try? NSRegularExpression(pattern: "^(view|act|game):[a-z0-9_.-]{1,40}$")
+    static func count(_ k: String) {
+        guard !UserDefaults.standard.bool(forKey: "demo"), Vault.get("token") != nil,
+              pattern?.firstMatch(in: k, range: NSRange(k.startIndex..., in: k)) != nil else { return }
+        lock.lock(); defer { lock.unlock() }
+        var c = UserDefaults.standard.dictionary(forKey: key) as? [String: Int] ?? [:]
+        c[k, default: 0] += 1
+        UserDefaults.standard.set(c, forKey: key)
+    }
+    static var pending: [String: Int] {
+        lock.lock(); defer { lock.unlock() }
+        return (UserDefaults.standard.dictionary(forKey: key) as? [String: Int] ?? [:]).filter { $0.value > 0 }
+    }
+    /// what the server got comes off (what was counted meanwhile stays)
+    static func taken(_ sent: [String: Int]) {
+        lock.lock(); defer { lock.unlock() }
+        var c = UserDefaults.standard.dictionary(forKey: key) as? [String: Int] ?? [:]
+        for (k, n) in sent { let left = (c[k] ?? 0) - n; c[k] = left > 0 ? left : nil }
+        UserDefaults.standard.set(c, forKey: key)
+    }
+    static func clear() {
+        lock.lock(); defer { lock.unlock() }
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+}
+
 // ---------- Keychain ----------
 
 enum Vault {
@@ -77,12 +110,12 @@ final class Account: ObservableObject {
     @Published var realAdmin = false {
         didSet { if !admin && demo { demo = false } }
     }
-    /// an admin can see the app as everyone else does (to test it), on this phone
-    @Published var asUser = UserDefaults.standard.bool(forKey: "asUser") {
-        didSet { UserDefaults.standard.set(asUser, forKey: "asUser"); if !admin && demo { demo = false } }
+    /// admin mode, on this phone: off by default (an admin sees the app as everyone does), one switch turns it on
+    @Published var adminMode = UserDefaults.standard.bool(forKey: "adminMode") {
+        didSet { UserDefaults.standard.set(adminMode, forKey: "adminMode"); if !admin && demo { demo = false } }
     }
-    /// what the screens use: false while an admin looks as a normal user
-    var admin: Bool { realAdmin && !asUser }
+    /// what the screens use: an admin of the server with admin mode on
+    var admin: Bool { realAdmin && adminMode }
     @Published var busy = false
     @Published var error: String?
     @Published var needCode = false        // the password was right: the authenticator code comes next
@@ -124,6 +157,7 @@ final class Account: ObservableObject {
         askGame = false
         guard g != game else { return }
         game = g
+        Usage.count("game:" + g)
         races = allRaces.filter { $0.game == g }
     }
 
@@ -318,6 +352,7 @@ final class Account: ObservableObject {
     /// reach), and in demo data (nothing is written).
     func setCoachTurns(_ turns: [String], trackId: Int64) async throws -> Bool {
         if demo { return false }
+        Usage.count("act:plan_to_overlay")
         guard let dk = dataKey else { throw AppError.signedOut }
         for attempt in 0..<3 {
             let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/sync")) as? [String: Any] ?? [:]
@@ -372,6 +407,7 @@ final class Account: ObservableObject {
         syncVersion = 0
         syncUpdated = 0
         realAdmin = false
+        Usage.clear()
         races = []
         allRaces = []
     }
@@ -1397,6 +1433,47 @@ final class Account: ObservableObject {
         (try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/status")) as? [String: Any]) ?? [:]
     }
     func adminDelete(_ kind: String, _ id: String) async throws { _ = try await call("DELETE", "/community/admin/\(kind)/" + idPath(id)) }
+    /// what the drivers use over the last `days` days (active users per day, devices, top features, games, versions, users)
+    func adminAnalytics(_ days: Int) async throws -> [String: Any] {
+        (try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/analytics?days=\(days)")) as? [String: Any]) ?? [:]
+    }
+    /// what the drivers wrote with "Share your feedback" (PC and web), newest first
+    func adminFeedback() async throws -> [[String: Any]] {
+        let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/feedback")) as? [String: Any]
+        return (j?["items"] as? [[String: Any]]) ?? (j?["feedback"] as? [[String: Any]]) ?? []
+    }
+    /// the coach's buckets (kind × speed of corner): cases, gains, thumbs, the kinds turned off and the confidence switch
+    func adminCoach() async throws -> [String: Any] {
+        (try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/coach")) as? [String: Any]) ?? [:]
+    }
+    func adminCoachOff(_ kind: String, _ cls: String, _ off: Bool) async throws { _ = try await call("POST", "/community/admin/coach/off", body: ["kind": kind, "cls": cls, "off": off]) }
+    func adminCoachConfidence(_ on: Bool) async throws { _ = try await call("POST", "/community/admin/coach/confidence", body: ["on": on]) }
+
+    // ---------- what the drivers use: sent every 5 minutes while the app is on the screen, and when it goes away ----------
+    private var usageTask: Task<Void, Never>?
+    func startUsage() {
+        guard usageTask == nil else { return }
+        Usage.count("game:" + game)
+        usageTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 300_000_000_000)
+                guard !Task.isCancelled, let self else { return }
+                await self.sendUsage()
+            }
+        }
+    }
+    func stopUsage() {
+        usageTask?.cancel()
+        usageTask = nil
+        Task { await sendUsage() }
+    }
+    /// sends what was counted (POST /community/usage) and takes off what the server got
+    func sendUsage() async {
+        let counts = Usage.pending
+        guard !counts.isEmpty, signedIn, !demo else { return }
+        let v = pitlaneClient.replacingOccurrences(of: "ios/", with: "")
+        if (try? await call("POST", "/community/usage", body: ["device": "ios", "v": v, "counts": counts])) != nil { Usage.taken(counts) }
+    }
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     func nameFree(_ name: String) async -> Bool {
         guard let d = try? await call("POST", "/community/name-check", body: ["name": name]),

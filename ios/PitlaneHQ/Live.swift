@@ -74,6 +74,7 @@ final class Live: ObservableObject {
 
     /// Connect to your PC (own), watch a code (code), or Disconnect (idle): the link opens again the new way.
     func watch(_ m: Mode, code c: String = "") {
+        if m == .own { Usage.count("act:connect") } else if m == .code { Usage.count("act:watch_code") }
         let running = loop != nil
         stop()
         mode = m
@@ -88,6 +89,7 @@ final class Live: ObservableObject {
     /// Your share code, made or stopped by your PC: on, new (a new code stops the old one).
     func share(on: Bool, new: Bool = false) {
         guard mode == .own, let ws = task, let key = account.1 else { return }
+        if on { Usage.count("act:share_code") }
         guard let raw = try? JSONSerialization.data(withJSONObject: ["share", ["on": on, "new": new]] as [Any]),
               let z = try? PLCrypto.gzip(raw), let sealed = try? PLCrypto.seal(key: key, plain: z, aad: PLCrypto.liveAAD) else { return }
         ws.send(.string("e:" + sealed)) { _ in }
@@ -231,6 +233,7 @@ final class Live: ObservableObject {
 
     /// DRINKS mode on the PC: sealed like everything else, the PC checks the account is an admin.
     func setDrinks(on: Bool, guest: String, guestAuto: Bool) {
+        if on { Usage.count("act:drinks") }
         sendDrinks(["on": on, "guest": guest, "guestAuto": guestAuto])
     }
 

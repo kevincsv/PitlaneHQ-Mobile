@@ -215,6 +215,16 @@ private fun MainApp(vm: PitlaneViewModel) {
                 }
                 if (r != "home") nav.navigate(r)
             }
+            // what the drivers use, for the admin panel: every screen opened (the tabs with sub-tabs count those instead)
+            val route = nav.currentBackStackEntryAsState().value?.destination?.route
+            LaunchedEffect(route) {
+                when (route) {
+                    "home" -> vm.track("view:home"); "settings" -> vm.track("view:me"); "admin" -> vm.track("view:admin")
+                    "race" -> vm.track("act:race_summary"); "combo" -> vm.track("act:leaderboard"); "track" -> vm.track("act:track_page")
+                    "lap" -> vm.track("act:compare"); "session" -> vm.track("view:session"); "profile" -> vm.track("view:profile")
+                    "notes" -> vm.track("view:notes"); "drinks" -> vm.track("view:drinks")
+                }
+            }
             NavHost(nav, "home", Modifier.weight(1f)) {
                 composable("home") { Home(vm, nav) }
                 composable("race") { RaceDetail(vm, nav) }
@@ -1022,6 +1032,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     // Home's "See all" opens My races
     LaunchedEffect(Unit) { vm.analysisTab?.let { tab = it; vm.analysisTab = null } }
     LaunchedEffect(Unit) { if (s.data == null && !s.loading) vm.loadSessions() }
+    LaunchedEffect(tab) { vm.track("view:" + listOf("laps", "coach", "cloudlaps", "races")[tab.coerceIn(0, 3)]) }
     LaunchedEffect(tab, onlyBest) {
         if (tab == 2 && onlyBest && b.data == null && !b.loading) vm.loadBests()
         if (tab == 3 && r.data == null && !r.loading) vm.loadRaces()
@@ -2254,6 +2265,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
     fun match(vararg s: String) = q.isBlank() || s.any { it.contains(q, true) }
     LaunchedEffect(Unit) { tab = 0 }
     var sec by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(sec) { vm.track(if (sec == 1) "view:leagues" else "view:community") }
     var cat by rememberSaveable { mutableStateOf("") }
     val acc by vm.account.collectAsState()
     val uri = LocalUriHandler.current
@@ -2681,6 +2693,7 @@ private fun Live(vm: PitlaneViewModel) {
     var sub by rememberSaveable { mutableIntStateOf(0) }
     var lmode by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { vm.loadDriverNotes() }
+    LaunchedEffect(sub) { vm.track("view:" + listOf("live", "standings", "tyres")[sub.coerceIn(0, 2)]) }
     DisposableEffect(Unit) {
         vm.startLive()
         onDispose { vm.stopLive() }
@@ -2785,55 +2798,59 @@ private fun Live(vm: PitlaneViewModel) {
     }
 }
 
-// ---------- DRINKS mode (admins) ----------
-// the admin profile: every shared lap and race analysis with the name it shows and who really
-// uploaded it (anonymous items and DRINKS drivers too), and the accounts
+// ---------- the admin panel (admins with admin mode on) ----------
+// the PC's sections: summary (the key numbers and what the drivers use), users, feedback, content (the shared items),
+// sessions, coach, server (the emails, the tools, the blocked sign-ins); each says in one line what it is
+private val ADMIN_SECTIONS = listOf("summary", "users", "feedback", "content", "sessions", "coach", "server")
+
+private fun jsonRows(a: org.json.JSONArray?): List<org.json.JSONObject> = (0 until (a?.length() ?: 0)).mapNotNull { a!!.optJSONObject(it) }
+
 @Composable
 private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val st by vm.admin.collectAsState()
-    LaunchedEffect(Unit) { vm.loadAdmin("status") }
+    val a by vm.account.collectAsState()
+    LaunchedEffect(Unit) { vm.loadAdmin(st.kind) }
+    // admin mode switched off here: back to the app as everyone sees it
+    LaunchedEffect(a.admin) { if (!a.admin) nav.popBackStack() }
     Screen(t("admin_profile"), back = { nav.popBackStack() }) {
         item {
+            Panel {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(t("admin_mode"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Switch(a.admin, { vm.setAdminMode(it) })
+                }
+                Text(t("admin_mode_sub"), color = Muted, fontSize = 12.sp)
+            }
+        }
+        item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("status" to t("admin_server"), "users" to t("admin_accounts"), "sessions" to t("admin_activity_t"), "uploads" to t("admin_shared"), "blocked" to t("admin_blocked")).forEach { (k, l) ->
-                    FilterChip(st.kind == k, { vm.loadAdmin(k) }, label = { Text(l) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink))
+                ADMIN_SECTIONS.forEach { k ->
+                    FilterChip(st.kind == k, { vm.loadAdmin(k) }, label = { Text(t("admin_sec_$k")) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Accent, selectedLabelColor = Ink))
                 }
             }
         }
+        item { Text(t("admin_sec_${st.kind}_sub"), color = Muted, fontSize = 12.sp) }
         val list = st.items
         when {
             st.error != null -> item { Empty(t(st.error!!)) }
             list == null -> item { Empty(t("loading")) }
-            list.isEmpty() -> item { Empty(t("admin_nothing")) }
-            st.kind == "status" -> item {
-                val x = list.first()
-                val m = x.optJSONObject("mail") ?: org.json.JSONObject()
-                val c = x.optJSONObject("counts") ?: org.json.JSONObject()
-                val e = m.optJSONObject("lastError")
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Panel {
-                    Text(t("admin_mail") + ": " + if (m.optBoolean("ready")) t("admin_mail_ok") + " (" + m.optString("via") + ")" else t("admin_mail_off"), fontWeight = FontWeight.Bold, color = if (m.optBoolean("ready")) Good else Bad)
-                    Text(m.optString("from"), color = Muted, fontSize = 12.sp)
-                    Text(t("admin_mail_last", dayTime(m.optLong("lastOk"))), color = Muted, fontSize = 12.sp)
-                    if (e != null) Text(t("admin_mail_err") + ": " + listOf("message", "reply", "status", "body").map { e.optString(it) }.filter { it.isNotBlank() }.joinToString(" · "), color = Bad, fontSize = 12.sp)
-                }
-                val g = x.optJSONObject("config") ?: org.json.JSONObject()
-                Panel {
-                    Text(t("admin_counts", c.optInt("accounts"), c.optInt("verified"), c.optInt("sessions"), c.optInt("shared")), fontSize = 12.sp)
-                    Text(t("admin_activity", c.optInt("new7"), c.optInt("drivers7"), c.optInt("sessions1"), c.optInt("sessions7")), color = Muted, fontSize = 12.sp)
-                    Text(t("admin_community", c.optInt("boards"), c.optInt("leagues"), if (g.optBoolean("leaguesOpen")) t("admin_open") else t("admin_only")), color = Muted, fontSize = 12.sp)
-                    Text(t("admin_sup", c.optInt("supporters"), c.optInt("supportersPatreon"), c.optInt("patrons")), color = Muted, fontSize = 12.sp)
-                    Text(t("admin_model", c.optInt("learnt"), c.optInt("models")) + " · " + t("admin_dirty", c.optInt("modelsDirty")), color = Muted, fontSize = 12.sp)
-                    Text(if (g.optBoolean("patreon")) t("admin_patreon_ok") else t("admin_patreon_off"), color = if (g.optBoolean("patreon")) Good else Bad, fontSize = 12.sp)
-                }
-                // the tools: the coach models learn again, the blocked sign-ins open again
-                Panel {
-                    Text(t("admin_tools_t"), fontWeight = FontWeight.Bold)
-                    TextButton({ vm.adminTool("models") }) { Text(t("admin_rebuild"), color = Accent) }
-                    TextButton({ vm.adminTool("unlock") }) { Text(t("admin_unlock", c.optInt("authFails")), color = Accent) }
-                }
-                }
+            st.kind == "summary" -> item { AdminSummary(vm, st) }
+            st.kind == "server" -> {
+                item { AdminServer(vm, st.extra ?: org.json.JSONObject()) }
+                item { Section(t("admin_blocked")) }
+                if (list.isEmpty()) item { Empty(t("admin_nothing")) }
+                items(list.size) { i -> AdminBlockedRow(vm, list[i]) }
             }
+            st.kind == "coach" -> {
+                item { AdminCoachHead(vm, st.extra ?: org.json.JSONObject()) }
+                if (list.isEmpty()) item { Empty(t("admin_nothing")) }
+                val off = (st.extra?.optJSONArray("off")?.let { o -> (0 until o.length()).map { o.optString(it) } } ?: emptyList()).toSet()
+                val ratings = st.extra?.optJSONObject("ratings")
+                items(list.size) { i -> AdminCoachRow(vm, list[i], off, ratings) }
+            }
+            list.isEmpty() -> item { Empty(t("admin_nothing")) }
+            st.kind == "users" -> items(list.size) { i -> AdminUserRow(vm, nav, list[i]) }
+            st.kind == "feedback" -> items(list.size) { i -> AdminFeedbackRow(list[i]) }
             st.kind == "sessions" -> items(list.size) { i ->
                 val x = list[i]
                 Panel {
@@ -2841,89 +2858,6 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(x.optString("car") + " · " + kindText(x.optString("kind")) + " · " + t("laps_n", x.optInt("laps")), color = Muted, fontSize = 12.sp)
                     Text(dayTime(x.optLong("started")) + " · " + x.optString("who").takeIf { it.isNotBlank() && it != "null" }.orEmpty(), color = Muted, fontSize = 12.sp)
                 }
-            }
-            st.kind == "blocked" -> items(list.size) { i ->
-                val x = list[i]
-                val a = x.optJSONObject("account")
-                Panel {
-                    Text(x.optString("kind") + " · " + (a?.optString("display") ?: x.optString("net").takeIf { it.isNotBlank() && it != "null" } ?: "—") + if (x.optBoolean("blocked")) " · " + t("admin_is_blocked") else "", fontWeight = FontWeight.Bold, color = if (x.optBoolean("blocked")) Bad else Fg)
-                    Text(t("admin_tries", x.optInt("n")) + " · " + dayTime(x.optLong("last")), color = Muted, fontSize = 12.sp)
-                    TextButton({ vm.adminUnlock("k", x.optString("k"), "blocked") }) { Text(t("admin_unblock"), color = Accent) }
-                }
-            }
-            st.kind == "users" -> items(list.size) { i ->
-                val u = list[i]
-                var ask by remember { mutableStateOf(false) }
-                var since by remember { mutableStateOf<String?>(null) }
-                val id = u.optString("id")
-                val ms = u.optLong("memberSince").takeIf { it > 0 } ?: u.optLong("created")
-                Panel {
-                    Text(u.optString("display", "–") + if (u.optBoolean("admin")) " · Admin" else "", fontWeight = FontWeight.Bold)
-                    Text(id, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                    Text(t("admin_since", day(ms)) + if (u.optLong("memberSince") > 0) " ✎" else "", color = Muted, fontSize = 12.sp)
-                    Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
-                    // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it,
-                    // join a DRINKS driver to it (what was shared under the driver's name goes to the account, later laps too)
-                    var rename by remember { mutableStateOf<String?>(null) }
-                    var linkGuest by remember { mutableStateOf<String?>(null) }
-                    val guestLinks = (u.opt("guestLinked") as? String ?: "").split(",").filter { it.isNotBlank() }.map { it.substringAfter("|") } // "gid|name,…", null when none
-                    // the games whose driver is linked to this account ("iracing,lmu"; a server without it: iRacing's when linked)
-                    val driverGames = (u.opt("driverGames") as? String)?.split(",")?.filter { it.isNotBlank() } ?: if (u.optInt("driverLinked") == 1) listOf("iracing") else emptyList()
-                    if (guestLinks.isNotEmpty()) Text(t("admin_guest_linked", guestLinks.joinToString(", ")), color = Accent, fontSize = 12.sp)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (u.optInt("verified") != 1) TextButton({ vm.adminAccount(id, "verify") }) { Text(t("admin_verify"), color = Accent) }
-                        if (u.optInt("twoFactor") == 1) TextButton({ vm.adminAccount(id, "2fa-off") }) { Text(t("admin_2fa_off"), color = Accent) }
-                        TextButton({ vm.adminAccount(id, "signout") }) { Text(t("admin_signout"), color = Accent) }
-                        driverGames.forEach { g -> TextButton({ vm.adminAccount(id, "unlink-driver", g) }) { Text(t(if (g == "lmu") "admin_unlink_driver_lmu" else "admin_unlink_driver"), color = Accent) } }
-                        TextButton({ rename = u.optString("display") }) { Text(t("admin_rename"), color = Accent) }
-                        TextButton({ vm.adminUnlock("account", id, "users") }) { Text(t("admin_unblock"), color = Accent) }
-                        TextButton({ linkGuest = "" }) { Text(t("admin_link_guest"), color = Accent) }
-                        guestLinks.forEach { g -> TextButton({ vm.adminAccount(id, "unlink-guest", g) }) { Text(t("admin_unlink_guest", g), color = Accent) } }
-                    }
-                    linkGuest?.let { v ->
-                        AlertDialog(
-                            onDismissRequest = { linkGuest = null },
-                            title = { Text(t("admin_link_guest")) },
-                            text = { Column { Text(t("admin_link_guest_hint"), color = Muted, fontSize = 12.sp); OutlinedTextField(v, { linkGuest = it.take(32) }, singleLine = true) } },
-                            confirmButton = { TextButton({ val n = v.trim(); linkGuest = null; if (n.isNotEmpty()) vm.adminAccount(id, "link-guest", n) }) { Text(t("save"), color = Accent) } },
-                            dismissButton = { TextButton({ linkGuest = null }) { Text(t("cancel"), color = Muted) } }
-                        )
-                    }
-                    rename?.let { v ->
-                        AlertDialog(
-                            onDismissRequest = { rename = null },
-                            title = { Text(t("admin_rename")) },
-                            text = { OutlinedTextField(v, { rename = it.take(32) }, singleLine = true) },
-                            confirmButton = { TextButton({ val n = v.trim(); rename = null; if (n.isNotEmpty()) vm.adminAccount(id, "rename", n) }) { Text(t("save"), color = Accent) } },
-                            dismissButton = { TextButton({ rename = null }) { Text(t("cancel"), color = Muted) } }
-                        )
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton({ vm.loadProfile("acct:$id"); nav.navigate("profile") }) { Text(t("profile"), color = Accent) }
-                        TextButton({ since = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }) { Text(t("admin_set_since"), color = Accent) }
-                    }
-                    val sup = u.optInt("supporter") == 1
-                    TextButton({ vm.adminSupporter(u.optString("id"), !sup) }) {
-                        Text((if (sup) "♥ " + t("supporter_remove") else t("supporter_give")) + if (sup && u.optInt("supporterHidden") == 1) " · " + t("supporter_hidden_by") else "", color = if (sup) Color(0xFFFF8FBF) else Accent)
-                    }
-                    if (!u.optBoolean("admin")) TextButton({ ask = true }) { Text(t("admin_delete_account"), color = Bad) }
-                }
-                since?.let { v ->
-                    val ok = runCatching { java.time.LocalDate.parse(v.trim()) }.getOrNull()
-                    AlertDialog(
-                        onDismissRequest = { since = null },
-                        title = { Text(t("admin_set_since")) },
-                        text = { OutlinedTextField(v, { since = it }, label = { Text(t("admin_since_hint")) }, singleLine = true, isError = ok == null) },
-                        confirmButton = { TextButton({ if (ok != null) { since = null; vm.adminSince(id, ok.atTime(12, 0).atZone(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()) } }, enabled = ok != null) { Text(t("save"), color = Accent) } },
-                        dismissButton = { Row { if (u.optLong("memberSince") > 0) TextButton({ since = null; vm.adminSince(id, null) }) { Text(t("admin_account_date"), color = Muted) }; TextButton({ since = null }) { Text(t("cancel"), color = Muted) } } }
-                    )
-                }
-                if (ask) AlertDialog(
-                    onDismissRequest = { ask = false },
-                    text = { Text(t("admin_delete_ask", u.optString("display"))) },
-                    confirmButton = { TextButton({ ask = false; vm.adminDeleteUser(u.optString("id")) }) { Text(t("delete"), color = Bad) } },
-                    dismissButton = { TextButton({ ask = false }) { Text(t("cancel"), color = Muted) } }
-                )
             }
             else -> items(list.size) { i ->
                 val x = list[i]
@@ -2939,6 +2873,246 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
     }
 }
 
+/** Summary: the key numbers, then what the drivers use over the days chosen (active users per day, devices, the most
+ *  used screens and actions, games, versions). */
+@Composable
+private fun AdminSummary(vm: PitlaneViewModel, st: PitlaneViewModel.AdminState) {
+    val x = st.extra ?: org.json.JSONObject()
+    val c = x.optJSONObject("counts") ?: org.json.JSONObject()
+    val g = x.optJSONObject("config") ?: org.json.JSONObject()
+    val an = st.items?.firstOrNull()
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Panel {
+            Text(t("admin_counts", c.optInt("accounts"), c.optInt("verified"), c.optInt("sessions"), c.optInt("shared")), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(t("admin_activity", c.optInt("new7"), c.optInt("drivers7"), c.optInt("sessions1"), c.optInt("sessions7")), color = Muted, fontSize = 12.sp)
+            Text(t("admin_community", c.optInt("boards"), c.optInt("leagues"), if (g.optBoolean("leaguesOpen")) t("admin_open") else t("admin_only")), color = Muted, fontSize = 12.sp)
+            Text(t("admin_sup", c.optInt("supporters"), c.optInt("supportersPatreon"), c.optInt("patrons")), color = Muted, fontSize = 12.sp)
+            Text(t("admin_model", c.optInt("learnt"), c.optInt("models")) + " · " + t("admin_dirty", c.optInt("modelsDirty")), color = Muted, fontSize = 12.sp)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(7, 14, 30).forEach { d -> Chip(t("admin_days", d), st.days == d) { vm.loadAdmin("summary", d) } }
+        }
+        if (an == null) { Panel { Text(t("admin_no_analytics"), color = Muted, fontSize = 12.sp) }; return@Column }
+        Panel {
+            Text(t("admin_active"), fontWeight = FontWeight.Bold)
+            ActiveChart(jsonRows(an.optJSONArray("active")))
+        }
+        Panel {
+            Text(t("admin_devices"), fontWeight = FontWeight.Bold)
+            jsonRows(an.optJSONArray("byDevice")).forEach { d -> UseRow(d.optString("device"), t("admin_use_n", d.optInt("n"), d.optInt("users"))) }
+        }
+        Panel {
+            Text(t("admin_top"), fontWeight = FontWeight.Bold)
+            jsonRows(an.optJSONArray("top")).take(20).forEach { d -> UseRow(d.optString("key"), t("admin_use_n", d.optInt("n"), d.optInt("users"))) }
+        }
+        Panel {
+            Text(t("admin_games"), fontWeight = FontWeight.Bold)
+            jsonRows(an.optJSONArray("games")).forEach { d -> UseRow(if (d.optString("game") == "lmu") "Le Mans Ultimate" else if (d.optString("game") == "iracing") "iRacing" else d.optString("game"), t("admin_use_n", d.optInt("n"), d.optInt("users"))) }
+        }
+        Panel {
+            Text(t("admin_versions"), fontWeight = FontWeight.Bold)
+            jsonRows(an.optJSONArray("versions")).forEach { d -> UseRow(d.optString("v"), t("admin_devices_n", d.optInt("devices"))) }
+        }
+    }
+}
+
+@Composable
+private fun UseRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(value, color = Muted, fontSize = 12.sp)
+    }
+}
+
+/** Active users per day as bars: the finger picks a day and says its users under the chart. */
+@Composable
+private fun ActiveChart(days: List<org.json.JSONObject>) {
+    if (days.isEmpty()) { Text(t("admin_nothing"), color = Muted, fontSize = 12.sp); return }
+    val n = days.size
+    val hi = days.maxOf { it.optInt("users") }.coerceAtLeast(1)
+    var idx by remember(n) { mutableStateOf(n - 1) }
+    fun pickAt(x: Float, w: Int) { idx = (x / w.coerceAtLeast(1) * n).toInt().coerceIn(0, n - 1) }
+    var w by remember { mutableIntStateOf(1) }
+    Canvas(
+        Modifier.fillMaxWidth().height(110.dp).padding(top = 6.dp)
+            .onSizeChanged { w = it.width }
+            .pointerInput(n) { detectTapGestures(onPress = { pickAt(it.x, w) }) }
+            .pointerInput(n) { detectHorizontalDragGestures(onDragStart = { pickAt(it.x, w) }, onHorizontalDrag = { ch, _ -> pickAt(ch.position.x, w); ch.consume() }) }
+    ) {
+        val bw = size.width / n
+        days.forEachIndexed { i, d ->
+            val h = size.height * d.optInt("users") / hi
+            drawRect(if (i == idx) Accent else Accent.copy(alpha = 0.45f), Offset(i * bw + bw * 0.15f, size.height - h), androidx.compose.ui.geometry.Size(bw * 0.7f, h))
+        }
+    }
+    days.getOrNull(idx)?.let { d -> Text(d.optString("day") + " · " + d.optInt("users"), fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+}
+
+/** One account: what it is, what it uses (the analytics' devices, last seen and top features), and the buttons that help with it. */
+@Composable
+private fun AdminUserRow(vm: PitlaneViewModel, nav: NavHostController, u: org.json.JSONObject) {
+    var ask by remember { mutableStateOf(false) }
+    var since by remember { mutableStateOf<String?>(null) }
+    val id = u.optString("id")
+    val ms = u.optLong("memberSince").takeIf { it > 0 } ?: u.optLong("created")
+    val use = u.optJSONObject("_use")
+    Panel {
+        Text(u.optString("display", "–") + if (u.optBoolean("admin")) " · Admin" else "", fontWeight = FontWeight.Bold)
+        Text(id, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        Text(t("admin_since", day(ms)) + if (u.optLong("memberSince") > 0) " ✎" else "", color = Muted, fontSize = 12.sp)
+        Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
+        if (use != null) {
+            val devs = use.optJSONArray("devices")?.let { d -> (0 until d.length()).joinToString(", ") { d.optString(it) } }.orEmpty()
+            Text(t("admin_last_seen", dayTime(use.optLong("lastSeen"))) + (if (devs.isNotBlank()) " · $devs" else "") + " · " + t("admin_uses", use.optInt("n")), color = Accent, fontSize = 12.sp)
+            val top = jsonRows(use.optJSONArray("top")).take(5).joinToString(" · ") { it.optString("key") + " " + it.optInt("n") }
+            if (top.isNotBlank()) Text(top, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        }
+        // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it,
+        // join a DRINKS driver to it (what was shared under the driver's name goes to the account, later laps too)
+        var rename by remember { mutableStateOf<String?>(null) }
+        var linkGuest by remember { mutableStateOf<String?>(null) }
+        val guestLinks = (u.opt("guestLinked") as? String ?: "").split(",").filter { it.isNotBlank() }.map { it.substringAfter("|") } // "gid|name,…", null when none
+        // the games whose driver is linked to this account ("iracing,lmu"; a server without it: iRacing's when linked)
+        val driverGames = (u.opt("driverGames") as? String)?.split(",")?.filter { it.isNotBlank() } ?: if (u.optInt("driverLinked") == 1) listOf("iracing") else emptyList()
+        if (guestLinks.isNotEmpty()) Text(t("admin_guest_linked", guestLinks.joinToString(", ")), color = Accent, fontSize = 12.sp)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (u.optInt("verified") != 1) TextButton({ vm.adminAccount(id, "verify") }) { Text(t("admin_verify"), color = Accent) }
+            if (u.optInt("twoFactor") == 1) TextButton({ vm.adminAccount(id, "2fa-off") }) { Text(t("admin_2fa_off"), color = Accent) }
+            TextButton({ vm.adminAccount(id, "signout") }) { Text(t("admin_signout"), color = Accent) }
+            driverGames.forEach { g -> TextButton({ vm.adminAccount(id, "unlink-driver", g) }) { Text(t(if (g == "lmu") "admin_unlink_driver_lmu" else "admin_unlink_driver"), color = Accent) } }
+            TextButton({ rename = u.optString("display") }) { Text(t("admin_rename"), color = Accent) }
+            TextButton({ vm.adminUnlock("account", id, "users") }) { Text(t("admin_unblock"), color = Accent) }
+            TextButton({ linkGuest = "" }) { Text(t("admin_link_guest"), color = Accent) }
+            guestLinks.forEach { g -> TextButton({ vm.adminAccount(id, "unlink-guest", g) }) { Text(t("admin_unlink_guest", g), color = Accent) } }
+        }
+        linkGuest?.let { v ->
+            AlertDialog(
+                onDismissRequest = { linkGuest = null },
+                title = { Text(t("admin_link_guest")) },
+                text = { Column { Text(t("admin_link_guest_hint"), color = Muted, fontSize = 12.sp); OutlinedTextField(v, { linkGuest = it.take(32) }, singleLine = true) } },
+                confirmButton = { TextButton({ val n = v.trim(); linkGuest = null; if (n.isNotEmpty()) vm.adminAccount(id, "link-guest", n) }) { Text(t("save"), color = Accent) } },
+                dismissButton = { TextButton({ linkGuest = null }) { Text(t("cancel"), color = Muted) } }
+            )
+        }
+        rename?.let { v ->
+            AlertDialog(
+                onDismissRequest = { rename = null },
+                title = { Text(t("admin_rename")) },
+                text = { OutlinedTextField(v, { rename = it.take(32) }, singleLine = true) },
+                confirmButton = { TextButton({ val n = v.trim(); rename = null; if (n.isNotEmpty()) vm.adminAccount(id, "rename", n) }) { Text(t("save"), color = Accent) } },
+                dismissButton = { TextButton({ rename = null }) { Text(t("cancel"), color = Muted) } }
+            )
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton({ vm.loadProfile("acct:$id"); nav.navigate("profile") }) { Text(t("profile"), color = Accent) }
+            TextButton({ since = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString() }) { Text(t("admin_set_since"), color = Accent) }
+        }
+        val sup = u.optInt("supporter") == 1
+        TextButton({ vm.adminSupporter(u.optString("id"), !sup) }) {
+            Text((if (sup) "♥ " + t("supporter_remove") else t("supporter_give")) + if (sup && u.optInt("supporterHidden") == 1) " · " + t("supporter_hidden_by") else "", color = if (sup) Color(0xFFFF8FBF) else Accent)
+        }
+        if (!u.optBoolean("admin")) TextButton({ ask = true }) { Text(t("admin_delete_account"), color = Bad) }
+    }
+    since?.let { v ->
+        val ok = runCatching { java.time.LocalDate.parse(v.trim()) }.getOrNull()
+        AlertDialog(
+            onDismissRequest = { since = null },
+            title = { Text(t("admin_set_since")) },
+            text = { OutlinedTextField(v, { since = it }, label = { Text(t("admin_since_hint")) }, singleLine = true, isError = ok == null) },
+            confirmButton = { TextButton({ if (ok != null) { since = null; vm.adminSince(id, ok.atTime(12, 0).atZone(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()) } }, enabled = ok != null) { Text(t("save"), color = Accent) } },
+            dismissButton = { Row { if (u.optLong("memberSince") > 0) TextButton({ since = null; vm.adminSince(id, null) }) { Text(t("admin_account_date"), color = Muted) }; TextButton({ since = null }) { Text(t("cancel"), color = Muted) } } }
+        )
+    }
+    if (ask) AlertDialog(
+        onDismissRequest = { ask = false },
+        text = { Text(t("admin_delete_ask", u.optString("display"))) },
+        confirmButton = { TextButton({ ask = false; vm.adminDeleteUser(u.optString("id")) }) { Text(t("delete"), color = Bad) } },
+        dismissButton = { TextButton({ ask = false }) { Text(t("cancel"), color = Muted) } }
+    )
+}
+
+/** One piece of feedback: the stars, what was written, who, from which device, version and screen, and when. */
+@Composable
+private fun AdminFeedbackRow(x: org.json.JSONObject) {
+    val r = x.optInt("rating")
+    Panel {
+        if (r in 1..5) Text("★".repeat(r) + "☆".repeat(5 - r), color = Accent, fontSize = 14.sp)
+        Text(x.optString("text"), fontSize = 13.sp)
+        val who = listOf("nick", "display", "email").map { x.optString(it) }.firstOrNull { it.isNotBlank() && it != "null" } ?: "—"
+        Text(listOf(who, x.optString("device"), x.optString("v"), x.optString("view")).filter { it.isNotBlank() && it != "null" }.joinToString(" · ") + " · " + dayTime(x.optLong("at").takeIf { it > 0 } ?: x.optLong("created")), color = Muted, fontSize = 11.sp)
+    }
+}
+
+/** Server: the emails and the tools, each with the line that says what it does. */
+@Composable
+private fun AdminServer(vm: PitlaneViewModel, x: org.json.JSONObject) {
+    val m = x.optJSONObject("mail") ?: org.json.JSONObject()
+    val c = x.optJSONObject("counts") ?: org.json.JSONObject()
+    val g = x.optJSONObject("config") ?: org.json.JSONObject()
+    val e = m.optJSONObject("lastError")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Panel {
+            Text(t("admin_mail") + " · " + if (m.optBoolean("ready")) t("admin_mail_ok") + " (" + m.optString("via") + ")" else t("admin_mail_off"), fontWeight = FontWeight.Bold, color = if (m.optBoolean("ready")) Good else Bad)
+            Text(t("admin_mail_sub"), color = Muted, fontSize = 12.sp)
+            Text(m.optString("from"), color = Muted, fontSize = 12.sp)
+            Text(t("admin_mail_last", dayTime(m.optLong("lastOk"))), color = Muted, fontSize = 12.sp)
+            if (e != null) Text(t("admin_mail_err") + " · " + listOf("message", "reply", "status", "body").map { e.optString(it) }.filter { it.isNotBlank() }.joinToString(" · "), color = Bad, fontSize = 12.sp)
+            Text(if (g.optBoolean("patreon")) t("admin_patreon_ok") else t("admin_patreon_off"), color = if (g.optBoolean("patreon")) Good else Bad, fontSize = 12.sp)
+        }
+        // the tools: the coach models learn again, the blocked sign-ins open again
+        Panel {
+            Text(t("admin_tools_t"), fontWeight = FontWeight.Bold)
+            TextButton({ vm.adminTool("models") }) { Text(t("admin_rebuild"), color = Accent) }
+            Text(t("admin_rebuild_sub"), color = Muted, fontSize = 12.sp)
+            TextButton({ vm.adminTool("unlock") }) { Text(t("admin_unlock", c.optInt("authFails")), color = Accent) }
+            Text(t("admin_unlock_sub"), color = Muted, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun AdminBlockedRow(vm: PitlaneViewModel, x: org.json.JSONObject) {
+    val a = x.optJSONObject("account")
+    Panel {
+        Text(x.optString("kind") + " · " + (a?.optString("display") ?: x.optString("net").takeIf { it.isNotBlank() && it != "null" } ?: "—") + if (x.optBoolean("blocked")) " · " + t("admin_is_blocked") else "", fontWeight = FontWeight.Bold, color = if (x.optBoolean("blocked")) Bad else Fg)
+        Text(t("admin_tries", x.optInt("n")) + " · " + dayTime(x.optLong("last")), color = Muted, fontSize = 12.sp)
+        TextButton({ vm.adminUnlock("k", x.optString("k"), "server") }) { Text(t("admin_unblock"), color = Accent) }
+    }
+}
+
+/** Coach: the totals and the confidence switch. */
+@Composable
+private fun AdminCoachHead(vm: PitlaneViewModel, x: org.json.JSONObject) {
+    val tot = x.optJSONObject("totals") ?: org.json.JSONObject()
+    Panel {
+        Text(t("admin_coach_totals", tot.optInt("tips"), tot.optInt("scored"), tot.optInt("rated"), tot.optInt("drivers"), tot.optInt("week")), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(t("admin_coach_conf"), fontSize = 13.sp, modifier = Modifier.weight(1f))
+            Switch(x.optBoolean("confidence"), { vm.adminCoachConfidence(it) })
+        }
+        Text(t("admin_coach_conf_sub"), color = Muted, fontSize = 12.sp)
+        Text(t("admin_coach_off_sub"), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+/** One bucket: a kind of tip on corners of one speed, its cases, gains and losses, the thumbs, and its off switch. */
+@Composable
+private fun AdminCoachRow(vm: PitlaneViewModel, b: org.json.JSONObject, off: Set<String>, ratings: org.json.JSONObject?) {
+    val kind = b.optString("kind"); val cls = b.optString("cls")
+    val isOff = "$kind|$cls" in off
+    val th = ratings?.optJSONObject(kind)
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(kind + (if (cls.isNotBlank()) " · " + t("admin_coach_cls_$cls") else "") + if (isOff) " · " + t("admin_coach_is_off") else "", fontWeight = FontWeight.Bold, color = if (isOff) Bad else Fg, fontSize = 13.sp)
+                Text(t("admin_coach_line", b.optInt("n"), b.optInt("win"), b.optInt("loss")) + (th?.let { " · 👍 " + it.optInt("up") + " 👎 " + it.optInt("down") } ?: "") + " · w " + "%.2f".format(b.optDouble("w", 1.0)), color = Muted, fontSize = 12.sp)
+            }
+            if (cls.isNotBlank()) TextButton({ vm.adminCoachOff(kind, cls, !isOff) }) { Text(t(if (isOff) "admin_coach_on" else "admin_coach_off"), color = if (isOff) Accent else Bad) }
+        }
+    }
+}
+
+// ---------- DRINKS mode (admins) ----------
 @Composable
 private fun DrinksScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val s by vm.liveState.collectAsState()
@@ -3100,14 +3274,14 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
                 }
             }
         }
-        // admins: the app as everyone sees it, to test it (everything for admins and in development hides)
+        // admins: admin mode, off by default (the app as everyone sees it); on, what is for admins and in development shows
         if (a.realAdmin) item {
             Panel {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(t("as_user"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Switch(!a.admin, { vm.setAsUser(it) })
+                    Text(t("admin_mode"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Switch(a.admin, { vm.setAdminMode(it) })
                 }
-                Text(t("as_user_sub"), color = Muted, fontSize = 12.sp)
+                Text(t("admin_mode_sub"), color = Muted, fontSize = 12.sp)
             }
         }
         if (a.admin) item { Section(t("admin_tools")) }

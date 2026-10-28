@@ -28,7 +28,7 @@ data class AccountState(
     val email: String = "",
     val display: String = "",
     val verified: Boolean = true,
-    val admin: Boolean = false,         // what the screens use: false while an admin looks as a normal user
+    val admin: Boolean = false,         // what the screens use: an admin of the server with admin mode on, on this phone
     val realAdmin: Boolean = false,     // an admin of the server, whatever the view
     val busy: Boolean = false,
     val syncedFiles: Int = 0,
@@ -81,18 +81,19 @@ class AccountRepository(context: Context) {
         .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("X-Pitlane-Client", CLIENT).build()) }.build()
     private val prefs = context.getSharedPreferences("pitlane-account", Context.MODE_PRIVATE)
     private val app = context.getSharedPreferences("pitlane-app", Context.MODE_PRIVATE)
+    private val usage = context.getSharedPreferences("pitlane-usage", Context.MODE_PRIVATE)
     private val cacheDir = File(context.filesDir, "saved").apply { mkdirs() }
     /** the web's lap analysis and coach, run on the phone (pitwall-analysis.js) */
     val analysisJs = AnalysisJs(context, client)
 
     // demo data is only for the admins of the server (ADMINS), for testing
     var demo: Boolean
-        get() = app.getBoolean("demo", false) && prefs.getBoolean("admin", false) && !asUser
+        get() = app.getBoolean("demo", false) && prefs.getBoolean("admin", false) && adminMode
         set(v) = app.edit().putBoolean("demo", v).apply()
-    // an admin can see the app as everyone else does (to test it), on this phone
-    var asUser: Boolean
-        get() = app.getBoolean("asUser", false)
-        set(v) = app.edit().putBoolean("asUser", v).apply()
+    // admin mode, on this phone: off by default (an admin sees the app as everyone does), one switch turns it on
+    var adminMode: Boolean
+        get() = app.getBoolean("adminMode", false)
+        set(v) = app.edit().putBoolean("adminMode", v).apply()
     var language: String
         get() = app.getString("lang", "system") ?: "system"
         set(v) = app.edit().putString("lang", v).apply()
@@ -108,7 +109,7 @@ class AccountRepository(context: Context) {
         email = prefs.getString("email", "") ?: "",
         display = prefs.getString("display", "") ?: "",
         verified = prefs.getBoolean("verified", true),
-        admin = prefs.getBoolean("admin", false) && !asUser,
+        admin = prefs.getBoolean("admin", false) && adminMode,
         realAdmin = prefs.getBoolean("admin", false),
         syncedFiles = prefs.getInt("syncedFiles", 0),
         syncVersion = prefs.getLong("syncVersion", 0),
@@ -168,6 +169,7 @@ class AccountRepository(context: Context) {
 
     private fun clearAll() {
         prefs.edit().clear().apply()
+        usage.edit().clear().apply()
         cacheDir.listFiles()?.forEach { it.delete() }
     }
 
@@ -1118,6 +1120,34 @@ class AccountRepository(context: Context) {
     fun adminDelete(kind: String, id: String) { call("DELETE", "/community/admin/$kind/" + idPath(id)) }
     fun adminDeleteUser(id: String) { call("DELETE", "/community/admin/users/" + idPath(id)) }
     fun adminStatus(): JSONObject = JSONObject(call("GET", "/community/admin/status"))
+    /** What the drivers use, over the last [days] days (active users per day, devices, top features, games, versions, users). */
+    fun adminAnalytics(days: Int): JSONObject = JSONObject(call("GET", "/community/admin/analytics?days=$days"))
+    /** What the drivers wrote with "Share your feedback" (PC and web), newest first. */
+    fun adminFeedback(): List<JSONObject> {
+        val j = JSONObject(call("GET", "/community/admin/feedback"))
+        val a = j.optJSONArray("items") ?: j.optJSONArray("feedback") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }
+    }
+    /** The coach's buckets (kind × speed of corner): cases, gains, thumbs, the kinds turned off and the confidence switch. */
+    fun adminCoach(): JSONObject = JSONObject(call("GET", "/community/admin/coach"))
+    fun adminCoachOff(kind: String, cls: String, off: Boolean) { call("POST", "/community/admin/coach/off", JSONObject().put("kind", kind).put("cls", cls).put("off", off)) }
+    fun adminCoachConfidence(on: Boolean) { call("POST", "/community/admin/coach/confidence", JSONObject().put("on", on)) }
+
+    // ---------- what the drivers use (the admin panel's analytics) ----------
+    // counted on this phone ("view:laps", "act:compare", "game:lmu"), kept until the server has them; never in demo data,
+    // only signed in
+    private val usageKey = Regex("^(view|act|game):[a-z0-9_.-]{1,40}$")
+    @Synchronized fun use(key: String) {
+        if (demo || prefs.getString("token", null) == null || !usageKey.matches(key)) return
+        usage.edit().putInt(key, usage.getInt(key, 0) + 1).apply()
+    }
+    /** Sends what was counted (POST /community/usage) and takes off what the server got. */
+    fun sendUsage() {
+        val counts = synchronized(this) { usage.all.mapNotNull { (k, v) -> (v as? Int)?.takeIf { it > 0 }?.let { k to it } }.toMap() }
+        if (counts.isEmpty() || demo || prefs.getString("token", null) == null) return
+        call("POST", "/community/usage", JSONObject().put("device", "android").put("v", CLIENT.substringAfter("/")).put("counts", JSONObject(counts)))
+        synchronized(this) { usage.edit().apply { counts.forEach { (k, n) -> val left = usage.getInt(k, 0) - n; if (left > 0) putInt(k, left) else remove(k) } }.apply() }
+    }
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     fun nameFree(name: String): Boolean = runCatching { JSONObject(call("POST", "/community/name-check", JSONObject().put("name", name))).optBoolean("free", true) }.getOrDefault(true)
 

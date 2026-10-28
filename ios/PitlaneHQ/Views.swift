@@ -630,13 +630,14 @@ extension View {
     func routes() -> some View {
         navigationDestination(for: Route.self) { r in
             switch r {
-            case let .race(x): RaceView(race: x)
-            case let .session(s): SessionView(session: s)
-            case let .lap(s, l, all): LapView(session: s, lap: l, all: all)
-            case let .combo(c): ComboView(combo: c)
-            case let .track(r): TrackPageView(ref: r)
-            case let .profile(id): ProfileView(lapId: id)
-            case .notes: TrackNotesList()
+            // what the drivers use, for the admin panel: every screen opened
+            case let .race(x): RaceView(race: x).onAppear { Usage.count("act:race_summary") }
+            case let .session(s): SessionView(session: s).onAppear { Usage.count("view:session") }
+            case let .lap(s, l, all): LapView(session: s, lap: l, all: all).onAppear { Usage.count("act:compare") }
+            case let .combo(c): ComboView(combo: c).onAppear { Usage.count("act:leaderboard") }
+            case let .track(r): TrackPageView(ref: r).onAppear { Usage.count("act:track_page") }
+            case let .profile(id): ProfileView(lapId: id).onAppear { Usage.count("view:profile") }
+            case .notes: TrackNotesList().onAppear { Usage.count("view:notes") }
             }
         }
     }
@@ -1052,6 +1053,9 @@ struct MainView: View {
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
+        // what the drivers use: the tabs without sub-tabs (Analysis and Community count theirs)
+        .onAppear { countTab(tab) }
+        .onChange(of: tab) { v in countTab(v) }
         // "What do you want to see?": when the app opens, your PC is not live and you drove both games
         .sheet(isPresented: Binding(get: { account.askGame && live.pcGame == nil }, set: { if !$0 { account.askGame = false } })) { GameSheet() }
         // nothing chosen on this phone yet: the selector follows the game your PC reads live
@@ -1059,6 +1063,15 @@ struct MainView: View {
     }
     @EnvironmentObject private var account: Account
     @EnvironmentObject private var live: Live
+
+    private func countTab(_ i: Int) {
+        switch i {
+        case 0: Usage.count("view:home")
+        case 3: Usage.count("view:live")
+        case 4: Usage.count("view:me")
+        default: break
+        }
+    }
 
     // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
     private var bar: some View {
@@ -2158,6 +2171,8 @@ struct AnalysisView: View {
     var body: some View {
         Screen(title: t("analysis"), gameSeg: true) {
             Tabs(labels: [t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")], selected: $tab)
+                .onAppear { Usage.count("view:" + ["laps", "coach", "cloudlaps", "races"][min(max(tab, 0), 3)]) }
+                .onChange(of: tab) { v in Usage.count("view:" + ["laps", "coach", "cloudlaps", "races"][min(max(v, 0), 3)]) }
             switch tab {
             case 0, 1: lapsAndCoach
             case 2: mySessions
@@ -3577,6 +3592,8 @@ struct CommunityView: View {
     var body: some View {
         Screen(title: t("community"), gameSeg: true) {
             Tabs(labels: [t("leaderboards"), t("leagues")], selected: $sec)
+                .onAppear { Usage.count(sec == 1 ? "view:leagues" : "view:community") }
+                .onChange(of: sec) { v in Usage.count(v == 1 ? "view:leagues" : "view:community") }
             if sec == 1 {
                 LeagueHub()
             } else {
@@ -4178,39 +4195,52 @@ struct SinceEdit: Identifiable {
     let custom: Bool
 }
 
+/// the admin panel's sections, the PC's: summary (the key numbers and what the drivers use), users, feedback, content
+/// (the shared items), sessions, coach, server (the emails, the tools, the blocked sign-ins); each says in one line what it is
+let adminSections = ["summary", "users", "feedback", "content", "sessions", "coach", "server"]
+
 struct AdminView: View {
     @EnvironmentObject var account: Account
-    @State private var kind = "status"
+    @Environment(\.dismiss) private var dismiss
+    @State private var kind = "summary"
+    @State private var days = 14
     @State private var since: SinceEdit?
     @State private var renaming: (String, String)?
     @State private var newName = ""
     @State private var linking: String?   // the account a DRINKS driver is being joined to
     @State private var linkName = ""
     @State private var rows: [[String: Any]]?
+    /// the summary's and the server's status, the coach's answer
+    @State private var extra: [String: Any]?
     @State private var error: String?
     @State private var confirmDelete: (String, String)?
 
     var body: some View {
         Screen(title: t("admin_profile")) {
+            Panel {
+                // admin mode switched off here: back to the app as everyone sees it
+                Toggle(t("admin_mode"), isOn: Binding(get: { account.adminMode }, set: { on in account.adminMode = on; if !on { dismiss() } })).font(.subheadline.bold())
+                Text(t("admin_mode_sub")).font(.caption).foregroundColor(Theme.muted)
+            }
             ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
-                ForEach([("status", t("admin_server")), ("users", t("admin_accounts")), ("sessions", t("admin_activity_t")), ("uploads", t("admin_shared")), ("blocked", t("admin_blocked"))], id: \.0) { p in
-                    let k = p.0
+                ForEach(adminSections, id: \.self) { k in
                     Button { kind = k; Task { await load() } } label: {
-                        Text(p.1).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
+                        Text(t("admin_sec_" + k)).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
                             .background(kind == k ? Theme.accent : Theme.surface2).foregroundColor(kind == k ? Theme.ink : Theme.fg).clipShape(Capsule())
                     }
                 }
             } }
+            Text(t("admin_sec_" + kind + "_sub")).font(.caption).foregroundColor(Theme.muted)
             if let e = error {
                 EmptyNote(text: t(e))
             } else if let rows = rows {
-                if rows.isEmpty { EmptyNote(text: t("admin_nothing")) }
-                ForEach(rows.indices, id: \.self) { i in row(rows[i]) }
+                section(rows)
             } else {
                 EmptyNote(text: t("loading"))
             }
         }
         .task { await load() }
+        .onAppear { Usage.count("view:admin") }
         .sheet(item: $since) { e in
             NavigationStack {
                 Form {
@@ -4261,45 +4291,161 @@ struct AdminView: View {
         }
     }
 
+    private func iv(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
+
+    @ViewBuilder private func section(_ rows: [[String: Any]]) -> some View {
+        switch kind {
+        case "summary": summaryView(rows.first)
+        case "server":
+            Panel { serverView(extra ?? [:]) }
+            SectionLabel(text: t("admin_blocked"))
+            if rows.isEmpty { EmptyNote(text: t("admin_nothing")) }
+            ForEach(rows.indices, id: \.self) { i in Panel { blockedRow(rows[i]) } }
+        case "coach":
+            Panel { coachHead(extra ?? [:]) }
+            if rows.isEmpty { EmptyNote(text: t("admin_nothing")) }
+            ForEach(rows.indices, id: \.self) { i in Panel { coachRow(rows[i]) } }
+        default:
+            if rows.isEmpty { EmptyNote(text: t("admin_nothing")) }
+            ForEach(rows.indices, id: \.self) { i in row(rows[i]) }
+        }
+    }
+
     // one function per kind of row: one big builder was too much for the type checker
     @ViewBuilder private func row(_ x: [String: Any]) -> some View {
         Panel {
             switch kind {
-            case "status": statusRow(x)
             case "sessions": sessionRow(x)
-            case "blocked": blockedRow(x)
             case "users": userRow(x)
+            case "feedback": feedbackRow(x)
             default: itemRow(x)
             }
         }
     }
 
-    @ViewBuilder private func statusRow(_ x: [String: Any]) -> some View {
-        let m = x["mail"] as? [String: Any] ?? [:], c = x["counts"] as? [String: Any] ?? [:]
-        let ready = m["ready"] as? Bool ?? false
-        let n = { (k: String) in "\(c[k] as? Int ?? 0)" }
-        Text(t("admin_mail") + ": " + (ready ? t("admin_mail_ok") + " (" + (m["via"] as? String ?? "") + ")" : t("admin_mail_off"))).font(.subheadline.bold()).foregroundColor(ready ? Theme.good : Theme.bad)
-        Text(m["from"] as? String ?? "").font(.caption).foregroundColor(Theme.muted)
-        if let e = m["lastError"] as? [String: Any] {
-            Text(t("admin_mail_err") + ": " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.bad)
-        }
-        let g = x["config"] as? [String: Any] ?? [:]
-        let pat = g["patreon"] as? Bool ?? false
-        Group {
-            Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption).foregroundColor(Theme.fg)
+    /// Summary: the key numbers, then what the drivers use over the days chosen
+    @ViewBuilder private func summaryView(_ an: [String: Any]?) -> some View {
+        let x = extra ?? [:]
+        let c = x["counts"] as? [String: Any] ?? [:], g = x["config"] as? [String: Any] ?? [:]
+        let n = { (k: String) in "\((c[k] as? NSNumber)?.intValue ?? 0)" }
+        Panel {
+            Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption.bold()).foregroundColor(Theme.fg)
             Text(t("admin_activity", n("new7"), n("drivers7"), n("sessions1"), n("sessions7"))).font(.caption).foregroundColor(Theme.muted)
             Text(t("admin_community", n("boards"), n("leagues"), (g["leaguesOpen"] as? Bool ?? false) ? t("admin_open") : t("admin_only"))).font(.caption).foregroundColor(Theme.muted)
             Text(t("admin_sup", n("supporters"), n("supportersPatreon"), n("patrons"))).font(.caption).foregroundColor(Theme.muted)
             Text(t("admin_model", n("learnt"), n("models")) + " · " + t("admin_dirty", n("modelsDirty"))).font(.caption).foregroundColor(Theme.muted)
-            Text(pat ? t("admin_patreon_ok") : t("admin_patreon_off")).font(.caption).foregroundColor(pat ? Theme.good : Theme.bad)
         }
+        HStack(spacing: 6) {
+            ForEach([7, 14, 30], id: \.self) { d in LiveChip(label: t("admin_days", "\(d)"), on: days == d) { days = d; Task { await load() } } }
+        }
+        if let an {
+            analyticsView(an)
+        } else {
+            Panel { Text(t("admin_no_analytics")).font(.caption).foregroundColor(Theme.muted) }
+        }
+    }
+
+    @ViewBuilder private func analyticsView(_ an: [String: Any]) -> some View {
+        let list = { (k: String) in an[k] as? [[String: Any]] ?? [] }
+        Panel {
+            Text(t("admin_active")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            if list("active").isEmpty { Text(t("admin_nothing")).font(.caption).foregroundColor(Theme.muted) } else { AdminActiveChart(days: list("active")) }
+        }
+        Panel {
+            Text(t("admin_devices")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            ForEach(Array(list("byDevice").enumerated()), id: \.offset) { _, d in useRow(d["device"] as? String ?? "", t("admin_use_n", "\(iv(d["n"]))", "\(iv(d["users"]))")) }
+        }
+        Panel {
+            Text(t("admin_top")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            ForEach(Array(list("top").prefix(20).enumerated()), id: \.offset) { _, d in useRow(d["key"] as? String ?? "", t("admin_use_n", "\(iv(d["n"]))", "\(iv(d["users"]))")) }
+        }
+        Panel {
+            Text(t("admin_games")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            ForEach(Array(list("games").enumerated()), id: \.offset) { _, d in
+                let gm = d["game"] as? String ?? ""
+                useRow(gm == "lmu" ? "Le Mans Ultimate" : gm == "iracing" ? "iRacing" : gm, t("admin_use_n", "\(iv(d["n"]))", "\(iv(d["users"]))"))
+            }
+        }
+        Panel {
+            Text(t("admin_versions")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            ForEach(Array(list("versions").enumerated()), id: \.offset) { _, d in useRow(d["v"] as? String ?? "", t("admin_devices_n", "\(iv(d["devices"]))")) }
+        }
+    }
+
+    private func useRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.caption.monospaced()).foregroundColor(Theme.fg).lineLimit(1)
+            Spacer()
+            Text(value).font(.caption).foregroundColor(Theme.muted)
+        }
+    }
+
+    /// Server: the emails and the tools, each with the line that says what it does
+    @ViewBuilder private func serverView(_ x: [String: Any]) -> some View {
+        let m = x["mail"] as? [String: Any] ?? [:], c = x["counts"] as? [String: Any] ?? [:]
+        let ready = m["ready"] as? Bool ?? false
+        let g = x["config"] as? [String: Any] ?? [:]
+        let pat = g["patreon"] as? Bool ?? false
+        Text(t("admin_mail") + " · " + (ready ? t("admin_mail_ok") + " (" + (m["via"] as? String ?? "") + ")" : t("admin_mail_off"))).font(.subheadline.bold()).foregroundColor(ready ? Theme.good : Theme.bad)
+        Text(t("admin_mail_sub")).font(.caption).foregroundColor(Theme.muted)
+        Text(m["from"] as? String ?? "").font(.caption).foregroundColor(Theme.muted)
+        Text(t("admin_mail_last", dayTime((m["lastOk"] as? NSNumber)?.doubleValue ?? 0))).font(.caption).foregroundColor(Theme.muted)
+        if let e = m["lastError"] as? [String: Any] {
+            Text(t("admin_mail_err") + " · " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.bad)
+        }
+        Text(pat ? t("admin_patreon_ok") : t("admin_patreon_off")).font(.caption).foregroundColor(pat ? Theme.good : Theme.bad)
         // the tools: the coach models learn again, the blocked sign-ins open again
         Group {
             Divider().padding(.vertical, 4)
             Text(t("admin_tools_t")).font(.subheadline.bold())
             Button(t("admin_rebuild")) { Task { try? await account.adminTool("models"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
-            Button(t("admin_unlock", n("authFails"))) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
+            Text(t("admin_rebuild_sub")).font(.caption).foregroundColor(Theme.muted)
+            Button(t("admin_unlock", "\(iv(c["authFails"]))")) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold()).padding(.top, 4)
+            Text(t("admin_unlock_sub")).font(.caption).foregroundColor(Theme.muted)
         }
+    }
+
+    /// Coach: the totals and the confidence switch
+    @ViewBuilder private func coachHead(_ x: [String: Any]) -> some View {
+        let tot = x["totals"] as? [String: Any] ?? [:]
+        let conf = x["confidence"] as? Bool ?? false
+        Text(t("admin_coach_totals", "\(iv(tot["tips"]))", "\(iv(tot["scored"]))", "\(iv(tot["rated"]))", "\(iv(tot["drivers"]))", "\(iv(tot["week"]))")).font(.caption.bold()).foregroundColor(Theme.fg)
+        Toggle(t("admin_coach_conf"), isOn: Binding(get: { conf }, set: { on in Task { try? await account.adminCoachConfidence(on); await load() } })).font(.subheadline)
+        Text(t("admin_coach_conf_sub")).font(.caption).foregroundColor(Theme.muted)
+        Text(t("admin_coach_off_sub")).font(.caption).foregroundColor(Theme.muted).padding(.top, 4)
+    }
+
+    /// one bucket: a kind of tip on corners of one speed, its cases, gains and losses, the thumbs, and its off switch
+    @ViewBuilder private func coachRow(_ b: [String: Any]) -> some View {
+        let kind = b["kind"] as? String ?? "", cls = b["cls"] as? String ?? ""
+        let off = Set(extra?["off"] as? [String] ?? [])
+        let isOff = off.contains(kind + "|" + cls)
+        let th = (extra?["ratings"] as? [String: Any])?[kind] as? [String: Any]
+        let w = (b["w"] as? NSNumber)?.doubleValue ?? 1
+        let title: String = kind + (cls.isEmpty ? "" : " · " + t("admin_coach_cls_" + cls)) + (isOff ? " · " + t("admin_coach_is_off") : "")
+        let thumbs: String = th.map { " · 👍 \(iv($0["up"])) 👎 \(iv($0["down"]))" } ?? ""
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.bold()).foregroundColor(isOff ? Theme.bad : Theme.fg)
+                Text(t("admin_coach_line", "\(iv(b["n"]))", "\(iv(b["win"]))", "\(iv(b["loss"]))") + thumbs + String(format: " · w %.2f", w)).font(.caption).foregroundColor(Theme.muted)
+            }
+            Spacer()
+            if !cls.isEmpty {
+                Button(t(isOff ? "admin_coach_on" : "admin_coach_off")) { Task { try? await account.adminCoachOff(kind, cls, !isOff); await load() } }
+                    .foregroundColor(isOff ? Theme.accent : Theme.bad).font(.caption.bold())
+            }
+        }
+    }
+
+    /// one piece of feedback: the stars, what was written, who, from which device, version and screen, and when
+    @ViewBuilder private func feedbackRow(_ x: [String: Any]) -> some View {
+        let r = iv(x["rating"])
+        let who: String = ["nick", "display", "email"].compactMap { x[$0] as? String }.first { !$0.isEmpty } ?? "—"
+        let at = (x["at"] as? NSNumber)?.doubleValue ?? (x["created"] as? NSNumber)?.doubleValue ?? 0
+        let meta: String = ([who] + ["device", "v", "view"].compactMap { x[$0] as? String }.filter { !$0.isEmpty }).joined(separator: " · ") + " · " + dayTime(at)
+        if (1...5).contains(r) { Text(String(repeating: "★", count: r) + String(repeating: "☆", count: 5 - r)).font(.subheadline).foregroundColor(Theme.accent) }
+        Text(x["text"] as? String ?? "").font(.subheadline).foregroundColor(Theme.fg).textSelection(.enabled)
+        Text(meta).font(.caption2).foregroundColor(Theme.muted)
     }
 
     @ViewBuilder private func sessionRow(_ x: [String: Any]) -> some View {
@@ -4334,6 +4480,14 @@ struct AdminView: View {
         Text(str("id")).font(.caption2.monospaced()).foregroundColor(Theme.muted).textSelection(.enabled)
         Text(t("admin_since", day(ms)) + (ms0 > 0 ? " ✎" : "")).font(.caption).foregroundColor(Theme.muted)
         Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+        // what it uses (the analytics): when it was last seen, its devices, its top features
+        if let use = x["_use"] as? [String: Any] {
+            let devs: String = (use["devices"] as? [String] ?? []).joined(separator: ", ")
+            let seen: String = t("admin_last_seen", dayTime((use["lastSeen"] as? NSNumber)?.doubleValue ?? 0)) + (devs.isEmpty ? "" : " · " + devs) + " · " + t("admin_uses", "\(iv(use["n"]))")
+            let top: String = (use["top"] as? [[String: Any]] ?? []).prefix(5).map { ($0["key"] as? String ?? "") + " \(iv($0["n"]))" }.joined(separator: " · ")
+            Text(seen).font(.caption).foregroundColor(Theme.accent)
+            if !top.isEmpty { Text(top).font(.caption2.monospaced()).foregroundColor(Theme.muted) }
+        }
         // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
@@ -4377,8 +4531,66 @@ struct AdminView: View {
 
     private func load() async {
         rows = nil
+        extra = nil
         error = nil
-        do { rows = try await account.adminList(kind) } catch { self.error = (error as? AppError)?.key ?? "server_down" }
+        do {
+            switch kind {
+            case "summary":
+                // the analytics may not be there yet (an older server): the key numbers still show
+                extra = try await account.adminStatus()
+                let an = try? await account.adminAnalytics(days)
+                rows = an.map { [$0] } ?? []
+            case "users":
+                let use = ((try? await account.adminAnalytics(30))?["users"] as? [[String: Any]]) ?? []
+                var byId: [String: [String: Any]] = [:]
+                for u in use { if let id = u["id"] as? String { byId[id] = u } }
+                rows = try await account.adminList("users").map { u -> [String: Any] in
+                    var u = u
+                    if let id = u["id"] as? String, let x = byId[id] { u["_use"] = x }
+                    return u
+                }
+            case "feedback": rows = try await account.adminFeedback()
+            case "content": rows = try await account.adminList("uploads")
+            case "coach":
+                let c = try await account.adminCoach()
+                extra = c
+                rows = (c["buckets"] as? [[String: Any]] ?? []).sorted { iv($0["n"]) > iv($1["n"]) }
+            case "server":
+                extra = try await account.adminStatus()
+                rows = try await account.adminList("blocked")
+            default: rows = try await account.adminList(kind)
+            }
+        } catch { self.error = (error as? AppError)?.key ?? "server_down" }
+    }
+}
+
+/// Active users per day as bars: the finger picks a day and says its users under the chart.
+struct AdminActiveChart: View {
+    let days: [[String: Any]]
+    @State private var sel: Int?
+    var body: some View {
+        let users: [Int] = days.map { ($0["users"] as? NSNumber)?.intValue ?? 0 }
+        let n = users.count
+        let hi = max(users.max() ?? 1, 1)
+        let i = min(max(sel ?? n - 1, 0), max(n - 1, 0))
+        VStack(alignment: .leading, spacing: 4) {
+            GeometryReader { g in
+                HStack(alignment: .bottom, spacing: 2) {
+                    ForEach(0..<n, id: \.self) { k in
+                        RoundedRectangle(cornerRadius: 2).fill(k == i ? Theme.accent : Theme.accent.opacity(0.45))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: max(1, g.size.height * CGFloat(users[k]) / CGFloat(hi)))
+                    }
+                }
+                .frame(width: g.size.width, height: g.size.height, alignment: .bottom)
+                .contentShape(Rectangle())
+                .simultaneousGesture(DragGesture(minimumDistance: 0).onChanged { v in
+                    sel = min(max(Int(v.location.x / max(g.size.width, 1) * CGFloat(n)), 0), max(n - 1, 0))
+                })
+            }
+            .frame(height: 110)
+            if n > 0 { Text((days[i]["day"] as? String ?? "") + " · \(users[i])").font(.caption.bold()).foregroundColor(Theme.fg) }
+        }
     }
 }
 
@@ -4560,8 +4772,9 @@ struct SettingsView: View {
             // admins: the app as everyone sees it, to test it (everything for admins and in development hides)
             if account.realAdmin {
                 Panel {
-                    Toggle(t("as_user"), isOn: $account.asUser).font(.subheadline.bold())
-                    Text(t("as_user_sub")).font(.caption).foregroundColor(Theme.muted)
+                    // admin mode, off by default (the app as everyone sees it); on, what is for admins and in development shows
+                    Toggle(t("admin_mode"), isOn: $account.adminMode).font(.subheadline.bold())
+                    Text(t("admin_mode_sub")).font(.caption).foregroundColor(Theme.muted)
                 }
             }
             if account.admin {

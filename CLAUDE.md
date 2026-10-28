@@ -17,6 +17,26 @@
   is an iRacing session without a subsession (id "t-…" after the account's "acct_…:" prefix) that is not a test
   (`offlineAI` when the sessions are parsed),
   so My sessions, Laps and the Coach show "vs AI" on it like the PC and the web.
+- Admin mode is off by default on every phone: an admin of the server sees the app exactly as everyone does until
+  they turn on "Admin mode" (Settings, and the same switch at the top of the admin panel, which closes the panel when
+  turned off; `adminMode` on the device, `setAdminMode` on Android, `Account.adminMode` on iOS; `admin` = the server's
+  admin and admin mode on). With it off nothing for admins or in development shows, and demo data goes off.
+- The admin panel (Settings → Admin panel) has the PC's sections, each with one short line saying what it is (admins
+  only, the owner asked for an explained panel): Summary (the key numbers of `/community/admin/status` and the analytics
+  of GET `/community/admin/analytics?days=7|14|30`: active users per day as bars that follow the finger, devices, the
+  most used screens and actions, games, versions), Users (every account with its devices, last seen and top features
+  from the analytics' `users`, and every account tool), Feedback (GET `/community/admin/feedback`: what drivers wrote
+  from the PC and the web, with stars, device, version and screen), Content (the shared items), Sessions, Coach (GET
+  `/community/admin/coach`: the buckets kind × corner speed with cases, gains, thumbs, turning a kind off, the confidence
+  switch) and Server (the emails, the tools with what each does, the blocked sign-ins). The phones have no feedback
+  pop-up and no "Send feedback" entry (the owner's choice: those are the PC's and the web's).
+- What the drivers use, for the admin panel (`Usage`: `use`/`sendUsage` in AccountRepository.kt, `vm.track`; `Usage` in
+  Account.swift): the phone counts "view:<screen>" with the PC's view names (home, laps, coach, cloudlaps, races, live,
+  standings, tyres, community, leagues, me, admin, session, profile, notes, drinks), "act:<action>" (compare,
+  race_summary, leaderboard, track_page, plan_to_overlay, connect, watch_code, share_code, drinks) and "game:iracing" /
+  "game:lmu", keys matching ^(view|act|game):[a-z0-9_.-]{1,40}$, kept on the device until the server has them and sent
+  (POST `/community/usage` {device, v, counts}) every 5 minutes while the app is on the screen and when it goes to the
+  background; never in demo data, only signed in, cleared at sign-out.
 - The admin panel's account card has "Link a DRINKS driver" (the driver's name; `adminAccount(id, "link-guest", name)`)
   and "Unlink DRINKS driver …" for each one joined (`guestLinked` in the accounts list, "gid|name,…").
   Its own driver is linked per game: "Unlink iRacing driver" and "Unlink Le Mans Ultimate driver", one for each game
