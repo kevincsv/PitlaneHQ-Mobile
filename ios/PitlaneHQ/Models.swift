@@ -102,6 +102,11 @@ struct Trace {
     /// What the lap was driven in, as the PC tags it: "traffic" (a car close ahead), "cold" (the first lap of a run),
     /// "wet" (the track at least lightly wet); "cmp:<n>" (the tyre compound) is never shown.
     var f: [String] = []
+    /// The tyre compound of the lap: its "cmp:<n>" flag when the car has several, else the first (0), like the web's.
+    var cmp: Int {
+        for x in f where x.hasPrefix("cmp:") { if let n = Int(x.dropFirst(4)), n >= 0 { return n } }
+        return 0
+    }
     var incidents: [(d: Double, pts: Int, kind: String)] {
         (0..<(inc.count / 2)).map { i in
             let pts = Int(inc[2 * i + 1])

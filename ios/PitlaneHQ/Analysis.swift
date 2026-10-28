@@ -70,12 +70,12 @@ extension Account {
         if kind == .myBest {
             (a.ref, a.refLabel, a.refTime, a.refSectors) = await ownRef(own)
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
-            if let c { a.corners = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time, game: gm).corners }
+            if let c { a.corners = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time, game: gm, cmp: a.trace?.cmp ?? 0).corners }
         } else {
             var rec: (Trace, Double)? = nil
             var lvl: (Trace, Double)? = nil
             if let c {
-                let m = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time, game: gm)
+                let m = await modelRefs(trackId: c.trackId, carId: c.carId, lapTime: lap.time, game: gm, cmp: a.trace?.cmp ?? 0)
                 rec = m.rec
                 lvl = m.lvl
                 a.corners = m.corners
