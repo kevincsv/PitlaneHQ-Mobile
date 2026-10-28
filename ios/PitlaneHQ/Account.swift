@@ -313,9 +313,11 @@ final class Account: ObservableObject {
 
     /// The coach's plan to the coach overlay of your PC, like the web: the overlay's chosen corners (`ui.coach.turns`, "T4")
     /// in the account's settings.json, the PC's own settings, which it takes at its next sync. Only that value changes and
-    /// the bundle goes back sealed with your key. False when the account has no settings from a PC yet (nothing to reach).
-    func setCoachTurns(_ turns: [String]) async throws -> Bool {
-        if demo { return true }
+    /// the bundle goes back sealed with your key. The corners are for the plan's track (`turnsTrack`): on another one the
+    /// overlay speaks at the three that cost the most. False when the account has no settings from a PC yet (nothing to
+    /// reach), and in demo data (nothing is written).
+    func setCoachTurns(_ turns: [String], trackId: Int64) async throws -> Bool {
+        if demo { return false }
         guard let dk = dataKey else { throw AppError.signedOut }
         for attempt in 0..<3 {
             let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/sync")) as? [String: Any] ?? [:]
@@ -325,6 +327,7 @@ final class Account: ObservableObject {
             var ui = st["ui"] as? [String: Any] ?? [:]
             var coach = ui["coach"] as? [String: Any] ?? [:]
             coach["turns"] = turns
+            coach["turnsTrack"] = trackId > 0 ? trackId : 0
             ui["coach"] = coach
             st["ui"] = ui
             all["settings.json"] = try JSONSerialization.data(withJSONObject: st).base64EncodedString()

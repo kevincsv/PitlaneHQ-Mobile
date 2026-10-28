@@ -498,8 +498,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** The coach's plan to the coach overlay of your PC (its chosen corners in the account's settings): [done] gets whether
      *  it reached the account (false: no PC has synced settings yet) or the error. */
-    fun planToOverlay(turns: List<String>, done: (Boolean, String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
-        val r = runCatching { repo.setCoachTurns(turns) }
+    fun planToOverlay(turns: List<String>, trackId: Long, done: (Boolean, String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val r = runCatching { repo.setCoachTurns(turns, trackId) }
         withContext(Dispatchers.Main) { done(r.getOrDefault(false), r.exceptionOrNull()?.message) }
     }
     /** Your sessions of the chosen game, asked like the web (limit=100&game=…), and Home's numbers of the month with them. */

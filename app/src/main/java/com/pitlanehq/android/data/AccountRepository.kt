@@ -530,10 +530,12 @@ class AccountRepository(context: Context) {
     /**
      * The coach's plan to the coach overlay of your PC, like the web: the overlay's chosen corners (`ui.coach.turns`, "T4")
      * in the account's settings.json, the PC's own settings, which it takes at its next sync. Only that value changes and
-     * the bundle goes back sealed with your key. False when the account has no settings from a PC yet (nothing to reach).
+     * the bundle goes back sealed with your key. The corners are for the plan's track (`turnsTrack`): on another one the
+     * overlay speaks at the three that cost the most. False when the account has no settings from a PC yet (nothing to
+     * reach), and in demo data (nothing is written).
      */
-    fun setCoachTurns(turns: List<String>): Boolean {
-        if (demo) return true
+    fun setCoachTurns(turns: List<String>, trackId: Long): Boolean {
+        if (demo) return false
         for (attempt in 0..2) {
             val j = JSONObject(call("GET", "/account/sync"))
             val blob = j.optString("blob", "")
@@ -543,6 +545,7 @@ class AccountRepository(context: Context) {
             val ui = st.optJSONObject("ui") ?: JSONObject()
             val coach = ui.optJSONObject("coach") ?: JSONObject()
             coach.put("turns", JSONArray(turns))
+            coach.put("turnsTrack", if (trackId > 0) trackId else 0L)
             ui.put("coach", coach)
             st.put("ui", ui)
             all.put("settings.json", Base64.encodeToString(st.toString().toByteArray(), Base64.NO_WRAP))

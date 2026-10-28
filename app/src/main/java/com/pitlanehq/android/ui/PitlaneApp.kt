@@ -1187,11 +1187,13 @@ private fun LazyListScope.lapItems(vm: PitlaneViewModel, nav: NavHostController,
     // your laps only: a friend's lap (DRINKS mode) is never the account's best
     val valid = laps.filter { it.valid && it.time > 0 && it.drv.isEmpty() }.ifEmpty { laps.filter { it.valid && it.time > 0 } }
     val best = valid.minOfOrNull { it.time }
-    val nSec = laps.maxOfOrNull { it.sectors.size } ?: 0
+    // the game's official sectors when they add up to the lap's time, like the web's lap list (lapSecsOf)
+    val secs = { l: CloudLap -> l.sectors.takeIf { s -> l.time > 0 && s.size >= 2 && s.all { it > 0 } && kotlin.math.abs(s.sum() - l.time) < 1 } ?: emptyList() }
+    val nSec = laps.maxOfOrNull { secs(it).size } ?: 0
     // fastest time of each sector over the valid laps, shown in purple like in the sim
-    val bestSec = (0 until nSec).map { i -> valid.mapNotNull { it.sectors.getOrNull(i) }.filter { it > 0 }.minOrNull() }
+    val bestSec = (0 until nSec).map { i -> valid.mapNotNull { secs(it).getOrNull(i) }.minOrNull() }
     // a sector better than the same sector of your best lap is green, like the web's lap list
-    val bestLapSec = valid.minByOrNull { it.time }?.sectors ?: emptyList()
+    val bestLapSec = valid.minByOrNull { it.time }?.let(secs) ?: emptyList()
     // the average of the valid laps: a real figure, not a lap made of the best sectors
     val avg = if (valid.isNotEmpty()) valid.map { it.time }.average() else null
     item {
@@ -1221,14 +1223,15 @@ private fun LazyListScope.lapItems(vm: PitlaneViewModel, nav: NavHostController,
             if (nSec > 0) {
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp).horizontalScroll(rememberScrollState())) {
                     (0 until nSec).forEach { i ->
-                        val sv = lap.sectors.getOrNull(i)?.takeIf { it > 0 }
+                        val ls = secs(lap)
+                        val sv = ls.getOrNull(i)
                         val bl = bestLapSec.getOrNull(i)
                         Text(
                             "S${i + 1} " + (sv?.let { "%.3f".format(it) } ?: "–"), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(84.dp),
                             color = when {
                                 sv == null -> Muted
                                 lap.valid && sv == bestSec.getOrNull(i) -> Purple
-                                lap.valid && bl != null && bestLapSec.size == lap.sectors.size && sv < bl - 1e-4 -> Good
+                                lap.valid && bl != null && bestLapSec.size == ls.size && sv < bl - 1e-4 -> Good
                                 else -> Muted
                             }
                         )
@@ -1376,7 +1379,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
                     }
                 }
                 val turns = lose.take(4).map { "T${it.n}" }.distinct()
-                if (vm != null && turns.isNotEmpty()) PlanToOverlay(vm, turns)
+                if (vm != null && turns.isNotEmpty()) PlanToOverlay(vm, turns, an.trackId)
             }
         }
     }
@@ -3538,10 +3541,10 @@ private fun CornerStrip(cs: List<Corner>, step: Double, sel: Int?, title: Boolea
 /** "Take the plan to the coach overlay", like the web's: the plan's corners become the coach overlay's chosen ones on your
  *  PC (the account's settings, which the PC takes at its next sync), and a short line says so. */
 @Composable
-private fun PlanToOverlay(vm: PitlaneViewModel, turns: List<String>) {
+private fun PlanToOverlay(vm: PitlaneViewModel, turns: List<String>, trackId: Long) {
     var busy by remember(turns) { mutableStateOf(false) }
     var msg by remember(turns) { mutableStateOf<String?>(null) }
-    TextButton({ busy = true; vm.planToOverlay(turns) { ok, err -> busy = false; msg = err ?: if (ok) t("plan_sent", turns.joinToString(", ")) else t("plan_no_pc") } }, enabled = !busy,
+    TextButton({ busy = true; vm.planToOverlay(turns, trackId) { ok, err -> busy = false; msg = err?.let { t(it) } ?: if (ok) t("plan_sent", turns.joinToString(", ")) else t("plan_no_pc") } }, enabled = !busy,
         modifier = Modifier.padding(top = 4.dp)) { Text(t("plan_to_overlay"), color = Accent, fontSize = 13.sp) }
     msg?.let { Text(it, color = Muted, fontSize = 12.sp) }
 }

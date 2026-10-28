@@ -2220,6 +2220,7 @@ struct LapView: View {
     @State private var car: [String: Any]?
     @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
     @State private var layout: ([Double], [Double])? // the community's layout, the map's road when the lap has no path
+    @State private var coachOff: Set<String> = [] // the kinds of tip an admin turned off for a speed of corner (coach_off)
 
     private func load() async {
         loading = true
@@ -2234,6 +2235,7 @@ struct LapView: View {
             car = a.car
             turns = a.turns
             layout = a.layout
+            coachOff = a.coach?.off ?? []
         } catch {
             self.error = (error as? AppError)?.key ?? error.localizedDescription
         }
@@ -2285,7 +2287,7 @@ struct LapView: View {
                           step: c.step, fmt: { String(format: "%.0f%%", $0 * 100) }, fixedMax: 1,
                           pick: $pick)
                     if ref != nil {
-                        let bcs = corners(c, turns: turns)
+                        let bcs = corners(c, turns: turns, off: coachOff)
                         if !bcs.isEmpty { BrakeTable(cs: bcs, lapLen: Double(c.speedA.count) * c.step, pick: $pick) }
                         PhaseCoach(c: c, turns: turns)
                     }
