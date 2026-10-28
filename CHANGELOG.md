@@ -4,6 +4,11 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.6.1 beta
+
+- The lap analysis and the coach say when a lap was driven in traffic, on cold tyres or on a wet track.
+- Fixes and improvements.
+
 ## 0.6.0 beta
 
 - Le Mans Ultimate is here in beta. Its sessions and races carry an LMU tag and show contacts instead of iRating.
