@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material3.*
 import com.pitlanehq.android.data.AppUpdate
 import com.pitlanehq.android.data.AccountState
@@ -247,7 +248,7 @@ private fun MainApp(vm: PitlaneViewModel) {
             }
         }
         // the feedback button: bottom left, just above the floating tab bar, on every screen (never in demo data)
-        if (!demo && ShotMode.route == null) FeedbackFab(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = pad.calculateBottomPadding() + 10.dp)) {
+        if (!demo && ShotMode.route == null) FeedbackFab(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = pad.calculateBottomPadding() + 10.dp)) {
             vm.track("act:feedback_button"); feedback = true
         }
         }
@@ -262,7 +263,7 @@ private fun FeedbackFab(modifier: Modifier, onClick: () -> Unit) {
     Box(
         modifier.size(44.dp).clip(CircleShape).background(Surface2).border(1.dp, Color(0xFF2E3A4A), CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
-    ) { Icon(Icons.Default.Feedback, t("fb_title"), tint = Accent, modifier = Modifier.size(22.dp)) }
+    ) { Icon(Icons.Outlined.ChatBubbleOutline, t("fb_title"), tint = Accent, modifier = Modifier.size(21.dp)) }
 }
 
 /** Share your feedback, like the PC's and the web's window: optional stars, a text box, Cancel and Send. */

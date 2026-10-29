@@ -1051,17 +1051,17 @@ struct MainView: View {
             NavigationStack { CommunityView().routes() }.tag(2).toolbar(.hidden, for: .tabBar)
             NavigationStack { SettingsView() }.tag(4).toolbar(.hidden, for: .tabBar)
         }
-        // the feedback button: bottom left, just above the floating tab bar, on every screen (never in demo data)
-        .overlay(alignment: .bottomLeading) {
+        // the feedback button: bottom right, just above the floating tab bar, on every screen (never in demo data)
+        .overlay(alignment: .bottomTrailing) {
             if !account.demo {
                 Button { Usage.count("act:feedback_button"); feedback = true } label: {
-                    Image(systemName: "text.bubble").font(.system(size: 18, weight: .medium)).foregroundColor(Theme.accent)
+                    Image(systemName: "message").font(.system(size: 18, weight: .medium)).foregroundColor(Theme.accent)
                         .frame(width: 44, height: 44).background(Theme.navBar).clipShape(Circle())
                         .overlay(Circle().stroke(Theme.navEdge, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(t("fb_title"))
-                .padding(.leading, 16).padding(.bottom, 10)
+                .padding(.trailing, 16).padding(.bottom, 10)
             }
         }
         .overlay(alignment: .bottom) {

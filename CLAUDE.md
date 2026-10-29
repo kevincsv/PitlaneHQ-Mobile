@@ -29,7 +29,7 @@
   from the PC and the web, with stars, device, version and screen), Content (the shared items), Sessions, Coach (GET
   `/community/admin/coach`: the buckets kind × corner speed with cases, gains, thumbs, turning a kind off, the confidence
   switch) and Server (the emails, the tools with what each does, the blocked sign-ins). The phones have no feedback
-  pop-up of their own, but a small round feedback button floats at the bottom left above the tab bar on every screen
+  pop-up of their own, but a small round feedback button floats at the bottom right above the tab bar on every screen
   while signed in (never in demo data; `FeedbackFab`/`FeedbackSheet` on Android, `MainView`'s overlay and
   `FeedbackSheet` on iOS): "Share your feedback" with 1 to 5 optional stars, a text box (up to 4000), Cancel and Send,
   POST `/community/feedback` {text, rating, device android|ios, v, view "menu:<view>"}, a toast when it went
