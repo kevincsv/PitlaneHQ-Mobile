@@ -1039,8 +1039,6 @@ struct TwoFactorPanel: View {
 
 struct MainView: View {
     @State private var tab = 0
-    @State private var feedback = false
-    @State private var toast: String?
     var body: some View {
         // the bar sits under the tabs, never over them: every screen ends above it and scrolls to its last row
         VStack(spacing: 0) {
@@ -1051,36 +1049,31 @@ struct MainView: View {
             NavigationStack { CommunityView().routes() }.tag(2).toolbar(.hidden, for: .tabBar)
             NavigationStack { SettingsView() }.tag(4).toolbar(.hidden, for: .tabBar)
         }
-        // the feedback button: bottom right, just above the floating tab bar, on every screen (never in demo data)
+        // the feedback button, now the support chat: bottom right, just above the floating tab bar, on every screen
+        // (never in demo data), with the count of Support's messages not read (an admin's: the drivers' not read)
         .overlay(alignment: .bottomTrailing) {
             if !account.demo {
-                Button { Usage.count("act:feedback_button"); feedback = true } label: {
+                Button { Usage.count("act:feedback_button"); account.openSupport() } label: {
                     Image(systemName: "message").font(.system(size: 18, weight: .medium)).foregroundColor(Theme.accent)
                         .frame(width: 44, height: 44).background(Theme.navBar).clipShape(Circle())
                         .overlay(Circle().stroke(Theme.navEdge, lineWidth: 1))
+                        .overlay(alignment: .topTrailing) {
+                            if account.supportUnread > 0 {
+                                Text(account.supportUnread > 9 ? "9+" : "\(account.supportUnread)").font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(Theme.ink)
+                                    .padding(.horizontal, 4).frame(minWidth: 18, minHeight: 18).background(Theme.accent).clipShape(Capsule()).offset(x: 4, y: -4)
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(t("fb_title"))
+                .accessibilityLabel(t("sup_title"))
                 .padding(.trailing, 16).padding(.bottom, 10)
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if let toast {
-                Text(toast).font(.subheadline.weight(.semibold)).foregroundColor(Theme.fg).multilineTextAlignment(.center)
-                    .padding(.horizontal, 16).padding(.vertical, 10).background(Theme.navBar).clipShape(Capsule())
-                    .overlay(Capsule().stroke(Theme.navEdge, lineWidth: 1)).padding(.horizontal, 16).padding(.bottom, 64)
-                    .transition(.opacity)
             }
         }
             bar
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
-        .sheet(isPresented: $feedback) {
-            FeedbackSheet { msg in
-                feedback = false
-                withAnimation { toast = msg }
-                Task { try? await Task.sleep(nanoseconds: 2_500_000_000); withAnimation { if toast == msg { toast = nil } } }
-            }
+        .sheet(isPresented: Binding(get: { account.supportOpen != nil }, set: { if !$0 { account.supportOpen = nil; Task { await account.checkSupport() } } })) {
+            SupportSheet(target: account.supportOpen ?? "").id(account.supportOpen ?? "")
         }
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
         // what the drivers use: the tabs without sub-tabs (Analysis and Community count theirs)
@@ -1138,67 +1131,170 @@ struct MainView: View {
     @EnvironmentObject private var inbox: Inbox
 }
 
-/// Share your feedback, like the PC's and the web's window: optional stars, a text box, Cancel and Send.
-struct FeedbackSheet: View {
+/// The support chat: the driver's thread with Support (`target` ""), the support inbox of an admin in admin mode ("" too,
+/// the drivers' conversations) or one driver's thread (an account id, admins). Read when opened and every 30 s.
+struct SupportSheet: View {
     @EnvironmentObject private var account: Account
-    @Environment(\.dismiss) private var dismiss
-    let sent: (String) -> Void
-    @State private var text = ""
-    @State private var stars = 0
-    @State private var busy = false
-    @State private var err: String?
+    let target: String
+    @State private var thread: String?
+    @State private var nick = ""
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(t("fb_title")).font(.title3.weight(.black)).foregroundColor(Theme.fg)
-            Text(t("fb_text")).font(.subheadline).foregroundColor(Theme.muted)
-            HStack(spacing: 4) {
-                ForEach(1...5, id: \.self) { k in
-                    Button { stars = stars == k ? 0 : k } label: {
-                        Text("★").font(.system(size: 28)).foregroundColor(k <= stars ? Theme.accent : Theme.muted.opacity(0.45)).padding(4)
-                    }
-                    .buttonStyle(.plain)
+        let id = thread ?? (account.admin ? target : "")
+        let inbox = account.admin && id.isEmpty
+        let name = account.admin ? (thread == nil ? account.supportNick : nick) : ""
+        NavigationStack {
+            Group {
+                if inbox { SupportInbox { a, n in nick = n; thread = a } }
+                else { SupportThread(accountId: id, nick: name).id(id) }
+            }
+            .background(Theme.surface.ignoresSafeArea())
+            .navigationTitle(inbox || !account.admin ? t("sup_title") : (name.isEmpty ? "—" : name))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if account.admin && !inbox {
+                    ToolbarItem(placement: .cancellationAction) { Button { thread = ""; nick = "" } label: { Image(systemName: "chevron.left") } }
                 }
             }
-            TextEditor(text: $text)
-                .scrollContentBackground(.hidden)
-                .foregroundColor(Theme.fg)
-                .frame(minHeight: 120)
-                .padding(6)
-                .background(Theme.ink)
-                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .onChange(of: text) { v in if v.count > 4000 { text = String(v.prefix(4000)) } }
-            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
-            HStack(spacing: 8) {
-                Spacer()
-                Button(t("cancel")) { dismiss() }.foregroundColor(Theme.muted).disabled(busy)
-                Button {
-                    busy = true; err = nil
-                    let msg = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                    Task {
-                        do {
-                            try await account.sendFeedback(msg, rating: stars > 0 ? stars : nil)
-                            busy = false
-                            sent(t("fb_thanks"))
-                        } catch {
-                            busy = false
-                            err = (error as? AppError)?.key ?? "server_down"
+        }
+        .presentationDetents([.large])
+    }
+}
+
+/// The support inbox (admins): every driver who wrote, the newest first, with the last line, its time and what is unread.
+struct SupportInbox: View {
+    @EnvironmentObject private var account: Account
+    let open: (String, String) -> Void
+    @State private var convs: [SupportConv]?
+    var body: some View {
+        Group {
+            if let list = convs {
+                if list.isEmpty { VStack { Text(t("sup_none")).font(.subheadline).foregroundColor(Theme.muted).padding(16); Spacer() } }
+                else {
+                    ScrollView {
+                        LazyVStack(spacing: 6) {
+                            ForEach(list) { c in
+                                Button { open(c.accountId, c.nick) } label: {
+                                    HStack(spacing: 8) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            HStack {
+                                                Text(c.nick.isEmpty ? "—" : c.nick).font(.subheadline.bold()).foregroundColor(Theme.fg).lineLimit(1)
+                                                Spacer()
+                                                Text(dayTime(c.created)).font(.caption2).foregroundColor(Theme.muted)
+                                            }
+                                            Text((c.fromSupport ? "↩ " : "") + c.text).font(.caption).foregroundColor(c.unread > 0 ? Theme.fg : Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
+                                        }
+                                        if c.unread > 0 {
+                                            Text(c.unread > 9 ? "9+" : "\(c.unread)").font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(Theme.ink)
+                                                .padding(.horizontal, 4).frame(minWidth: 18, minHeight: 18).background(Theme.accent).clipShape(Capsule())
+                                        }
+                                    }
+                                    .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
+                        .padding(16)
                     }
-                } label: {
-                    Text(t("fb_send")).font(.subheadline.weight(.black)).padding(.horizontal, 16).padding(.vertical, 8)
+                }
+            } else { VStack { Spacer(); ProgressView().tint(Theme.accent); Spacer() }.frame(maxWidth: .infinity) }
+        }
+        .task {
+            while !Task.isCancelled {
+                if let l = try? await account.supportInbox() { convs = l }
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
+    }
+}
+
+/// One thread: the driver's messages on the right and Support's on the left ("Pitlane HQ Support", never an admin's
+/// name), the newest at the bottom, then the text box and Send. An admin (`nick` the driver's) sees it the other way
+/// round: the driver on the left, Support's replies on the right.
+struct SupportThread: View {
+    @EnvironmentObject private var account: Account
+    let accountId: String
+    let nick: String
+    @State private var msgs: [SupportMsg]?
+    @State private var text = ""
+    @State private var busy = false
+    @State private var err: String?
+    private var asAdmin: Bool { !accountId.isEmpty }
+    var body: some View {
+        VStack(spacing: 0) {
+            if let list = msgs {
+                if list.isEmpty {
+                    VStack { Spacer(); if !asAdmin { Text(t("sup_empty")).font(.subheadline).foregroundColor(Theme.muted).multilineTextAlignment(.center) }; Spacer() }.frame(maxWidth: .infinity)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(spacing: 8) {
+                                ForEach(list) { m in bubble(m).id(m.id) }
+                            }
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                        }
+                        .onAppear { if let l = list.last { proxy.scrollTo(l.id, anchor: .bottom) } }
+                        .onChange(of: list.count) { _ in if let l = msgs?.last { withAnimation { proxy.scrollTo(l.id, anchor: .bottom) } } }
+                    }
+                }
+            } else { VStack { Spacer(); ProgressView().tint(Theme.accent); Spacer() }.frame(maxWidth: .infinity) }
+            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad).padding(.horizontal, 16) }
+            HStack(alignment: .bottom, spacing: 8) {
+                TextField("", text: $text, axis: .vertical)
+                    .lineLimit(1...5)
+                    .foregroundColor(Theme.fg)
+                    .padding(10)
+                    .background(Theme.ink)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .onChange(of: text) { v in if v.count > 4000 { text = String(v.prefix(4000)) } }
+                let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                Button { send() } label: {
+                    Text(t("fb_send")).font(.subheadline.weight(.black)).padding(.horizontal, 16).padding(.vertical, 10)
                         .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .opacity(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+                .disabled(busy || empty)
+                .opacity(busy || empty ? 0.5 : 1)
             }
-            Spacer(minLength: 0)
+            .padding(16)
         }
-        .padding(16)
-        .background(Theme.surface.ignoresSafeArea())
-        .presentationDetents([.medium, .large])
-        .interactiveDismissDisabled(busy)
+        .task {
+            while !Task.isCancelled {
+                if let l = try? await account.supportThread(accountId) { msgs = l }
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+            }
+        }
+    }
+
+    @ViewBuilder private func bubble(_ m: SupportMsg) -> some View {
+        let right = asAdmin ? !m.driver : m.driver
+        VStack(alignment: right ? .trailing : .leading, spacing: 2) {
+            if !right { Text(asAdmin ? (nick.isEmpty ? "—" : nick) : t("sup_name")).font(.caption2.bold()).foregroundColor(Theme.accent).padding(.horizontal, 4) }
+            VStack(alignment: .leading, spacing: 2) {
+                if (1...5).contains(m.rating) { Text(String(repeating: "★", count: m.rating) + String(repeating: "☆", count: 5 - m.rating)).font(.caption).foregroundColor(Theme.accent) }
+                Text(m.text).font(.subheadline).foregroundColor(Theme.fg).textSelection(.enabled)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(right ? Theme.accent.opacity(0.16) : Theme.surface2)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(right ? Theme.accent.opacity(0.35) : Theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: UIScreen.main.bounds.width * 0.78, alignment: right ? .trailing : .leading)
+            Text(dayTime(m.created)).font(.system(size: 10)).foregroundColor(Theme.muted).padding(.horizontal, 4)
+        }
+        .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
+    }
+
+    private func send() {
+        let msg = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        busy = true; err = nil
+        Task {
+            do {
+                try await account.supportSend(accountId, msg)
+                text = ""
+                if let l = try? await account.supportThread(accountId) { msgs = l }
+            } catch { err = (error as? AppError)?.key ?? "server_down" }
+            busy = false
+        }
     }
 }
 
@@ -1226,6 +1322,11 @@ struct InfoButton: View {
             ]))
         }
         if !account.twoFactor { a.append(InfoItem(id: "2fa", icon: "lock", title: t("two_factor_rec_short"), text: t("two_factor_rec_sub"), acts: [(t("turn_on"), { inbox.goTab = 4 })])) }
+        // Support answered: until the chat is opened (it opens the chat), never for an admin in admin mode
+        if account.supportUnread > 0 && !account.admin {
+            a.append(InfoItem(id: "support:\(account.supportUnread):" + String(account.supportLast.prefix(40)), icon: "bubble.left.and.bubble.right", title: t("sup_replied"),
+                              text: account.supportLast.components(separatedBy: "\n").first ?? "", acts: [(t("open"), { account.openSupport() })]))
+        }
         for n in inbox.news {
             var acts: [(String, () -> Void)] = []
             if let u = n.url { acts.append((t("open"), { UIApplication.shared.open(u) })) }
@@ -1238,7 +1339,7 @@ struct InfoButton: View {
     private var always: [InfoItem] {
         var a: [InfoItem] = []
         if let u = URL(string: patreonURL), !patreonURL.isEmpty { a.append(InfoItem(id: "support", icon: "heart", title: t("support"), text: t("support_sub"), keep: true, acts: [("Patreon", { UIApplication.shared.open(u) })])) }
-        a.append(InfoItem(id: "feedback", icon: "bubble.left", title: t("feedback"), text: t("feedback_sub"), keep: true, acts: [(t("send_feedback"), { UIApplication.shared.open(feedbackURL) })]))
+        a.append(InfoItem(id: "feedback", icon: "bubble.left", title: t("feedback"), text: t("feedback_sub"), keep: true, acts: [(t("send_feedback"), { if account.demo { UIApplication.shared.open(feedbackURL) } else { account.openSupport() } })]))
         return a
     }
 
@@ -4604,6 +4705,10 @@ struct AdminView: View {
         if (1...5).contains(r) { Text(String(repeating: "★", count: r) + String(repeating: "☆", count: 5 - r)).font(.subheadline).foregroundColor(Theme.accent) }
         Text(x["text"] as? String ?? "").font(.subheadline).foregroundColor(Theme.fg).textSelection(.enabled)
         Text(meta).font(.caption2).foregroundColor(Theme.muted)
+        // the driver's thread with Support, to answer them there
+        if let acc = x["accountId"] as? String, !acc.isEmpty {
+            Button(t("sup_open_chat")) { account.openSupport(acc, nick: who) }.font(.caption.bold()).foregroundColor(Theme.accent)
+        }
     }
 
     @ViewBuilder private func sessionRow(_ x: [String: Any]) -> some View {

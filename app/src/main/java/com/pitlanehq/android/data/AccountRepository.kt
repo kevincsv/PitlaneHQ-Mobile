@@ -44,6 +44,10 @@ data class AccountState(
 
 /** What the server gives to set up two-step sign-in: the key and the otpauth link for the app. */
 data class TwoFactorSetup(val secret: String, val url: String)
+/** One message of the support chat: [driver] the driver's own (else Support's), [rating] the stars of an old feedback. */
+data class SupportMsg(val id: String, val driver: Boolean, val text: String, val created: Long, val rating: Int = 0)
+/** One driver's conversation in the support inbox (admins): the last line, who wrote it, how many unread. */
+data class SupportConv(val accountId: String, val nick: String, val text: String, val created: Long, val fromSupport: Boolean, val unread: Int)
 
 /** Errors the screens show in the user's language: the message is a key of I18n. */
 open class AppError(key: String) : Exception(key)
@@ -1166,14 +1170,49 @@ class AccountRepository(context: Context) {
         call("POST", "/community/usage", JSONObject().put("device", "android").put("v", CLIENT.substringAfter("/")).put("counts", JSONObject(counts)))
         synchronized(this) { usage.edit().apply { counts.forEach { (k, n) -> val left = usage.getInt(k, 0) - n; if (left > 0) putInt(k, left) else remove(k) } }.apply() }
     }
-    /** What the driver writes from the feedback button (POST /community/feedback), with the stars when given and the
-     *  screen it was sent from ("menu:<view>"). */
-    fun sendFeedback(text: String, rating: Int?, view: String) {
-        if (demo) return
-        val b = JSONObject().put("text", text).put("device", "android").put("v", CLIENT.substringAfter("/")).put("view", "menu:$view")
-        if (rating != null && rating in 1..5) b.put("rating", rating)
-        call("POST", "/community/feedback", b)
+    // ---------- the support chat (the feedback button): the driver and Support, newest at the bottom ----------
+    /** The driver's thread with Support (GET /community/support, which marks Support's messages read). */
+    fun support(): List<SupportMsg> {
+        if (demo) return emptyList()
+        return supportMsgs(JSONObject(call("GET", "/community/support")))
     }
+    /** A message to Support (POST /community/support) with the screen it was written from ("menu:<view>"). */
+    fun sendSupport(text: String, view: String) {
+        if (demo) return
+        call("POST", "/community/support", JSONObject().put("text", text).put("device", "android").put("v", CLIENT.substringAfter("/")).put("view", "menu:$view").put("lang", com.pitlanehq.android.ui.I18n.lang))
+    }
+    /** How many of Support's messages the driver has not read, with the newest one's line when the server gives it. */
+    fun supportUnread(): Pair<Int, String> {
+        if (demo || prefs.getString("token", null) == null) return 0 to ""
+        val j = JSONObject(call("GET", "/community/support/unread"))
+        return j.optInt("n") to listOf("last", "text").map { j.optString(it) }.firstOrNull { it.isNotBlank() && it != "null" }.orEmpty()
+    }
+    /** The support inbox (admins): one row per driver, the newest first. */
+    fun adminSupport(): List<SupportConv> {
+        val j = JSONObject(call("GET", "/community/admin/support"))
+        val a = j.optJSONArray("items") ?: j.optJSONArray("convs") ?: return emptyList()
+        fun JSONObject.s(vararg k: String) = k.map { optString(it) }.firstOrNull { it.isNotBlank() && it != "null" }.orEmpty()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { c ->
+            val u = c.opt("unread")
+            SupportConv(c.optString("accountId"), c.s("nick"), c.s("last", "text"), c.optLong("lastAt").takeIf { it > 0 } ?: c.optLong("created"),
+                c.optBoolean("lastSupport", c.optBoolean("fromSupport")), if (u is Boolean) (if (u) 1 else 0) else c.optInt("unread"))
+        }
+    }
+    /** The conversations with drivers' messages Support has not read (admins). */
+    fun adminSupportUnread(): Int = JSONObject(call("GET", "/community/admin/support/unread")).optInt("n")
+    /** One driver's thread (admins). */
+    fun adminSupportThread(accountId: String): List<SupportMsg> = supportMsgs(JSONObject(call("GET", "/community/admin/support/" + idPath(accountId))))
+    /** A reply as Support to that driver (admins). */
+    fun adminSupportReply(accountId: String, text: String) { call("POST", "/community/admin/support/" + idPath(accountId), JSONObject().put("text", text)) }
+    private fun supportMsgs(j: JSONObject): List<SupportMsg> {
+        val a = j.optJSONArray("msgs") ?: return emptyList()
+        return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { m ->
+            // who wrote it: "support" in an admin's thread, "me" (the driver's own) in the driver's
+            val support = if (m.has("support")) m.optBoolean("support") else if (m.has("fromSupport")) m.optBoolean("fromSupport") else !m.optBoolean("me")
+            SupportMsg(m.optString("id"), !support, m.optString("text"), m.optLong("created"), m.optInt("rating"))
+        }.sortedBy { it.created }
+    }
+
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     fun nameFree(name: String): Boolean = runCatching { JSONObject(call("POST", "/community/name-check", JSONObject().put("name", name))).optBoolean("free", true) }.getOrDefault(true)
 

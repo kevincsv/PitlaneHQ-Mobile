@@ -101,6 +101,16 @@ private func orNull(_ v: Any?) -> Any { v ?? NSNull() }
 private func pos(_ v: Any?) -> Double? { num(v).flatMap { $0.isFinite && $0 > 0 ? $0 : nil } }
 private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.doubleValue) }
 
+/// One message of the support chat: `driver` the driver's own (else Support's), `rating` the stars of an old feedback.
+struct SupportMsg: Identifiable {
+    let id: String, driver: Bool, text: String, created: Double, rating: Int
+}
+/// One driver's conversation in the support inbox (admins): the last line, who wrote it, how many unread.
+struct SupportConv: Identifiable {
+    var id: String { accountId }
+    let accountId: String, nick: String, text: String, created: Double, fromSupport: Bool, unread: Int
+}
+
 /// The Pitlane HQ account, exactly like the PC, the web app and Android: the password only
 /// derives the keys on this phone; the session token and the data key stay in the Keychain,
 /// and the copies saved for offline use are sealed with the data key.
@@ -116,7 +126,7 @@ final class Account: ObservableObject {
     }
     /// admin mode, on this phone: off by default (an admin sees the app as everyone does), one switch turns it on
     @Published var adminMode = UserDefaults.standard.bool(forKey: "adminMode") {
-        didSet { UserDefaults.standard.set(adminMode, forKey: "adminMode"); if !admin && demo { demo = false } }
+        didSet { UserDefaults.standard.set(adminMode, forKey: "adminMode"); if !admin && demo { demo = false }; supportUnread = 0; Task { await checkSupport() } }
     }
     /// what the screens use: an admin of the server with admin mode on
     var admin: Bool { realAdmin && adminMode }
@@ -139,7 +149,7 @@ final class Account: ObservableObject {
     /// the thumbs the driver gave the coach's tips on this device, by session and corner ("sid:apexM" → 1 or -1)
     @Published var tipRatings: [String: Int] = [:]
     @Published var demo = UserDefaults.standard.bool(forKey: "demo") {
-        didSet { UserDefaults.standard.set(demo, forKey: "demo"); loadRaces() }
+        didSet { UserDefaults.standard.set(demo, forKey: "demo"); loadRaces(); if demo { supportUnread = 0; supportOpen = nil } }
     }
 
     // ---------- the game you look at: iRacing or Le Mans Ultimate (Home, Analysis, Community) ----------
@@ -398,6 +408,7 @@ final class Account: ObservableObject {
     }
 
     private func clear() {
+        supportUnread = 0; supportLast = ""; supportOpen = nil
         Vault.set("token", nil)
         Vault.set("dataKey", nil)
         for k in ["email", "display", "verified", "admin", "syncedFiles", "syncVersion", "syncUpdated", "twoFactor", "recoveryLeft", "acctId"] { defaults.removeObject(forKey: k) }
@@ -1509,14 +1520,83 @@ final class Account: ObservableObject {
         let v = pitlaneClient.replacingOccurrences(of: "ios/", with: "")
         if (try? await call("POST", "/community/usage", body: ["device": "ios", "v": v, "counts": counts])) != nil { Usage.taken(counts) }
     }
-    /// what the driver writes from the feedback button (POST /community/feedback), with the stars when given and the
-    /// screen it was sent from ("menu:<view>")
-    func sendFeedback(_ text: String, rating: Int?) async throws {
+    // ---------- the support chat (the feedback button): the driver and Support, newest at the bottom ----------
+    /// Support's messages the driver has not read (an admin in admin mode: the conversations with drivers' messages
+    /// not read), and the newest one's line: the button's count and the inbox's "Support replied"
+    @Published var supportUnread = 0
+    @Published var supportLast = ""
+    /// the support chat open: "" the driver's own (or an admin's inbox), else that driver's thread (admins)
+    @Published var supportOpen: String?
+    var supportNick = ""
+    func openSupport(_ accountId: String = "", nick: String = "") {
+        guard signedIn, !demo else { return }
+        supportNick = nick
+        supportOpen = accountId
+        Usage.count("act:support_open")
+    }
+    private var supportTask: Task<Void, Never>?
+    /// every 2 minutes while the app is on the screen and signed in: has Support (or a driver, for an admin) written?
+    func startSupport() {
+        guard supportTask == nil else { return }
+        supportTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.checkSupport()
+                try? await Task.sleep(nanoseconds: 120_000_000_000)
+            }
+        }
+    }
+    func stopSupport() { supportTask?.cancel(); supportTask = nil }
+    func checkSupport() async {
+        guard signedIn, !demo else { supportUnread = 0; return }
+        do {
+            if admin {
+                let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/support/unread")) as? [String: Any] ?? [:]
+                supportUnread = int(j["n"]); supportLast = ""
+            } else {
+                let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/support/unread")) as? [String: Any] ?? [:]
+                supportUnread = int(j["n"]); supportLast = str(j["last"])
+            }
+        } catch {}
+    }
+    private func supportMsgs(_ d: Data) -> [SupportMsg] {
+        let j = (try? JSONSerialization.jsonObject(with: d) as? [String: Any]) ?? [:]
+        return (j["msgs"] as? [[String: Any]] ?? []).map { m in
+            // who wrote it: "support" in an admin's thread, "me" (the driver's own) in the driver's
+            let support = (m["support"] as? Bool) ?? (m["fromSupport"] as? Bool) ?? !((m["me"] as? Bool) ?? false)
+            return SupportMsg(id: str(m["id"]), driver: !support, text: str(m["text"]), created: num(m["created"]) ?? 0, rating: int(m["rating"]))
+        }.sorted { $0.created < $1.created }
+    }
+    /// a thread: the driver's own ("", reading it marks Support's messages read) or a driver's (admins)
+    func supportThread(_ accountId: String) async throws -> [SupportMsg] {
+        if demo { return [] }
+        if accountId.isEmpty {
+            let r = supportMsgs(try await call("GET", "/community/support"))
+            supportUnread = 0; supportLast = ""
+            return r
+        }
+        return supportMsgs(try await call("GET", "/community/admin/support/" + idPath(accountId)))
+    }
+    /// the support inbox (admins): one row per driver, the newest first
+    func supportInbox() async throws -> [SupportConv] {
+        let j = try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/support")) as? [String: Any] ?? [:]
+        return (j["items"] as? [[String: Any]] ?? j["convs"] as? [[String: Any]] ?? []).map { c in
+            SupportConv(accountId: str(c["accountId"]), nick: str(c["nick"]), text: str(c["last"]).isEmpty ? str(c["text"]) : str(c["last"]),
+                        created: num(c["lastAt"]) ?? num(c["created"]) ?? 0, fromSupport: (c["lastSupport"] as? Bool) ?? (c["fromSupport"] as? Bool) ?? false,
+                        unread: int(c["unread"]))
+        }
+    }
+    /// a message: the driver's to Support (""), or an admin's reply as Support to that driver
+    func supportSend(_ accountId: String, _ text: String) async throws {
         guard !demo else { return }
-        var b: [String: Any] = ["text": text, "device": "ios", "v": pitlaneClient.replacingOccurrences(of: "ios/", with: ""), "view": "menu:" + Usage.view]
-        if let r = rating, (1...5).contains(r) { b["rating"] = r }
-        _ = try await call("POST", "/community/feedback", body: b)
-        Usage.count("act:feedback_sent")
+        if accountId.isEmpty {
+            _ = try await call("POST", "/community/support", body: ["text": text, "device": "ios", "v": pitlaneClient.replacingOccurrences(of: "ios/", with: ""), "view": "menu:" + Usage.view, "lang": I18n.shared.lang])
+            Usage.count("act:support_sent")
+        } else {
+            _ = try await call("POST", "/community/admin/support/" + idPath(accountId), body: ["text": text])
+            Usage.count("act:support_reply")
+        }
+        await checkSupport()
     }
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     func nameFree(_ name: String) async -> Bool {

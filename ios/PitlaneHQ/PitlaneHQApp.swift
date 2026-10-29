@@ -26,7 +26,7 @@ struct PitlaneHQApp: App {
             .task { await updates.check() }
             .task { await inbox.load() }
             // every time the app comes to the screen, the account syncs by itself
-            .task { account.startMinuteSync(); account.startUsage(); await account.syncIfDue() }
+            .task { account.startMinuteSync(); account.startUsage(); account.startSupport(); await account.syncIfDue() }
             // and the link to the account's live room stays open (presence only): the moment another device
             // uploads the account, the server says so and this phone reads it again
             .task {
@@ -34,18 +34,20 @@ struct PitlaneHQApp: App {
                 if account.signedIn { live.startPresence(token: account.token, key: account.dataKey) }
             }
             .onChange(of: account.signedIn) { on in
-                if on { live.startPresence(token: account.token, key: account.dataKey) } else { live.stop() }
+                if on { live.startPresence(token: account.token, key: account.dataKey); Task { await account.checkSupport() } } else { live.stop() }
             }
             .onChange(of: phase) { p in
                 if p == .active {
                     // and once a minute while it stays on the screen
                     account.startMinuteSync()
                     account.startUsage()
+                    account.startSupport()
                     Task { await account.syncIfDue() }
                     if account.signedIn { live.resume(token: account.token, key: account.dataKey, demo: account.demo) }
                 } else {
                     account.stopMinuteSync()
                     account.stopUsage()
+                    account.stopSupport()
                     live.stop()
                 }
             }

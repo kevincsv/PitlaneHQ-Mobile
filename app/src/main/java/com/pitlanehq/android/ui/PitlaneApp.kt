@@ -68,6 +68,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import androidx.navigation.compose.*
 import com.pitlanehq.android.BuildConfig
 import com.pitlanehq.android.data.SERVER
@@ -199,7 +200,8 @@ private fun MainApp(vm: PitlaneViewModel) {
     val uri = LocalUriHandler.current
     val info = rememberInfo(vm, nav)
     CompositionLocalProvider(LocalInfo provides info) {
-    var feedback by remember { mutableStateOf(false) }
+    val support by vm.supportOpen.collectAsState()
+    val unread by vm.supportUnread.collectAsState()
     Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }) { pad ->
         Box(Modifier.fillMaxSize()) {
         Column(Modifier.padding(pad).fillMaxSize()) {
@@ -247,59 +249,141 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("admin") { AdminScreen(vm, nav) }
             }
         }
-        // the feedback button: bottom left, just above the floating tab bar, on every screen (never in demo data)
-        if (!demo && ShotMode.route == null) FeedbackFab(Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = pad.calculateBottomPadding() + 10.dp)) {
-            vm.track("act:feedback_button"); feedback = true
+        // the feedback button, now the support chat: bottom right, just above the floating tab bar, on every screen
+        // (never in demo data), with the count of Support's messages not read (an admin's: the drivers' not read)
+        if (!demo && ShotMode.route == null) SupportFab(unread, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = pad.calculateBottomPadding() + 10.dp)) {
+            vm.track("act:feedback_button"); vm.openSupport()
         }
         }
     }
-    if (feedback) FeedbackSheet(vm) { feedback = false }
+    support?.let { key(it) { SupportSheet(vm, it) } }
     }
 }
 
-/** The small round feedback button floating over the screen. */
+/** The small round support button floating over the screen, with the unread count on its top-right corner. */
 @Composable
-private fun FeedbackFab(modifier: Modifier, onClick: () -> Unit) {
-    Box(
-        modifier.size(44.dp).clip(CircleShape).background(Surface2).border(1.dp, Color(0xFF2E3A4A), CircleShape).clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) { Icon(Icons.Outlined.ChatBubbleOutline, t("fb_title"), tint = Accent, modifier = Modifier.size(21.dp)) }
+private fun SupportFab(unread: Int, modifier: Modifier, onClick: () -> Unit) {
+    Box(modifier) {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).background(Surface2).border(1.dp, Color(0xFF2E3A4A), CircleShape).clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) { Icon(Icons.Outlined.ChatBubbleOutline, t("sup_title"), tint = Accent, modifier = Modifier.size(21.dp)) }
+        if (unread > 0) Box(
+            Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).heightIn(min = 18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Accent).padding(horizontal = 4.dp),
+            contentAlignment = Alignment.Center
+        ) { Text(if (unread > 9) "9+" else "$unread", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
+    }
 }
 
-/** Share your feedback, like the PC's and the web's window: optional stars, a text box, Cancel and Send. */
+/**
+ * The support chat: the driver's thread with Support ([target] ""), the support inbox of an admin in admin mode
+ * ("" too, the drivers' conversations) or one driver's thread (an account id, admins). Read when opened and every 30 s.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FeedbackSheet(vm: PitlaneViewModel, close: () -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
-    var stars by rememberSaveable { mutableStateOf(0) }
-    var busy by remember { mutableStateOf(false) }
-    var err by remember { mutableStateOf<String?>(null) }
-    val ctx = androidx.compose.ui.platform.LocalContext.current
-    ModalBottomSheet(onDismissRequest = { if (!busy) close() }, containerColor = Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(t("fb_title"), fontSize = 20.sp, fontWeight = FontWeight.Black, color = Fg)
-            Text(t("fb_text"), color = Muted, fontSize = 13.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                (1..5).forEach { k ->
-                    Text("★", fontSize = 28.sp, color = if (k <= stars) Accent else Muted.copy(alpha = .45f), modifier = Modifier.clip(CircleShape).clickable { stars = if (stars == k) 0 else k }.padding(4.dp))
+private fun SupportSheet(vm: PitlaneViewModel, target: String) {
+    val acc by vm.account.collectAsState()
+    var thread by remember { mutableStateOf(if (acc.admin) target else "") }
+    var nick by remember { mutableStateOf(vm.supportNick) }
+    val inbox = acc.admin && thread.isEmpty()
+    ModalBottomSheet(onDismissRequest = { vm.closeSupport() }, containerColor = Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(.88f).padding(horizontal = 16.dp).imePadding()) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                if (acc.admin && !inbox) IconButton({ thread = ""; nick = "" }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Fg) }
+                Text(if (inbox || !acc.admin) t("sup_title") else nick.ifBlank { "—" }, fontSize = 20.sp, fontWeight = FontWeight.Black, color = Fg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (inbox) SupportInbox(vm) { id, n -> thread = id; nick = n }
+            else key(thread) { SupportThread(vm, thread, if (acc.admin) nick else "") }
+        }
+    }
+}
+
+/** The support inbox (admins): every driver who wrote, the newest first, with the last line, its time and what is unread. */
+@Composable
+private fun ColumnScope.SupportInbox(vm: PitlaneViewModel, open: (String, String) -> Unit) {
+    var convs by remember { mutableStateOf<List<com.pitlanehq.android.data.SupportConv>?>(null) }
+    LaunchedEffect(Unit) { while (true) { vm.supportInbox()?.let { convs = it }; kotlinx.coroutines.delay(30_000L) } }
+    val list = convs
+    when {
+        list == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Accent) }
+        list.isEmpty() -> Text(t("sup_none"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
+        else -> LazyColumn(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 16.dp)) {
+            items(list) { c ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface2).clickable { open(c.accountId, c.nick) }.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(c.nick.ifBlank { "—" }, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Fg, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(dayTime(c.created), color = Muted, fontSize = 11.sp)
+                        }
+                        Text((if (c.fromSupport) "↩ " else "") + c.text, color = if (c.unread > 0) Fg else Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (c.unread > 0) Box(Modifier.padding(start = 8.dp).heightIn(min = 18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Accent).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                        Text(if (c.unread > 9) "9+" else "${c.unread}", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                    }
                 }
             }
-            OutlinedTextField(text, { if (it.length <= 4000) text = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), minLines = 4, maxLines = 10)
-            err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                TextButton({ close() }, enabled = !busy) { Text(t("cancel"), color = Muted) }
-                Button(
-                    onClick = {
-                        busy = true; err = null
-                        vm.sendFeedback(text.trim(), stars.takeIf { it > 0 }) { e ->
-                            busy = false
-                            if (e == null) { android.widget.Toast.makeText(ctx, t("fb_thanks"), android.widget.Toast.LENGTH_SHORT).show(); close() } else err = e
-                        }
-                    },
-                    enabled = !busy && text.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)
-                ) { Text(t("fb_send"), fontWeight = FontWeight.Black) }
+        }
+    }
+}
+
+/**
+ * One thread: the driver's messages on the right and Support's on the left ("Pitlane HQ Support", never an admin's
+ * name), the newest at the bottom, then the text box and Send. An admin ([nick] the driver's) sees it the other way
+ * round: the driver on the left, Support's replies on the right.
+ */
+@Composable
+private fun ColumnScope.SupportThread(vm: PitlaneViewModel, accountId: String, nick: String) {
+    val asAdmin = accountId.isNotEmpty()
+    var msgs by remember { mutableStateOf<List<com.pitlanehq.android.data.SupportMsg>?>(null) }
+    var text by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val state = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(accountId) { while (true) { vm.supportThread(accountId)?.let { msgs = it }; kotlinx.coroutines.delay(30_000L) } }
+    LaunchedEffect(msgs?.size) { msgs?.let { if (it.isNotEmpty()) state.animateScrollToItem(it.size - 1) } }
+    val list = msgs
+    when {
+        list == null -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Accent) }
+        list.isEmpty() -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            if (!asAdmin) Text(t("sup_empty"), color = Muted, fontSize = 14.sp, textAlign = TextAlign.Center)
+        }
+        else -> LazyColumn(Modifier.fillMaxWidth().weight(1f), state = state, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 4.dp)) {
+            items(list, key = { it.id + ":" + it.created }) { m ->
+                val right = if (asAdmin) !m.driver else m.driver
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = if (right) Alignment.End else Alignment.Start) {
+                    if (!right) Text(if (asAdmin) nick.ifBlank { "—" } else t("sup_name"), color = Accent, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
+                    Column(
+                        Modifier.fillMaxWidth(.82f).wrapContentWidth(if (right) Alignment.End else Alignment.Start)
+                            .clip(RoundedCornerShape(12.dp)).background(if (right) Accent.copy(alpha = .16f) else Surface2)
+                            .border(1.dp, if (right) Accent.copy(alpha = .35f) else Color(0xFF263140), RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        if (m.rating in 1..5) Text("★".repeat(m.rating) + "☆".repeat(5 - m.rating), color = Accent, fontSize = 12.sp)
+                        Text(m.text, color = Fg, fontSize = 14.sp)
+                    }
+                    Text(dayTime(m.created), color = Muted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                }
             }
         }
+    }
+    err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(text, { if (it.length <= 4000) text = it }, modifier = Modifier.weight(1f), minLines = 1, maxLines = 5)
+        Button(
+            onClick = {
+                val msg = text.trim()
+                busy = true; err = null
+                scope.launch {
+                    val e = vm.supportSend(accountId, msg)
+                    busy = false
+                    if (e == null) { text = ""; vm.supportThread(accountId)?.let { msgs = it } } else err = e
+                }
+            },
+            enabled = !busy && text.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)
+        ) { Text(t("fb_send"), fontWeight = FontWeight.Black) }
     }
 }
 
@@ -317,16 +401,20 @@ private fun rememberInfo(vm: PitlaneViewModel, nav: NavHostController): InfoStat
     val upd by vm.update.collectAsState()
     val news by vm.news.collectAsState()
     val seen by vm.inboxSeen.collectAsState()
+    val supUnread by vm.supportUnread.collectAsState()
+    val supLast by vm.supportLast.collectAsState()
     var open by remember { mutableStateOf(false) }
     val uri = LocalUriHandler.current
     val alerts = buildList {
         upd?.let { u -> add(InfoItem("upd:" + u.version, Icons.Default.Download, t("update_title", u.version), t("update_body", BuildConfig.VERSION_NAME.replace("-", " ")), acts = listOf(t("download") to { uri.openUri(u.url) }, t("whats_new") to { uri.openUri(CHANGELOG_URL + "#" + u.version.replace(".", "") + "-beta") }))) }
         if (!a.twoFactor) add(InfoItem("2fa", Icons.Default.Lock, t("two_factor_rec_short"), t("two_factor_rec_sub"), acts = listOf(t("turn_on") to { nav.navigate("settings") })))
+        // Support answered: until the chat is opened (it opens the chat), never for an admin in admin mode
+        if (supUnread > 0 && !a.admin) add(InfoItem("support:$supUnread:${supLast.hashCode()}", Icons.Default.Forum, t("sup_replied"), supLast.lineSequence().firstOrNull().orEmpty(), acts = listOf(t("open") to { vm.openSupport() })))
         news.forEach { n -> add(InfoItem("news:" + n.id, Icons.Default.Newspaper, n.title, n.text + if (n.date.isNotBlank()) " · " + n.date else "", acts = listOfNotNull(n.url?.let { u -> t("open") to { uri.openUri(u) } }, n.view?.let { v -> t("see_it") to { nav.navigate(if (v == "me") "settings" else v) } }))) }
     }.filter { it.keep || it.id !in seen }
     val always = buildList {
         if (PATREON_URL.isNotEmpty()) add(InfoItem("support", Icons.Default.Favorite, t("support"), t("support_sub"), keep = true, acts = listOf("Patreon" to { uri.openUri(PATREON_URL) })))
-        add(InfoItem("feedback", Icons.Default.Forum, t("feedback"), t("feedback_sub"), keep = true, acts = listOf(t("send_feedback") to { uri.openUri(FEEDBACK_URL) })))
+        add(InfoItem("feedback", Icons.Default.Forum, t("feedback"), t("feedback_sub"), keep = true, acts = listOf(t("send_feedback") to { if (vm.demo.value) uri.openUri(FEEDBACK_URL) else vm.openSupport() })))
     }
     val fresh = alerts.count { "seen:" + it.id !in seen }
     if (open) ModalBottomSheet(onDismissRequest = { open = false; vm.inboxMark(alerts.map { "seen:" + it.id }) }, containerColor = Surface) {
@@ -2940,7 +3028,7 @@ private fun AdminScreen(vm: PitlaneViewModel, nav: NavHostController) {
             }
             list.isEmpty() -> item { Empty(t("admin_nothing")) }
             st.kind == "users" -> items(list.size) { i -> AdminUserRow(vm, nav, list[i]) }
-            st.kind == "feedback" -> items(list.size) { i -> AdminFeedbackRow(list[i]) }
+            st.kind == "feedback" -> items(list.size) { i -> AdminFeedbackRow(vm, list[i]) }
             st.kind == "sessions" -> items(list.size) { i ->
                 val x = list[i]
                 Panel {
@@ -3123,13 +3211,16 @@ private fun AdminUserRow(vm: PitlaneViewModel, nav: NavHostController, u: org.js
 
 /** One piece of feedback: the stars, what was written, who, from which device, version and screen, and when. */
 @Composable
-private fun AdminFeedbackRow(x: org.json.JSONObject) {
+private fun AdminFeedbackRow(vm: PitlaneViewModel, x: org.json.JSONObject) {
     val r = x.optInt("rating")
+    val acc = x.optString("accountId").takeUnless { it == "null" }.orEmpty()
     Panel {
         if (r in 1..5) Text("★".repeat(r) + "☆".repeat(5 - r), color = Accent, fontSize = 14.sp)
         Text(x.optString("text"), fontSize = 13.sp)
         val who = listOf("nick", "display", "email").map { x.optString(it) }.firstOrNull { it.isNotBlank() && it != "null" } ?: "—"
         Text(listOf(who, x.optString("device"), x.optString("v"), x.optString("view")).filter { it.isNotBlank() && it != "null" }.joinToString(" · ") + " · " + dayTime(x.optLong("at").takeIf { it > 0 } ?: x.optLong("created")), color = Muted, fontSize = 11.sp)
+        // the driver's thread with Support, to answer them there
+        if (acc.isNotBlank()) TextButton({ vm.openSupport(acc, who) }, contentPadding = PaddingValues(0.dp)) { Text(t("sup_open_chat"), color = Accent, fontSize = 12.sp) }
     }
 }
 

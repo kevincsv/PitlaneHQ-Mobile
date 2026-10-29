@@ -203,6 +203,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun signedOut() {
         live.stop()
+        supportUnread.value = 0; supportOpen.value = null
         demo.value = false
         _account.value = AccountState(error = "signed_out")
     }
@@ -211,7 +212,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         _account.value = AccountState(email = email, busy = true)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.login(email, password) }
-                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive() }
+                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive(); checkSupport() }
                 .onFailure { _account.value = AccountState(email = email, error = errKey(it)) }
         }
     }
@@ -222,7 +223,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         _account.value = a.copy(busy = true, error = null)
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { repo.loginCode(code) }
-                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive() }
+                .onSuccess { _account.value = it; demo.value = repo.demo; loadRaces(); resumeLive(); checkSupport() }
                 .onFailure { e -> _account.value = if (e.message == "sign_in_again") AccountState(email = a.email, error = "sign_in_again") else a.copy(busy = false, error = errKey(e)) }
         }
     }
@@ -416,6 +417,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun onForeground() {
         startMinuteSync()
         startUsage()
+        startSupport()
         track("game:$game")
         val a = _account.value
         resumeLive()
@@ -457,6 +459,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     fun logout() {
         live.stop()
+        supportUnread.value = 0; supportLast.value = ""; supportOpen.value = null
         allRaces = emptyList(); allBests = null
         listOf(races, sessions, monthStats, bests, laps, analysis, combos, board, reports, setups, devices, discord, steam).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         viewModelScope.launch(Dispatchers.IO) {
@@ -473,6 +476,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         repo.adminMode = on
         _account.value = repo.storedState()
         if (wasDemo && !repo.demo) setDemo(false) else demo.value = repo.demo
+        supportUnread.value = 0; checkSupport()
     }
 
     // ---------- what the drivers use: counted on the phone, sent every 5 minutes on the screen and when it goes away ----------
@@ -480,12 +484,48 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun track(key: String) { if (key.startsWith("view:")) curView = key.removePrefix("view:"); if (!demo.value) repo.use(key) }
     /** The screen on view, by the PC's view names: where the feedback button was pressed ("menu:<view>"). */
     var curView = "home"
-    /** Sends the feedback button's answer; done gets null when it went, else the error's key or the server's message. */
-    fun sendFeedback(text: String, rating: Int?, done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
-        val err = runCatching { repo.sendFeedback(text, rating, curView) }.exceptionOrNull()
-        if (err == null) track("act:feedback_sent")
+    // ---------- the support chat (the feedback button) ----------
+    /** Support's messages the driver has not read (an admin in admin mode: the drivers' messages not read), and the
+     *  newest one's line when the server gives it; the button's count and the inbox's "Support replied". */
+    val supportUnread = MutableStateFlow(0)
+    val supportLast = MutableStateFlow("")
+    /** The support chat open: "" the driver's own (or an admin's inbox), else that driver's thread (admins). */
+    val supportOpen = MutableStateFlow<String?>(null)
+    var supportNick = ""
+    fun openSupport(accountId: String = "", nick: String = "") {
+        if (demo.value || !_account.value.signedIn) return
+        supportNick = nick; supportOpen.value = accountId; track("act:support_open")
+    }
+    fun closeSupport() { supportOpen.value = null; checkSupport() }
+    private var supportJob: Job? = null
+    /** Every 2 minutes while the app is on the screen and signed in: has Support (or a driver, for an admin) written? */
+    private fun startSupport() {
+        supportJob?.cancel()
+        supportJob = viewModelScope.launch(Dispatchers.IO) { while (true) { supportCount(); delay(2 * 60_000L) } }
+    }
+    fun checkSupport() { viewModelScope.launch(Dispatchers.IO) { supportCount() } }
+    private fun supportCount() {
+        val a = _account.value
+        if (!a.signedIn || demo.value) { supportUnread.value = 0; return }
+        runCatching {
+            if (a.admin) { supportUnread.value = repo.adminSupportUnread(); supportLast.value = "" }
+            else repo.supportUnread().let { (n, last) -> supportUnread.value = n; supportLast.value = last }
+        }.onFailure { if (it is SignedOut) signedOut() }
+    }
+    /** The driver's thread; reading it marks Support's messages read. */
+    suspend fun supportThread(accountId: String): List<SupportMsg>? = withContext(Dispatchers.IO) {
+        runCatching { if (accountId.isEmpty()) repo.support().also { supportUnread.value = 0; supportLast.value = "" } else repo.adminSupportThread(accountId) }
+            .onFailure { if (it is SignedOut) signedOut() }.getOrNull()
+    }
+    suspend fun supportInbox(): List<SupportConv>? = withContext(Dispatchers.IO) {
+        runCatching { repo.adminSupport() }.onFailure { if (it is SignedOut) signedOut() }.getOrNull()
+    }
+    /** Sends a message: the driver's to Support, or (an account id) an admin's reply as Support. Null when it went. */
+    suspend fun supportSend(accountId: String, text: String): String? = withContext(Dispatchers.IO) {
+        val err = runCatching { if (accountId.isEmpty()) repo.sendSupport(text, curView) else repo.adminSupportReply(accountId, text) }.exceptionOrNull()
+        if (err == null) { track(if (accountId.isEmpty()) "act:support_sent" else "act:support_reply"); supportCount() }
         if (err is SignedOut) signedOut()
-        withContext(Dispatchers.Main) { done(err?.let { errKey(it) }) }
+        err?.let { errKey(it) }
     }
     private var usageJob: Job? = null
     private fun startUsage() {
@@ -501,6 +541,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         repo.demo = on
         demo.value = on
         live.stop()
+        if (on) { supportUnread.value = 0; supportOpen.value = null } else checkSupport()
         allBests = null
         listOf(sessions, monthStats, bests, laps, analysis, combos, board, reports, setups).forEach { (it as MutableStateFlow<Loadable<*>>).value = Loadable<Any>() }
         loadRaces()
@@ -751,7 +792,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (!_account.value.signedIn) { live.stop(); return }
         if (liveScreens > 0) live.start() else if (!demo.value) live.startPresence() else live.stop()
     }
-    fun onBackground() { minuteJob?.cancel(); minuteJob = null; live.stop(); sendUsageNow() }
+    fun onBackground() { minuteJob?.cancel(); minuteJob = null; supportJob?.cancel(); supportJob = null; live.stop(); sendUsageNow() }
     fun liveWatch(m: LiveMode, code: String = "") {
         if (m == LiveMode.OWN) track("act:connect") else if (m == LiveMode.CODE) track("act:watch_code")
         live.watch(m, code)

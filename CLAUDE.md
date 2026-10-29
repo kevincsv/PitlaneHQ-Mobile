@@ -28,17 +28,28 @@
   from the analytics' `users`, and every account tool), Feedback (GET `/community/admin/feedback`: what drivers wrote
   from the PC and the web, with stars, device, version and screen), Content (the shared items), Sessions, Coach (GET
   `/community/admin/coach`: the buckets kind × corner speed with cases, gains, thumbs, turning a kind off, the confidence
-  switch) and Server (the emails, the tools with what each does, the blocked sign-ins). The phones have no feedback
-  pop-up of their own, but a small round feedback button floats at the bottom right above the tab bar on every screen
-  while signed in (never in demo data; `FeedbackFab`/`FeedbackSheet` on Android, `MainView`'s overlay and
-  `FeedbackSheet` on iOS): "Share your feedback" with 1 to 5 optional stars, a text box (up to 4000), Cancel and Send,
-  POST `/community/feedback` {text, rating, device android|ios, v, view "menu:<view>"}, a toast when it went
-  (`act:feedback_button`, `act:feedback_sent`).
+  switch) and Server (the emails, the tools with what each does, the blocked sign-ins). Each Feedback row has "Open the support chat" for
+  that driver. The phones have no feedback pop-up of their own; the small round feedback button floating at the bottom
+  right above the tab bar on every screen (signed in, never in demo data; `SupportFab`/`SupportSheet` on Android,
+  `MainView`'s overlay and `SupportSheet` on iOS) is the support chat, "Support" ("Soporte", "Suporte"): the driver's
+  messages on the right, Support's on the left as "Pitlane HQ Support" (never an admin's name), their times, the newest
+  at the bottom, a text box and Send, no stars (an old feedback's stars show on its message), "Write to us. We answer
+  here." while empty. GET `/community/support` {msgs [{id, me, text, created, kind, rating?}], unread} when it opens and
+  every 30 s while open (reading marks Support's messages read), POST `/community/support` {text, device android|ios, v,
+  view "menu:<view>", lang}. GET `/community/support/unread` {n, last?} every 2 minutes while the app is on the screen
+  and right after sending: the button carries the count of Support's messages not read (an amber circle on its top-right
+  corner, "1"… "9+") and the Info inbox a "Support replied" item with the line that opens the chat, until the chat is
+  opened; never a system notification. For an admin in admin mode the button opens the support inbox instead (GET
+  `/community/admin/support` {items [{accountId, nick, last, lastAt, lastSupport, unread}]}: nick, last line, time,
+  unread; a row opens its thread, GET `/community/admin/support/:accountId` {msgs [{id, support, text, created,
+  rating…}]}, with a reply box, POST `/community/admin/support/:accountId` {text}, the reply going as Support, and back
+  to the list), and its count is GET `/community/admin/support/unread` {n}. Usage `act:feedback_button`,
+  `act:support_open`, `act:support_sent`, `act:support_reply`.
 - What the drivers use, for the admin panel (`Usage`: `use`/`sendUsage` in AccountRepository.kt, `vm.track`; `Usage` in
   Account.swift): the phone counts "view:<screen>" with the PC's view names (home, laps, coach, cloudlaps, races, live,
   standings, tyres, community, leagues, me, admin, session, profile, notes, drinks), "act:<action>" (compare,
   race_summary, leaderboard, track_page, plan_to_overlay, connect, watch_code, share_code, drinks, feedback_button,
-  feedback_sent) and "game:iracing" /
+  support_open, support_sent, support_reply) and "game:iracing" /
   "game:lmu", keys matching ^(view|act|game):[a-z0-9_.-]{1,40}$, kept on the device until the server has them and sent
   (POST `/community/usage` {device, v, counts}) every 5 minutes while the app is on the screen and when it goes to the
   background; never in demo data, only signed in, cleared at sign-out.
