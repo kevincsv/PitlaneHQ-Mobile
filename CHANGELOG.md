@@ -8,6 +8,8 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
 
 - A small clock after a driver's name says they have a penalty or a slowdown to serve.
 - Recent records, the track page and the leaderboards show the game of each record.
+- Maps show the track's own layout, with no lines drawn over it.
+- A button at the bottom left to send us your feedback.
 - Fixes and improvements.
 
 ## 0.7.2 beta
