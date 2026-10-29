@@ -163,6 +163,8 @@ struct RecordItem: Identifiable, Hashable {
     var cls: String? = nil
     /// what the lap was driven in, as bits: 1 rain, 2 a wet track, 4 a damp one (the server's wet)
     var wet: Int = 0
+    /// the game the record was driven in (iracing or lmu)
+    var game: String = "iracing"
     var combo: Combo { Combo(trackId: trackId, track: track, carId: carId, car: car, laps: n, best: time, cat: cat, cls: cls) }
 }
 
@@ -175,6 +177,7 @@ struct TrackPage {
     let layout: ([Double], [Double])?
     let turns: [Double]
     let cars: [RecordItem]
+    var game: String = "iracing"
 }
 
 /// a track to open its page: its id and name
@@ -482,6 +485,7 @@ struct RaceResult: Hashable {
     var k: String = ""       // the driver's opaque key (the PC's driverKey): what your driver notes find them by
     var me: Bool = false
     var ai: Bool = false     // an AI driver
+    var cc: String = ""      // the driver's country (ISO 3166 alpha-2), "" when the race does not say
 }
 
 /// Your note on another driver (drivers.json in the account): one tag (danger, careful, clean, friend) and a note.

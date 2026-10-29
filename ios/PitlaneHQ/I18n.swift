@@ -610,6 +610,7 @@ private let strings: [String: (String, String, String)] = [
     "drinks_laps": ("{0} laps · best {1}", "{0} vueltas · mejor {1}", "{0} voltas · melhor {1}"),
     "vs_ai": ("vs AI", "vs IA", "vs IA"),
     "ai_driver": ("AI", "IA", "IA"),
+    "penalty_to_serve": ("Penalty to serve", "Penalización por cumplir", "Penalidade a cumprir"),
     "lap_driver": ("Driver", "Piloto", "Piloto"),
     "drinks_by": ("Driven in DRINKS mode by {0}", "Corrida en modo DRINKS por {0}", "Pilotado no modo DRINKS por {0}"),
     "league_used": ("{0} of {1} leagues posted", "{0} de {1} ligas publicadas", "{0} de {1} ligas publicadas"),

@@ -912,6 +912,7 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         Row(Modifier.fillMaxWidth().then(if (me || p.ai) Modifier else Modifier.clickable { editing = p }).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(30.dp))
                             if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 14.dp); Spacer(Modifier.width(5.dp)) }
+                            CountryFlag(p.cc, 12.sp)
                             // your car in a DRINKS race: who drove it
                             val nm = if (me && x.drivers().isNotEmpty()) x.drivers().joinToString(", ") { it.first } else p.name
                             Text(nm + if (note != null && note.note.isNotEmpty()) " ✎" else "", fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -1742,6 +1743,15 @@ private fun WetBadges(w: Int) {
     }
 }
 
+/** The game a record or a leaderboard is of: a small "iRacing" or "LMU" badge. */
+@Composable
+private fun GameBadge(g: String) {
+    val lmu = g == "lmu"
+    val c = if (lmu) Color(0xFF7FD3C4) else Color(0xFFB9C4D2)
+    Text(if (lmu) "LMU" else "iRacing", color = c, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+        modifier = Modifier.clip(RoundedCornerShape(4.dp)).border(1.dp, c.copy(alpha = .5f), RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+}
+
 @Composable
 private fun WetBadge(label: String, fg: Color, bg: Color) {
     Text(label, color = fg, fontSize = 9.sp, fontWeight = FontWeight.Bold, maxLines = 1,
@@ -2400,7 +2410,10 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
                 Row(Modifier.height(IntrinsicSize.Min), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.width(4.dp).fillMaxHeight().clip(RoundedCornerShape(2.dp)).background(col))
                     Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                        Text(listOf(day(x.created), catName(gm, recCat(x))).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp, maxLines = 1)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            GameBadge(x.game)
+                            Text(listOf(day(x.created), catName(gm, recCat(x))).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp, maxLines = 1)
+                        }
                         Text(x.car, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(x.track, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
@@ -2439,7 +2452,12 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
     Screen(ref.second.ifEmpty { t("track_page") }, t("track_page"), back = { nav.popBackStack() }) {
         state(p) { vm.openTrack(ref.first, ref.second) }
         val d = p.data ?: return@Screen
-        item { Text(t("track_counts", d.drivers, d.laps, d.cars.size), color = Muted, fontSize = 12.sp) }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                GameBadge(d.game)
+                Text(t("track_counts", d.drivers, d.laps, d.cars.size), color = Muted, fontSize = 12.sp)
+            }
+        }
         item { Panel { TrackLayoutMap(d.layout, d.turns) } }
         item { TrackNotesPanel(vm, ref.first, d.track.ifEmpty { ref.second }) }
         item { Section(t("records_per_car")) }
@@ -2448,7 +2466,10 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
             Panel(Modifier.clickable { vm.combo = x.combo; vm.loadBoard(x.combo); nav.navigate("combo") }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(x.car, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(x.car, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                            GameBadge(x.game)
+                        }
                         Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Column(horizontalAlignment = Alignment.End) {
@@ -2537,7 +2558,10 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(t("you_fastest_sub", all.size, lapTime(all[0].time)), color = Muted, fontSize = 12.sp)
                 } else if (mineAll >= 0) Text(t("your_position", mineAll + 1, all.size, lapTime(all[mineAll].time)), color = Accent, fontWeight = FontWeight.Bold)
                 else Text(t("not_on_board"), color = Muted, fontSize = 12.sp)
-                Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), t("drivers", all.size)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    GameBadge(vm.game)
+                    Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), t("drivers", all.size)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
+                }
             }
         }
         item { Section(t("fastest_drivers")) }
@@ -4023,6 +4047,19 @@ private fun LapPill(lapDiff: Double) {
         modifier = Modifier.padding(start = 4.dp).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(50)).padding(horizontal = 4.dp, vertical = 1.dp))
 }
 
+/** a driver's country flag before their name, nothing when the country is unknown */
+@Composable
+private fun CountryFlag(cc: String, size: androidx.compose.ui.unit.TextUnit) {
+    val f = countryFlag(cc)
+    if (f.isNotEmpty()) Text(f + " ", fontSize = size, maxLines = 1)
+}
+
+/** a small clock after the name of a car with a penalty or a slowdown to serve */
+@Composable
+private fun PenaltyClock(size: androidx.compose.ui.unit.Dp) {
+    Icon(Icons.Default.Schedule, t("penalty_to_serve"), tint = Accent, modifier = Modifier.padding(start = 4.dp).size(size))
+}
+
 /** the top of the Telemetry screen: where you are, the delta and your best, the last lap, the fuel; beside it the
  *  gaps to the cars just ahead and behind, your incidents and what is left of the session */
 @Composable
@@ -4100,8 +4137,10 @@ private fun RowScope.LiveName(r: LiveRow, notes: Map<String, DriverNote>) {
     val d = r.d
     val note = if (r.me || d == null) null else noteFor(notes, d.key, d.name)
     if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 12.dp); Spacer(Modifier.width(4.dp)) }
+    CountryFlag(d?.cc.orEmpty(), 12.sp)
     Text(d?.name ?: "#${r.idx}", fontSize = 12.sp, fontWeight = if (r.me) FontWeight.Black else FontWeight.Normal, color = if (r.me) Accent else Fg,
         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+    if (r.pen) PenaltyClock(12.dp)
     if (d?.ai == true) Text(" " + t("ai_driver"), color = Blue, fontSize = 9.sp, fontWeight = FontWeight.Bold)
     if (!r.me) LapPill(r.lapDiff)
     if (r.pit) Text(" " + t("lt_pit"), color = Muted, fontSize = 9.sp, fontWeight = FontWeight.Bold)

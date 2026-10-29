@@ -10,6 +10,8 @@ let liveVars: [String] = [
     // the other cars: the standings, the relative and the map
     "CarIdxLapDistPct", "CarIdxPosition", "CarIdxClassPosition", "CarIdxLap", "CarIdxF2Time", "CarIdxEstTime",
     "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxOnPitRoad",
+    // a penalty or a slowdown to serve: iRacing's flags of every car, Le Mans Ultimate's penalty count
+    "CarIdxSessionFlags", "CarIdxNumPenalties",
 ] + ["LF", "RF", "LR", "RR"].flatMap { c in ["tempCL", "tempCM", "tempCR", "wearL", "wearM", "wearR", "coldPressure"].map { c + $0 } }
 
 /// Live telemetry from your PC through your Pitlane HQ account's live room (/live), the same

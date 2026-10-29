@@ -13,6 +13,7 @@ struct LiveDriver {
     let spectator: Bool
     let ai: Bool
     let key: String
+    var cc: String = "" // the driver's country (ISO 3166 alpha-2) from iRacing's flair, "" when unknown
 }
 
 /// What the session YAML says that the Telemetry screens need: who is who, the track, the session kinds.
@@ -38,7 +39,59 @@ struct LiveRow: Identifiable {
     let lapDiff: Double
     let pit: Bool
     let me: Bool
+    var pen: Bool = false // a penalty or a slowdown to serve
     var id: Int { idx }
+}
+
+/// the flag of a country by its ISO 3166 alpha-2 code ("ES" → 🇪🇸; "GB-ENG", "GB-SCT", "GB-WLS" their own), "" when unknown
+func countryFlag(_ code: String) -> String {
+    let c = code.trimmingCharacters(in: .whitespaces).uppercased()
+    if let f = subdivisionFlags[c] { return f }
+    let sc = Array(c.unicodeScalars)
+    guard sc.count == 2, sc.allSatisfy({ $0.value >= 65 && $0.value <= 90 }) else { return "" }
+    var out = String.UnicodeScalarView()
+    for u in sc { if let r = Unicode.Scalar(0x1F1E6 + u.value - 65) { out.append(r) } }
+    return String(out)
+}
+
+private func tagFlag(_ sub: String) -> String {
+    var out = String.UnicodeScalarView()
+    if let b = Unicode.Scalar(0x1F3F4 as UInt32) { out.append(b) }
+    for u in sub.lowercased().unicodeScalars { if let t = Unicode.Scalar(0xE0000 + u.value) { out.append(t) } }
+    if let e = Unicode.Scalar(0xE007F as UInt32) { out.append(e) }
+    return String(out)
+}
+
+private let subdivisionFlags: [String: String] = ["GB-ENG": tagFlag("gbeng"), "GB-SCT": tagFlag("gbsct"), "GB-WLS": tagFlag("gbwls")]
+
+private let countryAliases: [String: String] = [
+    "usa": "US", "united states of america": "US", "uk": "GB", "great britain": "GB", "northern ireland": "GB",
+    "england": "GB-ENG", "scotland": "GB-SCT", "wales": "GB-WLS", "korea": "KR", "south korea": "KR",
+    "korea, republic of": "KR", "republic of korea": "KR", "russia": "RU", "russian federation": "RU", "czech republic": "CZ",
+    "czechia": "CZ", "the netherlands": "NL", "holland": "NL", "turkey": "TR", "türkiye": "TR", "turkiye": "TR",
+    "vietnam": "VN", "viet nam": "VN", "iran": "IR", "taiwan": "TW", "hong kong": "HK", "macau": "MO", "macao": "MO",
+    "ivory coast": "CI", "cote d'ivoire": "CI", "côte d’ivoire": "CI", "bosnia": "BA", "bosnia and herzegovina": "BA",
+    "slovak republic": "SK", "uae": "AE", "moldova": "MD", "venezuela": "VE", "bolivia": "BO", "syria": "SY", "laos": "LA",
+    "north macedonia": "MK", "macedonia": "MK", "brunei": "BN", "palestine": "PS", "vatican": "VA", "tanzania": "TZ",
+]
+
+private let countryNames: [String: String] = {
+    let en = Locale(identifier: "en_US")
+    var m: [String: String] = [:]
+    for c in Locale.isoRegionCodes where c.count == 2 && c.allSatisfy({ $0.isLetter }) {
+        if let n = en.localizedString(forRegionCode: c) { m[n.lowercased()] = c }
+    }
+    return m
+}()
+
+/// a driver's country as iRacing's flair names it ("Spain", "United States"), or already a code, to its ISO code ("" unknown)
+func countryCode(_ nameOrCode: String) -> String {
+    let v = nameOrCode.trimmingCharacters(in: .whitespaces)
+    if v.isEmpty { return "" }
+    if v.count == 2 && v.allSatisfy({ $0.isLetter }) { return v.uppercased() }
+    if subdivisionFlags[v.uppercased()] != nil { return v.uppercased() }
+    let k = v.lowercased()
+    return countryAliases[k] ?? countryNames[k] ?? ""
 }
 
 private func yField(_ block: String, _ key: String) -> String {
@@ -107,7 +160,8 @@ func parseLiveSession(_ y: String) -> LiveSession {
         guard let i = Int(yField(b, "CarIdx")) else { continue }
         s.drivers[i] = LiveDriver(idx: i, name: yField(b, "UserName"), number: yField(b, "CarNumber"), cls: yField(b, "CarClassShortName"),
                                   ir: Int(yField(b, "IRating")) ?? 0, lic: yField(b, "LicString"), pace: yField(b, "CarIsPaceCar") == "1",
-                                  spectator: yField(b, "IsSpectator") == "1", ai: yField(b, "CarIsAI") == "1", key: driverKey(yField(b, "UserID")))
+                                  spectator: yField(b, "IsSpectator") == "1", ai: yField(b, "CarIsAI") == "1", key: driverKey(yField(b, "UserID")),
+                                  cc: countryCode(yField(b, "FlairName")))
     }
     for b in yItems(si, "SessionNum") {
         guard let n = Int(yField(b, "SessionNum")) else { continue }
@@ -139,6 +193,14 @@ extension Live {
 
     private func pos0(_ v: Double?) -> Double? { v.flatMap { $0 > 0 ? $0 : nil } }
 
+    /// this car has a penalty or a slowdown to serve: iRacing's black flag (0x00010000) or furled black (0x00080000) on
+    /// its CarIdxSessionFlags, or the game's penalty count of the car (Le Mans Ultimate)
+    private func penalty(_ i: Int) -> Bool {
+        let f = Int64(at(arr("CarIdxSessionFlags"), i) ?? 0)
+        if f & (0x00010000 | 0x00080000) != 0 { return true }
+        return (at(arr("CarIdxNumPenalties"), i) ?? 0) > 0
+    }
+
     /// The standings: every car with a place, in order, with its gap to the leader, last and best lap.
     func standings() -> [LiveRow] {
         let pos = arr("CarIdxPosition"), me = meIdx, f2 = arr("CarIdxF2Time")
@@ -148,7 +210,7 @@ extension Live {
             let d = session?.drivers[i]
             if let d = d, d.pace || d.spectator { continue }
             rows.append(LiveRow(idx: i, pos: Int(pos[i]), d: d, gap: pos0(at(f2, i)), last: pos0(at(last, i)), best: pos0(at(best, i)),
-                                lapDiff: me >= 0 ? lapDiff(i, me) : 0, pit: (at(pit, i) ?? 0) != 0, me: i == me))
+                                lapDiff: me >= 0 ? lapDiff(i, me) : 0, pit: (at(pit, i) ?? 0) != 0, me: i == me, pen: penalty(i)))
         }
         return rows.sorted { $0.pos < $1.pos }
     }
@@ -167,7 +229,7 @@ extension Live {
             if g > l / 2 { g -= l }
             if g < -l / 2 { g += l }
             rows.append(LiveRow(idx: i, pos: Int(at(pos, i) ?? 0), d: d, gap: g, last: pos0(at(last, i)), best: pos0(at(best, i)),
-                                lapDiff: lapDiff(i, me), pit: (at(pit, i) ?? 0) != 0, me: i == me))
+                                lapDiff: lapDiff(i, me), pit: (at(pit, i) ?? 0) != 0, me: i == me, pen: penalty(i)))
         }
         let ahead = Array(rows.filter { !$0.me && ($0.gap ?? 0) < 0 }.sorted { ($0.gap ?? 0) > ($1.gap ?? 0) }.prefix(each).reversed())
         let behind = Array(rows.filter { !$0.me && ($0.gap ?? 0) >= 0 }.sorted { ($0.gap ?? 0) < ($1.gap ?? 0) }.prefix(each))

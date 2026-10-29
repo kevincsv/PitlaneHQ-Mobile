@@ -1857,6 +1857,7 @@ struct RaceView: View {
                         HStack {
                             Text("\(p.pos)").foregroundColor(me ? Theme.accent : Theme.muted).frame(width: 28, alignment: .leading)
                             if let n = note, !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 14, height: 14) }
+                            CountryFlag(cc: p.cc, size: 12)
                             // your car in a DRINKS race: who drove it
                             Text((me && !x.drivers.isEmpty ? x.drivers.map { $0.name }.joined(separator: ", ") : p.name) + ((note?.note.isEmpty ?? true) ? "" : " ✎")).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
                             if p.ai { Text(t("ai_driver")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.blue) }
@@ -3158,6 +3159,36 @@ struct WetBadges: View {
     }
 }
 
+/// The game a record or a leaderboard is of: a small "iRacing" or "LMU" badge.
+struct GameBadge: View {
+    let game: String
+    var body: some View {
+        let lmu = game == "lmu"
+        let c = lmu ? Color(red: 0x7F / 255, green: 0xD3 / 255, blue: 0xC4 / 255) : Color(red: 0xB9 / 255, green: 0xC4 / 255, blue: 0xD2 / 255)
+        Text(lmu ? "LMU" : "iRacing").font(.system(size: 9, weight: .bold)).foregroundColor(c).lineLimit(1).fixedSize()
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(c.opacity(0.5), lineWidth: 1))
+    }
+}
+
+/// A driver's country flag before their name, nothing when the country is unknown.
+struct CountryFlag: View {
+    let cc: String
+    var size: CGFloat = 12
+    var body: some View {
+        let f = countryFlag(cc)
+        if !f.isEmpty { Text(f).font(.system(size: size)).lineLimit(1).fixedSize() }
+    }
+}
+
+/// A small clock after the name of a car with a penalty or a slowdown to serve.
+struct PenaltyClock: View {
+    var size: CGFloat = 12
+    var body: some View {
+        Image(systemName: "clock.fill").font(.system(size: size - 1)).foregroundColor(Theme.accent).accessibilityLabel(t("penalty_to_serve"))
+    }
+}
+
 /// The supporter badge: people who donate, given by hand by the owner of Pitlane HQ.
 struct SupBadge: View {
     var body: some View {
@@ -3760,7 +3791,10 @@ struct RecordCard: View {
             let k = catOf(gm, x.cat, x.cls, x.car)
             RoundedRectangle(cornerRadius: 2).fill(catColor(gm, k)).frame(width: 4)
             VStack(alignment: .leading, spacing: 2) {
-                Text([day(x.created), catName(gm, k)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+                HStack(spacing: 6) {
+                    GameBadge(game: x.game)
+                    Text([day(x.created), catName(gm, k)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+                }
                 Text(x.car).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1)
                 Text(x.track).font(.system(size: 12)).foregroundColor(Theme.muted).lineLimit(1)
             }
@@ -3821,7 +3855,10 @@ struct TrackPageView: View {
             do {
                 LoadState(loading: page.loading, error: page.error, stale: page.stale) { Task { await page.load { try await account.trackPage(trackId: ref.id) } } }
                 if let d = page.data {
-                    Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.caption).foregroundColor(Theme.muted)
+                    HStack(spacing: 6) {
+                        GameBadge(game: d.game)
+                        Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.caption).foregroundColor(Theme.muted)
+                    }
                     Panel {
                         if let lay = d.layout, lay.0.count >= 20 {
                             Canvas { ctx, size in drawTrackRoad(ctx, size, lay.0, lay.1, d.turns) }.frame(height: 240)
@@ -3837,7 +3874,10 @@ struct TrackPageView: View {
                             Panel {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(x.car).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                                        HStack(spacing: 6) {
+                                            Text(x.car).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                                            GameBadge(game: x.game)
+                                        }
                                         Text([catName(account.game, catOf(account.game, x.cat, x.cls, x.car)), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
                                     }
                                     Spacer()
@@ -3931,7 +3971,10 @@ struct ComboView: View {
                         Text(t("you_fastest_sub", laps.count, lapTime(laps[0].time))).font(.caption).foregroundColor(Theme.muted)
                     } else if let mine { Text(t("your_position", mine + 1, laps.count, lapTime(laps[mine].time))).font(.subheadline.bold()).foregroundColor(Theme.accent) }
                     else { Text(t("not_on_board")).font(.caption).foregroundColor(Theme.muted) }
-                    Text([catName(account.game, catOf(account.game, combo.cat, combo.cls, combo.car)), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
+                    HStack(spacing: 6) {
+                        GameBadge(game: account.game)
+                        Text([catName(account.game, catOf(account.game, combo.cat, combo.cls, combo.car)), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
+                    }
                 }
             }
             SectionLabel(text: t("fastest_drivers"))

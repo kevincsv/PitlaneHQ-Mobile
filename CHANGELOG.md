@@ -4,6 +4,13 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.8.0 beta
+
+- The standings and the relative show each driver's country flag, and so do the results of a race summary.
+- A small clock after a driver's name says they have a penalty or a slowdown to serve.
+- Recent records, the track page and the leaderboards show the game of each record.
+- Fixes and improvements.
+
 ## 0.7.2 beta
 
 - Fixes and improvements.

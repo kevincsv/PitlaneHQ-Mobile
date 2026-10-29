@@ -660,7 +660,7 @@ class AccountRepository(context: Context) {
                 laps = (0 until laps.length()).map { k -> laps.getJSONObject(k).let { RaceLap(it.optInt("n"), it.optDouble("t"), it.optInt("p"), it.optInt("i"), it.optBoolean("pit"), it.optBoolean("cut"), fixTxt(it.optString("drv"))) } },
                 results = (0 until res.length()).map { k ->
                     // an offline race has only you as a real driver: everyone else there is an AI driver
-                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps"), it.optString("k"), it.optBoolean("me"), !it.optBoolean("me") && (it.optBoolean("ai") || (isAIRace(r) && r.optInt("subsession") == 0))) }
+                    res.getJSONObject(k).let { RaceResult(it.optInt("cpos").takeIf { p -> p > 0 } ?: it.optInt("pos"), fixTxt(it.optString("name")), it.optInt("ir"), it.optDouble("best").pos(), it.optInt("inc"), it.optInt("laps"), it.optString("k"), it.optBoolean("me"), !it.optBoolean("me") && (it.optBoolean("ai") || (isAIRace(r) && r.optInt("subsession") == 0)), countryCode(it.optString("cc").ifEmpty { it.optString("flair") })) }
                 }.sortedBy { it.pos }
             )
         }
@@ -968,22 +968,24 @@ class AccountRepository(context: Context) {
     /** The records: the fastest lap of every car and track, the newest first, with the lap it beat. */
     fun records(): Got<List<RecordItem>> {
         if (demo) return Got(emptyList())
-        val g = cachedGet("/community/records?game=$game&limit=40")
+        val gm = game
+        val g = cachedGet("/community/records?game=$gm&limit=40")
         val a = JSONObject(g.data).optJSONArray("records") ?: JSONArray()
-        return Got((0 until a.length()).map { recordOf(a.getJSONObject(it), 0L, "") }, g.stale)
+        return Got((0 until a.length()).map { recordOf(a.getJSONObject(it), 0L, "", gm) }, g.stale)
     }
 
-    private fun recordOf(r: JSONObject, trackId: Long, track: String): RecordItem {
+    private fun recordOf(r: JSONObject, trackId: Long, track: String, gm: String): RecordItem {
         val p = r.optJSONObject("prev")
         return RecordItem(r.optString("id"), if (r.has("trackId")) r.optLong("trackId") else trackId, r.optStr("track") ?: track, r.optLong("carId"), r.optStr("car") ?: "", r.optStr("cat"),
             r.optDouble("time"), r.optLong("created"), r.optStr("alias") ?: "Driver", r.optInt("n"), r.optBoolean("hasTrace"), r.optBoolean("mine"), r.optBoolean("prof"), r.optBoolean("sup"),
-            p?.optDouble("time")?.takeIf { it > 0 }, p?.optStr("alias"), r.clsOf(), r.optInt("wet"))
+            p?.optDouble("time")?.takeIf { it > 0 }, p?.optStr("alias"), r.clsOf(), r.optInt("wet"), r.optStr("game") ?: gm)
     }
 
     /** One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it. */
     fun trackPage(trackId: Long): Got<TrackPage> {
-        if (demo || trackId <= 0) return Got(TrackPage(trackId, "", 0, 0, null, emptyList(), emptyList()))
-        val g = cachedGet("/community/track?game=$game&trackId=$trackId")
+        val gm = game
+        if (demo || trackId <= 0) return Got(TrackPage(trackId, "", 0, 0, null, emptyList(), emptyList(), gm))
+        val g = cachedGet("/community/track?game=$gm&trackId=$trackId")
         val j = JSONObject(g.data)
         val lay = j.optJSONObject("layout")?.let { l ->
             val x = l.optJSONArray("x"); val y = l.optJSONArray("y")
@@ -992,7 +994,8 @@ class AccountRepository(context: Context) {
         val turns = j.optJSONArray("turns")?.let { a -> (0 until a.length()).map { a.optDouble(it) }.filter { it >= 0 && it < 1 } } ?: emptyList()
         val name = j.optStr("track") ?: ""
         val cars = j.optJSONArray("cars") ?: JSONArray()
-        return Got(TrackPage(trackId, name, j.optInt("drivers"), j.optInt("laps"), lay, turns, (0 until cars.length()).map { recordOf(cars.getJSONObject(it), trackId, name) }), g.stale)
+        val tg = j.optStr("game") ?: gm
+        return Got(TrackPage(trackId, name, j.optInt("drivers"), j.optInt("laps"), lay, turns, (0 until cars.length()).map { recordOf(cars.getJSONObject(it), trackId, name, tg) }, tg), g.stale)
     }
 
     /** Le Mans Ultimate's class of each car board the server named (its cls), for "This car / Whole class". */

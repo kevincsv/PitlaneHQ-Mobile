@@ -42,7 +42,9 @@ val LIVE_VARS = listOf(
     "PlayerCarMyIncidentCount", "FuelUsePerLap",
     // the other cars: the standings, the relative and the map
     "CarIdxLapDistPct", "CarIdxPosition", "CarIdxClassPosition", "CarIdxLap", "CarIdxF2Time", "CarIdxEstTime",
-    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxOnPitRoad"
+    "CarIdxLastLapTime", "CarIdxBestLapTime", "CarIdxOnPitRoad",
+    // a penalty or a slowdown to serve: iRacing's flags of every car, Le Mans Ultimate's penalty count
+    "CarIdxSessionFlags", "CarIdxNumPenalties"
 ) + listOf("LF", "RF", "LR", "RR").flatMap { c -> listOf("tempCL", "tempCM", "tempCR", "wearL", "wearM", "wearR", "coldPressure").map { c + it } }
 
 /** One of your own sessions uploaded by the PC (GET /api/sessions). */
@@ -139,12 +141,14 @@ data class Combo(val trackId: Long, val track: String, val carId: Long, val car:
 data class RecordItem(val id: String, val trackId: Long, val track: String, val carId: Long, val car: String, val cat: String?, val time: Double, val created: Long,
     val alias: String, val n: Int, val hasTrace: Boolean, val mine: Boolean, val prof: Boolean, val sup: Boolean, val prevTime: Double?, val prevAlias: String?, val cls: String? = null,
     /** what the lap was driven in, as bits: 1 rain, 2 a wet track, 4 a damp one (the server's wet) */
-    val wet: Int = 0) {
+    val wet: Int = 0,
+    /** the game the record was driven in (iracing or lmu) */
+    val game: String = "iracing") {
     val combo get() = Combo(trackId, track, carId, car, n, time, cat, cls)
 }
 
 /** A track's page (in development): its layout and official turns, how many drivers and laps it has, the record of every car on it. */
-data class TrackPage(val trackId: Long, val track: String, val drivers: Int, val laps: Int, val layout: Pair<List<Double>, List<Double>>?, val turns: List<Double>, val cars: List<RecordItem>)
+data class TrackPage(val trackId: Long, val track: String, val drivers: Int, val laps: Int, val layout: Pair<List<Double>, List<Double>>?, val turns: List<Double>, val cars: List<RecordItem>, val game: String = "iracing")
 
 /** `mine`: the signed-in driver's own lap, also when it was shared anonymously (only they see that). */
 data class CommunityLap(val id: String, val alias: String, val time: Double, val created: Long, val hasTrace: Boolean, val sectors: List<Double>, val mine: Boolean = false,
@@ -271,7 +275,7 @@ fun raceDisc(cat: String?, car: String): String {
 data class RaceLap(val n: Int, val time: Double, val pos: Int, val inc: Int, val pit: Boolean, val cut: Boolean = false, val drv: String = "")
 
 /** One driver of a race; [k]: their opaque key (the PC's driverKey), what your driver notes find them by. */
-data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int, val k: String = "", val me: Boolean = false, val ai: Boolean = false)
+data class RaceResult(val pos: Int, val name: String, val ir: Int, val best: Double?, val inc: Int, val laps: Int, val k: String = "", val me: Boolean = false, val ai: Boolean = false, val cc: String = "")
 
 /** Your note on another driver (drivers.json in the account): one tag (danger, careful, clean, friend) and a note. */
 data class DriverNote(val name: String, val tag: String, val note: String)

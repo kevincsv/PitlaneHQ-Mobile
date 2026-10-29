@@ -5,7 +5,7 @@ import java.security.MessageDigest
 /** One driver of the live session, from the session YAML the PC sends (DriverInfo → Drivers). */
 data class LiveDriver(
     val idx: Int, val name: String, val number: String, val cls: String, val ir: Int, val lic: String,
-    val pace: Boolean, val spectator: Boolean, val ai: Boolean, val key: String
+    val pace: Boolean, val spectator: Boolean, val ai: Boolean, val key: String, val cc: String = ""
 )
 
 /** What the session YAML says that the Telemetry screens need: who is who, the track, the session kinds. */
@@ -17,8 +17,57 @@ data class LiveSession(
 /** A car in the standings or the relative: its place, its gap (s) and how many laps up (+) or down (−) on you. */
 data class LiveRow(
     val idx: Int, val pos: Int, val d: LiveDriver?, val gap: Double?, val last: Double?, val best: Double?,
-    val lapDiff: Double, val pit: Boolean, val me: Boolean
+    val lapDiff: Double, val pit: Boolean, val me: Boolean, val pen: Boolean = false
 )
+
+/** the flag of a country by its ISO 3166 alpha-2 code ("ES" → 🇪🇸; "GB-ENG", "GB-SCT", "GB-WLS" their own), "" when unknown */
+fun countryFlag(code: String): String {
+    val c = code.trim().uppercase()
+    SUBDIVISION_FLAGS[c]?.let { return it }
+    if (c.length != 2 || !c.all { it in 'A'..'Z' }) return ""
+    return c.map { String(Character.toChars(0x1F1E6 + (it - 'A'))) }.joinToString("")
+}
+
+private fun tagFlag(sub: String): String =
+    String(Character.toChars(0x1F3F4)) + sub.lowercase().map { String(Character.toChars(0xE0000 + it.code)) }.joinToString("") + String(Character.toChars(0xE007F))
+
+private val SUBDIVISION_FLAGS = mapOf("GB-ENG" to tagFlag("gbeng"), "GB-SCT" to tagFlag("gbsct"), "GB-WLS" to tagFlag("gbwls"))
+
+private val COUNTRY_ALIASES = mapOf(
+    "usa" to "US", "united states of america" to "US", "uk" to "GB", "great britain" to "GB", "northern ireland" to "GB",
+    "england" to "GB-ENG", "scotland" to "GB-SCT", "wales" to "GB-WLS", "korea" to "KR", "south korea" to "KR",
+    "korea, republic of" to "KR", "republic of korea" to "KR", "russia" to "RU", "russian federation" to "RU", "czech republic" to "CZ",
+    "czechia" to "CZ", "the netherlands" to "NL", "holland" to "NL", "turkey" to "TR", "türkiye" to "TR", "turkiye" to "TR",
+    "vietnam" to "VN", "viet nam" to "VN", "iran" to "IR", "taiwan" to "TW", "hong kong" to "HK", "macau" to "MO", "macao" to "MO",
+    "ivory coast" to "CI", "cote d'ivoire" to "CI", "côte d’ivoire" to "CI", "bosnia" to "BA", "bosnia and herzegovina" to "BA",
+    "slovak republic" to "SK", "uae" to "AE", "moldova" to "MD", "venezuela" to "VE", "bolivia" to "BO", "syria" to "SY", "laos" to "LA",
+    "north macedonia" to "MK", "macedonia" to "MK", "brunei" to "BN", "palestine" to "PS", "vatican" to "VA", "tanzania" to "TZ"
+)
+
+private val COUNTRY_NAMES: Map<String, String> by lazy {
+    java.util.Locale.getISOCountries().associateBy { java.util.Locale("", it).getDisplayCountry(java.util.Locale.ENGLISH).lowercase() }
+}
+
+/** a driver's country as iRacing's flair names it ("Spain", "United States"), or already a code, to its ISO code ("" unknown) */
+fun countryCode(nameOrCode: String): String {
+    val v = nameOrCode.trim()
+    if (v.isEmpty()) return ""
+    if (v.length == 2 && v.all { it.isLetter() }) return v.uppercase()
+    if (SUBDIVISION_FLAGS.containsKey(v.uppercase())) return v.uppercase()
+    val k = v.lowercase()
+    return COUNTRY_ALIASES[k] ?: COUNTRY_NAMES[k] ?: ""
+}
+
+/** iRacing's CarIdxSessionFlags: the black flag (a penalty to serve) and the furled black (a slowdown) */
+private const val FLAG_BLACK = 0x00010000
+private const val FLAG_FURLED = 0x00080000
+
+/** this car has a penalty or a slowdown to serve: iRacing's black or furled flag on it, or the game's penalty count (LMU) */
+private fun LiveState.penalty(i: Int): Boolean {
+    val f = arr("CarIdxSessionFlags").at(i)?.toLong() ?: 0L
+    if (f and (FLAG_BLACK or FLAG_FURLED).toLong() != 0L) return true
+    return (arr("CarIdxNumPenalties").at(i) ?: 0.0) > 0
+}
 
 private fun yField(block: String, key: String): String =
     Regex("(?m)^\\s*" + Regex.escape(key) + ":\\s*(.*)$").find(block)?.groupValues?.get(1)?.trim()?.trim('"') ?: ""
@@ -67,7 +116,7 @@ fun parseLiveSession(y: String): LiveSession {
         i to LiveDriver(
             i, yField(b, "UserName"), yField(b, "CarNumber"), yField(b, "CarClassShortName"), yField(b, "IRating").toIntOrNull() ?: 0,
             yField(b, "LicString"), yField(b, "CarIsPaceCar") == "1", yField(b, "IsSpectator") == "1", yField(b, "CarIsAI") == "1",
-            driverKey(yField(b, "UserID"))
+            driverKey(yField(b, "UserID")), countryCode(yField(b, "FlairName"))
         )
     }.toMap()
     val ses = yItems(si, "SessionNum")
@@ -106,7 +155,7 @@ fun LiveState.standings(): List<LiveRow> {
         val d = session?.drivers?.get(i)
         if (d != null && (d.pace || d.spectator)) return@mapNotNull null
         LiveRow(i, pos[i].toInt(), d, f2.at(i)?.takeIf { it > 0 }, last.at(i)?.takeIf { it > 0 }, best.at(i)?.takeIf { it > 0 },
-            if (me >= 0) lapDiff(i, me) else 0.0, (pit.at(i) ?: 0.0) != 0.0, i == me)
+            if (me >= 0) lapDiff(i, me) else 0.0, (pit.at(i) ?: 0.0) != 0.0, i == me, penalty(i))
     }.sortedBy { it.pos }
 }
 
@@ -122,7 +171,7 @@ fun LiveState.relative(each: Int = 3): List<LiveRow> {
         var g = (est.at(i) ?: 0.0) - (est.at(me) ?: 0.0)
         if (g > l / 2) g -= l
         if (g < -l / 2) g += l
-        LiveRow(i, pos.at(i)?.toInt() ?: 0, d, g, last.at(i)?.takeIf { it > 0 }, best.at(i)?.takeIf { it > 0 }, lapDiff(i, me), (pit.at(i) ?: 0.0) != 0.0, i == me)
+        LiveRow(i, pos.at(i)?.toInt() ?: 0, d, g, last.at(i)?.takeIf { it > 0 }, best.at(i)?.takeIf { it > 0 }, lapDiff(i, me), (pit.at(i) ?: 0.0) != 0.0, i == me, penalty(i))
     }
     val ahead = rows.filter { !it.me && (it.gap ?: 0.0) < 0 }.sortedByDescending { it.gap }.take(each).reversed()
     val behind = rows.filter { !it.me && (it.gap ?: 0.0) >= 0 }.sortedBy { it.gap }.take(each)
