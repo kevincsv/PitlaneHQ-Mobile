@@ -244,7 +244,6 @@ private let strings: [String: (String, String, String)] = [
     "tip_line_turnin": ("You turn in {0} m more to the inside. Start the corner from the outside", "Entras {0} m más por dentro. Empieza la curva desde fuera", "Você entra na curva {0} m mais por dentro. Comece a curva por fora"),
     "tip_line_apex": ("You pass {0} m away from the apex. Get closer to the inside", "Pasas a {0} m del vértice. Acércate más por dentro", "Você passa a {0} m do ápice. Chegue mais perto da parte de dentro"),
     "tip_line_exit": ("You use {0} m less track on exit. Let the car run out to the outside", "Usas {0} m menos de pista a la salida. Deja correr el coche hacia fuera", "Você usa {0} m a menos de pista na saída. Deixe o carro abrir até a parte de fora"),
-    "map_line": ("Line A / B", "Trazada A / B", "Linha A / B"),
     "driver_note_hint": ("What do you want to remember about them? (only you see it)", "¿Qué quieres recordar de él? (solo lo ves tú)", "O que você quer lembrar sobre ele? (só você vê)"),
     "tag_danger": ("Dangerous", "Peligroso", "Perigoso"),
     "tag_danger_hint": ("Dives in, closes the door, causes crashes", "Se tira, te cierra la puerta, provoca toques", "Mergulha, fecha a porta, causa batidas"),

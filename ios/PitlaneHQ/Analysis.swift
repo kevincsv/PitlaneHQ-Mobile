@@ -14,7 +14,7 @@ struct LapAnalysis {
     var car: [String: Any]?
     var turns: [Double] = []      // the official turn numbers of this track, when an admin placed them
     var fastest = false           // nobody known is faster here: lap B is your own best
-    var layout: ([Double], [Double])?  // the track's layout drawn by the community: the map's road when the lap has no path
+    var layout: ([Double], [Double])?  // the track's layout drawn by the community: the map's road (the lap's path only without it)
     // the session, its car and track as the community knows them, and the model's corner card (where the fastest drivers
     // here brake and how fast they take each corner): the thumbs on a tip and the hint beside it
     var session: CloudSession?
@@ -70,8 +70,8 @@ extension Account {
         if let tc = c { a.turns = await turns(trackId: tc.trackId, game: gm); a.trackId = tc.trackId; a.carId = tc.carId }
         a.coach = await coachInfo()
         a.habits = await coachHabits()
-        // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
-        if let tc = c, !(a.trace?.hasShape ?? false) { a.layout = await trackLayout(trackId: tc.trackId, game: gm) }
+        // every map's road is the track's layout drawn by the community (the lap's own path only when there is none)
+        if let tc = c { a.layout = await trackLayout(trackId: tc.trackId, game: gm) }
         let own = all.filter { $0.valid && $0.time > 0 && $0.id != lap.id && $0.drv == lap.drv }.min { $0.time < $1.time }
         // lap B's path as the web's analysis takes it: a model reference's own (the web's, lineXY and its origin when it has
         // none), else the trace's

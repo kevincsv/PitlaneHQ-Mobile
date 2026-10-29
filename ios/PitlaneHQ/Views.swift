@@ -2236,7 +2236,7 @@ struct LapView: View {
     @State private var pick: Double?
     @State private var car: [String: Any]?
     @State private var turns: [Double] = [] // the official turn numbers of this track, when an admin placed them
-    @State private var layout: ([Double], [Double])? // the community's layout, the map's road when the lap has no path
+    @State private var layout: ([Double], [Double])? // the community's layout, the map's road (the lap's path only without it)
     @State private var coachOff: Set<String> = [] // the kinds of tip an admin turned off for a speed of corner (coach_off)
     @State private var js: [String: JsResult]? // the web's analysis (pitwall-analysis.js), by language
     private var jsNow: JsResult? { js?[I18n.shared.lang] }
@@ -2329,7 +2329,7 @@ struct Series {
     let color: Color
 }
 
-/// The track, drawn from where the car was on this lap (Pitlane HQ records it), coloured where you gain
+/// The track, the community's layout (else this lap's own path, only for the road's shape), coloured where you gain
 /// (green) or lose (red) time against the reference, like the map in the web and the PC app. Touch
 /// or drag on it to read that point: the charts follow it (`pick` is the fraction of the lap).
 struct TrackMapView: View {
@@ -2339,9 +2339,8 @@ struct TrackMapView: View {
     @State private var showInc = true
     @State private var showBrk = true
     @State private var showCoach = true
-    @State private var showLine = true
     private let xs: [Double], ys: [Double]
-    /// the metres between the road's points: the compared grid's when the road is the reference's path, else the trace's
+    /// the metres between the road's points: the lap's length over the layout's points, else the trace's
     private let bin: Double
     private let brkA: [Double], brkB: [Double]
     private let rings: [Corner]
@@ -2351,16 +2350,15 @@ struct TrackMapView: View {
         self.c = c
         self.trace = trace
         self._pick = pick
-        // the road is the reference's path when both laps have one (B runs along the middle, A beside it by how far it
-        // was from B); else this lap's own; else the track's layout drawn by the community (road). Its points are the
-        // compared grid's then, the trace's, or the lap's length over the layout's points
-        let useB = c.lat != nil && c.bx != nil && c.by != nil
-        let own = trace.hasShape
-        let rx: [Double] = useB ? c.bx! : (own ? (trace.x ?? []) : (road?.0 ?? []))
-        let ry: [Double] = useB ? c.by! : (own ? (trace.y ?? []) : (road?.1 ?? []))
+        // the road is the track's layout drawn by the community (road); only when there is none, this lap's own path.
+        // No lap's line is drawn on it: everything on the map sits where its lap distance puts it, the layout's points
+        // spread over the lap's length (the trace's own points every trace.bin)
+        let useRoad = (road?.0.count ?? 0) >= 20 && road?.0.count == road?.1.count
+        let rx: [Double] = useRoad ? (road?.0 ?? []) : (trace.hasShape ? (trace.x ?? []) : [])
+        let ry: [Double] = useRoad ? (road?.1 ?? []) : (trace.hasShape ? (trace.y ?? []) : [])
         xs = rx
         ys = ry
-        bin = useB ? c.step : (own ? trace.bin : Double(c.speedA.count - 1) * c.step / Double(max(1, rx.count - 1)))
+        bin = useRoad ? Double(c.speedA.count - 1) * c.step / Double(max(1, rx.count - 1)) : trace.bin
         brkA = brakePoints(c.brkA, c.step)
         brkB = brakePoints(c.brkB, c.step)
         // the coach's rings: the web's corners that cost time (Models.swift's when the phone cannot run the web's analysis)
@@ -2489,7 +2487,6 @@ struct TrackMapView: View {
                     chip(t("map_braking"), $showBrk)
                     if !incidents.isEmpty { chip("✕ " + t("map_incidents"), $showInc) }
                     if !rings.isEmpty { chip("Coach", $showCoach) }
-                    if c.lat != nil { chip(t("map_line"), $showLine) }
                 }
             }
             if !incidents.isEmpty { Text(incSummary).font(.caption).foregroundColor(Theme.bad) }
@@ -2514,10 +2511,6 @@ struct TrackMapView: View {
             ForEach(segments) { s in
                 path(s.from, s.to, size).stroke(s.color, style: StrokeStyle(lineWidth: 6.5, lineCap: .round, lineJoin: .round))
             }
-            if showLine, c.lat != nil {
-                linePath(size).stroke(Theme.accent, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
-                path(0, n - 1, size, close: true).stroke(Color(red: 0xCF / 255, green: 0xE3 / 255, blue: 1).opacity(0.85), style: StrokeStyle(lineWidth: 1.3, dash: [4, 3]))
-            }
             brakeMarks(size)
             incMarks(size)
             dots(size)
@@ -2525,25 +2518,6 @@ struct TrackMapView: View {
         .contentShape(Rectangle())
         .onTapGesture { loc in pickAt(loc, size) }
         .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { v in pickAt(v.location, size) })
-    }
-
-    /// lap A's line beside the reference's (along the middle), by how far it was from it, drawn bigger (1 pt a metre)
-    private func linePath(_ size: CGSize) -> Path {
-        var p = Path()
-        guard let lat = c.lat, n > 4, m > 1 else { return p }
-        var open = false
-        for i in 0..<n {
-            let gi = max(0, min(m - 1, Int((Double(i) * bin / c.step).rounded())))
-            let v = gi < lat.count ? lat[gi] : .nan
-            if v.isNaN { open = false; continue }
-            let i0 = max(0, i - 2), i1 = min(n - 1, i + 2)
-            let tx = xs[i1] - xs[i0], ty = ys[i1] - ys[i0], tm = max(1e-6, hypot(tx, ty))
-            let o = max(-5, min(5, v))
-            let q = point(i, size)
-            let pt = CGPoint(x: q.x + (-ty / tm) * o, y: q.y - (tx / tm) * o)
-            if open { p.addLine(to: pt) } else { p.move(to: pt); open = true }
-        }
-        return p
     }
 
     private var incidents: [(d: Double, pts: Int, kind: String)] { trace.incidents }

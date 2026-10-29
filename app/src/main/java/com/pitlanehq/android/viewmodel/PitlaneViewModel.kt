@@ -25,7 +25,7 @@ import kotlinx.coroutines.withContext
 /** A lap next to the lap it is compared with. */
 data class LapAnalysis(val lap: CloudLap, val trace: Trace?, val ref: Trace?, val refLabel: String, val refTime: Double?, val refSectors: List<Double>, val car: JSONObject? = null,
     val turns: List<Double> = emptyList(), val pit: PitLane? = null, val fastest: Boolean = false,
-    // the track's layout drawn by the community: the map's road when the lap carries no path of its own (like the web)
+    // the track's layout drawn by the community: the map's road (the lap's own path only when there is none)
     val layout: Pair<List<Double>, List<Double>>? = null,
     // the session, its car and track as the community knows them, and the model's corner card (where the fastest drivers
     // here brake and how fast they take each corner): the thumbs on a tip and the hint beside it
@@ -685,8 +685,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
             val turns = c?.let { runCatching { repo.turns(it.trackId, gm) }.getOrNull() } ?: emptyList()
             val coach = runCatching { repo.coachInfo() }.getOrNull()
             val habits = runCatching { repo.coachHabits() }.getOrDefault(emptyList())
-            // a lap with no path of its own (an older one, a rival's) still gets its map: the track's layout drawn by the community
-            val layout = if (tr?.hasShape != true && c != null) runCatching { repo.trackLayout(c.trackId, gm) }.getOrNull() else null
+            // every map's road is the track's layout drawn by the community (the lap's own path only when there is none)
+            val layout = if (c != null) runCatching { repo.trackLayout(c.trackId, gm) }.getOrNull() else null
             // the corner card also when lap B is your own lap: the model knows the corners whoever the reference is
             if (kind == RefKind.MY_BEST && c != null) cards = runCatching { repo.modelRefs(c.trackId, c.carId, lap.time, gm, tr?.cmp ?: 0).corners }.getOrDefault(emptyList())
             // the web's own analysis of the two laps, the same corners, tips, plan and sectors as the PC's

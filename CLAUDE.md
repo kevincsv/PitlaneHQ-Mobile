@@ -76,9 +76,10 @@
   `tip_brake_same`), never "brake later"; an apex reached as fast as the reference's says the time goes before it
   (`tip_entry_before`) or in a longer slow part (`tip_apex_longer`); a throttle picked up earlier but a slower apex
   says to carry the speed (`tip_exit_speed`); only a generic tip (`GENERIC_TIPS`) gives way to the gear, the lifts
-  and the line. The track map's road is the reference's path when both laps have one (`c.bx`/`c.by`: B dashed along
-  the middle, A beside it by `c.lat`), else the lap's own, else the track's layout drawn by the community
-  (`trackLayout`, `layout` in `LapAnalysis`), like the web: a lap without a path still has its map.
+  and the line. Every map's road is the track's layout drawn by the community (`trackLayout`, `layout` in
+  `LapAnalysis`), else the lap's own path only for the road's shape (the owner's choice): no lap's line is drawn on a
+  map (no A or B line, no "Line A / B" switch); the braking points, the coach's corners, the incidents, the sectors,
+  the start/finish line, the direction arrow and the point chosen sit on it by their lap distance. The line tips stay.
   Like the web's analyzer, a session's lap list has a column per official sector (S1, S2, S3…, only the sectors that add
   up to the lap's time, `lapSecs`/`secs`, as the web's `lapSecsOf`; purple the session's best, green a valid lap's one better
   than your best lap's), the lap analysis has the braking points table of lap A against lap B per corner (`BrakeTable`: the

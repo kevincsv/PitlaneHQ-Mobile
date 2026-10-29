@@ -1768,25 +1768,23 @@ private fun SupBadge() {
 private fun incName(kind: String) = t(when (kind) { "contact" -> "inc_contact"; "light" -> "inc_light"; "loss" -> "inc_loss"; else -> "inc_off" })
 
 /**
- * The track, drawn from where the car was on this lap (Pitlane HQ records it), coloured where you gain
+ * The track, the community's layout (else this lap's own path, only for the road's shape), coloured where you gain
  * (green) or lose (red) time against the reference, like the map in the web and the PC app. Touch
  * or drag on it to read that point: the charts follow it.
  */
 @Composable
 private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = emptyList(), road: Pair<List<Double>, List<Double>>? = null, cs: List<Corner>? = null, onSel: (Int) -> Unit) {
-    // the road is the reference's path when both laps have one (B runs along the middle, A beside it by how far it was
-    // from B); else this lap's own; else the track's layout drawn by the community (road). Its points are the compared
-    // grid's then (c.step), the trace's (tr.bin), or the lap's length over the layout's points
-    val useB = c.lat != null && c.bx != null && c.by != null
-    val own = tr.hasShape
-    val xs = (if (useB) c.bx else if (own) tr.x else road?.first) ?: return
-    val ys = (if (useB) c.by else if (own) tr.y else road?.second) ?: return
-    val bin = if (useB) c.step else if (own) tr.bin else (c.speedA.size - 1) * c.step / maxOf(1, xs.size - 1)
+    // the road is the track's layout drawn by the community (road); only when there is none, this lap's own path.
+    // No lap's line is drawn on it: everything on the map sits where its lap distance puts it, the layout's points
+    // spread over the lap's length (the trace's own points every tr.bin)
+    val useRoad = road != null && road.first.size >= 20 && road.first.size == road.second.size
+    val xs = (if (useRoad) road?.first else if (tr.hasShape) tr.x else null) ?: return
+    val ys = (if (useRoad) road?.second else if (tr.hasShape) tr.y else null) ?: return
+    val bin = if (useRoad) (c.speedA.size - 1) * c.step / maxOf(1, xs.size - 1) else tr.bin
     val incs = tr.incidents
     var showInc by rememberSaveable { mutableStateOf(true) }
     var showBrk by rememberSaveable { mutableStateOf(true) }
     var showCoach by rememberSaveable { mutableStateOf(true) }
-    var showLine by rememberSaveable { mutableStateOf(true) }
     val dpx = with(LocalDensity.current) { 1.dp.toPx() }
     val brkA = remember(c) { brakePoints(c.brkA, c.step) }
     val brkB = remember(c) { brakePoints(c.brkB, c.step) }
@@ -1856,23 +1854,6 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
                     drawPath(p, col.copy(alpha = (0.3 + 0.7 * minOf(1.0, kotlin.math.abs(v) / mx)).toFloat()), style = Stroke(width = 6.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
             }
-            // the two lines: the reference along the middle, lap A beside it by how far it was from it (drawn bigger)
-            val lat = c.lat
-            if (showLine && lat != null) {
-                val ex = 1.0f * dpx
-                var run: Path? = null
-                for (i in 0 until n) {
-                    val v = lat.getOrElse(idxAt(i)) { Double.NaN }
-                    if (v.isNaN()) { run?.let { drawPath(it, Accent, style = Stroke(width = 2.2f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round)) }; run = null; continue }
-                    val i0 = maxOf(0, i - 2); val i1 = minOf(n - 1, i + 2)
-                    val tx = xs[i1] - xs[i0]; val ty = ys[i1] - ys[i0]; val tm = maxOf(1e-6, kotlin.math.hypot(tx, ty))
-                    val o = (v.coerceIn(-5.0, 5.0) * ex).toFloat()
-                    val q = pt(i); val px = q.x + (-ty / tm).toFloat() * o; val py = q.y - (tx / tm).toFloat() * o
-                    if (run == null) { run = Path(); run.moveTo(px, py) } else run.lineTo(px, py)
-                }
-                run?.let { drawPath(it, Accent, style = Stroke(width = 2.2f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round)) }
-                drawPath(track, Color(0xFFCFE3FF).copy(alpha = .85f), style = Stroke(width = 1.3f * dpx, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(4f * dpx, 3f * dpx))))
-            }
             // the sectors like the web: the start/finish line, a cut at each sector change, S1, S2, S3 in the middle of each
             val cnt = 3
             fun bar(i: Int, len: Float, col: Color, width: Float) {
@@ -1913,7 +1894,6 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
             Chip(t("map_braking"), showBrk) { showBrk = !showBrk }
             if (incs.isNotEmpty()) Chip("✕ " + t("map_incidents"), showInc) { showInc = !showInc }
             if (rings.isNotEmpty()) Chip("Coach", showCoach) { showCoach = !showCoach }
-            if (c.lat != null) Chip(t("map_line"), showLine) { showLine = !showLine }
         }
         if (incs.isNotEmpty()) {
             val pts = incs.sumOf { it.pts }
