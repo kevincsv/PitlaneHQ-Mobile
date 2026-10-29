@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.*
 import com.pitlanehq.android.data.AppUpdate
 import com.pitlanehq.android.data.AccountState
@@ -202,6 +203,8 @@ private fun MainApp(vm: PitlaneViewModel) {
     CompositionLocalProvider(LocalInfo provides info) {
     val support by vm.supportOpen.collectAsState()
     val unread by vm.supportUnread.collectAsState()
+    val fbAdmin = vm.account.collectAsState().value.admin
+    var feedback by remember { mutableStateOf(false) }
     Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }) { pad ->
         Box(Modifier.fillMaxSize()) {
         Column(Modifier.padding(pad).fillMaxSize()) {
@@ -249,29 +252,84 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("admin") { AdminScreen(vm, nav) }
             }
         }
-        // the feedback button, now the support chat: bottom right, just above the floating tab bar, on every screen
-        // (never in demo data), with the count of Support's messages not read (an admin's: the drivers' not read)
-        if (!demo && ShotMode.route == null) SupportFab(unread, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = pad.calculateBottomPadding() + 10.dp)) {
-            vm.track("act:feedback_button"); vm.openSupport()
-        }
+        // the feedback button: bottom right, just above the floating tab bar, on every screen (never in demo data), with
+        // the count of Support's messages not read (an admin's: the drivers' not read). It opens a small menu (Send
+        // feedback, Chat with support); an admin in admin mode goes straight to the support inbox.
+        if (!demo && ShotMode.route == null) SupportFab(unread, fbAdmin, Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = pad.calculateBottomPadding() + 10.dp),
+            onClick = { vm.track("act:feedback_button"); if (fbAdmin) vm.openSupport() },
+            onFeedback = { feedback = true }, onChat = { vm.openSupport() })
         }
     }
     support?.let { key(it) { SupportSheet(vm, it) } }
+    if (feedback) FeedbackSheet(vm) { feedback = false }
     }
 }
 
-/** The small round support button floating over the screen, with the unread count on its top-right corner. */
+/** The small round feedback button floating over the screen, with the unread count on its top-right corner. Pressed,
+ *  it opens its menu (Send feedback, Chat with support with the unread count), or for [admin] only [onClick]. */
 @Composable
-private fun SupportFab(unread: Int, modifier: Modifier, onClick: () -> Unit) {
+private fun SupportFab(unread: Int, admin: Boolean, modifier: Modifier, onClick: () -> Unit, onFeedback: () -> Unit, onChat: () -> Unit) {
+    var menu by remember { mutableStateOf(false) }
     Box(modifier) {
         Box(
-            Modifier.size(44.dp).clip(CircleShape).background(Surface2).border(1.dp, Color(0xFF2E3A4A), CircleShape).clickable(onClick = onClick),
+            Modifier.size(44.dp).clip(CircleShape).background(Surface2).border(1.dp, Color(0xFF2E3A4A), CircleShape).clickable { onClick(); if (!admin) menu = true },
             contentAlignment = Alignment.Center
-        ) { Icon(Icons.Outlined.ChatBubbleOutline, t("sup_title"), tint = Accent, modifier = Modifier.size(21.dp)) }
+        ) { Icon(Icons.Outlined.ChatBubbleOutline, t("fb_title"), tint = Accent, modifier = Modifier.size(21.dp)) }
         if (unread > 0) Box(
             Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).heightIn(min = 18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Accent).padding(horizontal = 4.dp),
             contentAlignment = Alignment.Center
         ) { Text(if (unread > 9) "9+" else "$unread", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
+        DropdownMenu(menu, { menu = false }, containerColor = Surface2) {
+            DropdownMenuItem({ Text(t("fb_menu_send"), color = Fg) }, { menu = false; onFeedback() },
+                leadingIcon = { Icon(Icons.Outlined.StarOutline, null, tint = Accent) })
+            DropdownMenuItem({ Text(t("fb_menu_chat"), color = Fg) }, { menu = false; onChat() },
+                leadingIcon = { Icon(Icons.Outlined.ChatBubbleOutline, null, tint = Accent) },
+                trailingIcon = if (unread > 0) ({
+                    Box(Modifier.heightIn(min = 18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Accent).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                        Text(if (unread > 9) "9+" else "$unread", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                    }
+                }) else null)
+        }
+    }
+}
+
+/** Share your feedback, like the PC's and the web's window: optional stars, a text box, Cancel and Send. As often as
+ *  the driver likes. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedbackSheet(vm: PitlaneViewModel, close: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var stars by rememberSaveable { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val scope = rememberCoroutineScope()
+    ModalBottomSheet(onDismissRequest = { if (!busy) close() }, containerColor = Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(t("fb_title"), fontSize = 20.sp, fontWeight = FontWeight.Black, color = Fg)
+            Text(t("fb_text"), color = Muted, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                (1..5).forEach { k ->
+                    Text("★", fontSize = 28.sp, color = if (k <= stars) Accent else Muted.copy(alpha = .45f), modifier = Modifier.clip(CircleShape).clickable { stars = if (stars == k) 0 else k }.padding(4.dp))
+                }
+            }
+            OutlinedTextField(text, { if (it.length <= 4000) text = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), minLines = 4, maxLines = 10)
+            err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton({ close() }, enabled = !busy) { Text(t("cancel"), color = Muted) }
+                Button(
+                    onClick = {
+                        busy = true; err = null
+                        scope.launch {
+                            val e = vm.sendFeedback(text.trim(), stars.takeIf { it > 0 })
+                            busy = false
+                            if (e == null) { android.widget.Toast.makeText(ctx, t("fb_thanks"), android.widget.Toast.LENGTH_SHORT).show(); close() } else err = e
+                        }
+                    },
+                    enabled = !busy && text.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)
+                ) { Text(t("fb_send"), fontWeight = FontWeight.Black) }
+            }
+        }
     }
 }
 

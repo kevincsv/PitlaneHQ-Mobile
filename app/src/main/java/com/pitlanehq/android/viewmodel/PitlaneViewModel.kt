@@ -484,6 +484,13 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun track(key: String) { if (key.startsWith("view:")) curView = key.removePrefix("view:"); if (!demo.value) repo.use(key) }
     /** The screen on view, by the PC's view names: where the feedback button was pressed ("menu:<view>"). */
     var curView = "home"
+    /** Sends the feedback button's "Send feedback"; null when it went, else the error's key or the server's message. */
+    suspend fun sendFeedback(text: String, rating: Int?): String? = withContext(Dispatchers.IO) {
+        val err = runCatching { repo.sendFeedback(text, rating, curView) }.exceptionOrNull()
+        if (err == null) track("act:feedback_sent")
+        if (err is SignedOut) signedOut()
+        err?.let { errKey(it) }
+    }
     // ---------- the support chat (the feedback button) ----------
     /** Support's messages the driver has not read (an admin in admin mode: the drivers' messages not read), and the
      *  newest one's line when the server gives it; the button's count and the inbox's "Support replied". */

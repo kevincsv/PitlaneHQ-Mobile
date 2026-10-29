@@ -1170,6 +1170,14 @@ class AccountRepository(context: Context) {
         call("POST", "/community/usage", JSONObject().put("device", "android").put("v", CLIENT.substringAfter("/")).put("counts", JSONObject(counts)))
         synchronized(this) { usage.edit().apply { counts.forEach { (k, n) -> val left = usage.getInt(k, 0) - n; if (left > 0) putInt(k, left) else remove(k) } }.apply() }
     }
+    /** What the driver writes from the feedback button's "Send feedback" (POST /community/feedback), with the stars when
+     *  given and the screen it was sent from ("menu:<view>"). */
+    fun sendFeedback(text: String, rating: Int?, view: String) {
+        if (demo) return
+        val b = JSONObject().put("text", text).put("device", "android").put("v", CLIENT.substringAfter("/")).put("view", "menu:$view").put("lang", com.pitlanehq.android.ui.I18n.lang)
+        if (rating != null && rating in 1..5) b.put("rating", rating)
+        call("POST", "/community/feedback", b)
+    }
     // ---------- the support chat (the feedback button): the driver and Support, newest at the bottom ----------
     /** The driver's thread with Support (GET /community/support, which marks Support's messages read). */
     fun support(): List<SupportMsg> {

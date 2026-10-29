@@ -1520,6 +1520,15 @@ final class Account: ObservableObject {
         let v = pitlaneClient.replacingOccurrences(of: "ios/", with: "")
         if (try? await call("POST", "/community/usage", body: ["device": "ios", "v": v, "counts": counts])) != nil { Usage.taken(counts) }
     }
+    /// what the driver writes from the feedback button's "Send feedback" (POST /community/feedback), with the stars when
+    /// given and the screen it was sent from ("menu:<view>")
+    func sendFeedback(_ text: String, rating: Int?) async throws {
+        guard !demo else { return }
+        var b: [String: Any] = ["text": text, "device": "ios", "v": pitlaneClient.replacingOccurrences(of: "ios/", with: ""), "view": "menu:" + Usage.view, "lang": I18n.shared.lang]
+        if let r = rating, (1...5).contains(r) { b["rating"] = r }
+        _ = try await call("POST", "/community/feedback", body: b)
+        Usage.count("act:feedback_sent")
+    }
     // ---------- the support chat (the feedback button): the driver and Support, newest at the bottom ----------
     /// Support's messages the driver has not read (an admin in admin mode: the conversations with drivers' messages
     /// not read), and the newest one's line: the button's count and the inbox's "Support replied"
