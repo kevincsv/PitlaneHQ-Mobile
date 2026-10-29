@@ -1857,7 +1857,6 @@ struct RaceView: View {
                         HStack {
                             Text("\(p.pos)").foregroundColor(me ? Theme.accent : Theme.muted).frame(width: 28, alignment: .leading)
                             if let n = note, !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 14, height: 14) }
-                            CountryFlag(cc: p.cc, size: 12)
                             // your car in a DRINKS race: who drove it
                             Text((me && !x.drivers.isEmpty ? x.drivers.map { $0.name }.joined(separator: ", ") : p.name) + ((note?.note.isEmpty ?? true) ? "" : " ✎")).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
                             if p.ai { Text(t("ai_driver")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.blue) }

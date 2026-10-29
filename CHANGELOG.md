@@ -6,7 +6,6 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
 
 ## 0.8.0 beta
 
-- The standings and the relative show each driver's country flag, and so do the results of a race summary.
 - A small clock after a driver's name says they have a penalty or a slowdown to serve.
 - Recent records, the track page and the leaderboards show the game of each record.
 - Fixes and improvements.

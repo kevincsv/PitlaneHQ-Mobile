@@ -912,7 +912,6 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         Row(Modifier.fillMaxWidth().then(if (me || p.ai) Modifier else Modifier.clickable { editing = p }).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(30.dp))
                             if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 14.dp); Spacer(Modifier.width(5.dp)) }
-                            CountryFlag(p.cc, 12.sp)
                             // your car in a DRINKS race: who drove it
                             val nm = if (me && x.drivers().isNotEmpty()) x.drivers().joinToString(", ") { it.first } else p.name
                             Text(nm + if (note != null && note.note.isNotEmpty()) " ✎" else "", fontSize = 12.sp, fontWeight = if (me) FontWeight.Black else FontWeight.Normal, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
@@ -4137,7 +4136,6 @@ private fun RowScope.LiveName(r: LiveRow, notes: Map<String, DriverNote>) {
     val d = r.d
     val note = if (r.me || d == null) null else noteFor(notes, d.key, d.name)
     if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 12.dp); Spacer(Modifier.width(4.dp)) }
-    CountryFlag(d?.cc.orEmpty(), 12.sp)
     Text(d?.name ?: "#${r.idx}", fontSize = 12.sp, fontWeight = if (r.me) FontWeight.Black else FontWeight.Normal, color = if (r.me) Accent else Fg,
         maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
     if (r.pen) PenaltyClock(12.dp)

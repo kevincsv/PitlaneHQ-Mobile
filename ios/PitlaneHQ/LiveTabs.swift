@@ -77,7 +77,6 @@ struct LiveName: View {
     var body: some View {
         HStack(spacing: 4) {
             if !r.me, let d = r.d, let n = account.noteFor(d.key, d.name), !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 12, height: 12) }
-            CountryFlag(cc: r.d?.cc ?? "", size: 12)
             Text(r.d?.name ?? "#\(r.idx)").font(.system(size: 12, weight: r.me ? .black : .regular)).foregroundColor(r.me ? Theme.accent : Theme.fg).lineLimit(1)
             if r.pen { PenaltyClock(size: 12) }
             if r.d?.ai ?? false { Text(t("ai_driver")).font(.system(size: 9, weight: .bold)).foregroundColor(Theme.blue) }
