@@ -1039,6 +1039,8 @@ struct TwoFactorPanel: View {
 
 struct MainView: View {
     @State private var tab = 0
+    @State private var feedback = false
+    @State private var toast: String?
     var body: some View {
         // the bar sits under the tabs, never over them: every screen ends above it and scrolls to its last row
         VStack(spacing: 0) {
@@ -1049,9 +1051,37 @@ struct MainView: View {
             NavigationStack { CommunityView().routes() }.tag(2).toolbar(.hidden, for: .tabBar)
             NavigationStack { SettingsView() }.tag(4).toolbar(.hidden, for: .tabBar)
         }
+        // the feedback button: bottom left, just above the floating tab bar, on every screen (never in demo data)
+        .overlay(alignment: .bottomLeading) {
+            if !account.demo {
+                Button { Usage.count("act:feedback_button"); feedback = true } label: {
+                    Image(systemName: "text.bubble").font(.system(size: 18, weight: .medium)).foregroundColor(Theme.accent)
+                        .frame(width: 44, height: 44).background(Theme.navBar).clipShape(Circle())
+                        .overlay(Circle().stroke(Theme.navEdge, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(t("fb_title"))
+                .padding(.leading, 16).padding(.bottom, 10)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let toast {
+                Text(toast).font(.subheadline.weight(.semibold)).foregroundColor(Theme.fg).multilineTextAlignment(.center)
+                    .padding(.horizontal, 16).padding(.vertical, 10).background(Theme.navBar).clipShape(Capsule())
+                    .overlay(Capsule().stroke(Theme.navEdge, lineWidth: 1)).padding(.horizontal, 16).padding(.bottom, 64)
+                    .transition(.opacity)
+            }
+        }
             bar
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
+        .sheet(isPresented: $feedback) {
+            FeedbackSheet { msg in
+                feedback = false
+                withAnimation { toast = msg }
+                Task { try? await Task.sleep(nanoseconds: 2_500_000_000); withAnimation { if toast == msg { toast = nil } } }
+            }
+        }
         .onReceive(inbox.$goTab.compactMap { $0 }) { t in tab = t; inbox.goTab = nil }
         // what the drivers use: the tabs without sub-tabs (Analysis and Community count theirs)
         .onAppear { countTab(tab) }
@@ -1106,6 +1136,70 @@ struct MainView: View {
         .accessibilityAddTraits(on ? .isSelected : [])
     }
     @EnvironmentObject private var inbox: Inbox
+}
+
+/// Share your feedback, like the PC's and the web's window: optional stars, a text box, Cancel and Send.
+struct FeedbackSheet: View {
+    @EnvironmentObject private var account: Account
+    @Environment(\.dismiss) private var dismiss
+    let sent: (String) -> Void
+    @State private var text = ""
+    @State private var stars = 0
+    @State private var busy = false
+    @State private var err: String?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(t("fb_title")).font(.title3.weight(.black)).foregroundColor(Theme.fg)
+            Text(t("fb_text")).font(.subheadline).foregroundColor(Theme.muted)
+            HStack(spacing: 4) {
+                ForEach(1...5, id: \.self) { k in
+                    Button { stars = stars == k ? 0 : k } label: {
+                        Text("★").font(.system(size: 28)).foregroundColor(k <= stars ? Theme.accent : Theme.muted.opacity(0.45)).padding(4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            TextEditor(text: $text)
+                .scrollContentBackground(.hidden)
+                .foregroundColor(Theme.fg)
+                .frame(minHeight: 120)
+                .padding(6)
+                .background(Theme.ink)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .onChange(of: text) { v in if v.count > 4000 { text = String(v.prefix(4000)) } }
+            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+            HStack(spacing: 8) {
+                Spacer()
+                Button(t("cancel")) { dismiss() }.foregroundColor(Theme.muted).disabled(busy)
+                Button {
+                    busy = true; err = nil
+                    let msg = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    Task {
+                        do {
+                            try await account.sendFeedback(msg, rating: stars > 0 ? stars : nil)
+                            busy = false
+                            sent(t("fb_thanks"))
+                        } catch {
+                            busy = false
+                            err = (error as? AppError)?.key ?? "server_down"
+                        }
+                    }
+                } label: {
+                    Text(t("fb_send")).font(.subheadline.weight(.black)).padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(Theme.surface.ignoresSafeArea())
+        .presentationDetents([.medium, .large])
+        .interactiveDismissDisabled(busy)
+    }
 }
 
 /// One entry of Info: an alert (dismissable) or one of the permanent items (support, feedback).

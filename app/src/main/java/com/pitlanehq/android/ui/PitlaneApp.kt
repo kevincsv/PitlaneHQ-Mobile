@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material.icons.Icons
@@ -197,7 +198,9 @@ private fun MainApp(vm: PitlaneViewModel) {
     val uri = LocalUriHandler.current
     val info = rememberInfo(vm, nav)
     CompositionLocalProvider(LocalInfo provides info) {
+    var feedback by remember { mutableStateOf(false) }
     Scaffold(containerColor = Ink, bottomBar = { BottomBar(nav) }) { pad ->
+        Box(Modifier.fillMaxSize()) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             Column(Modifier.statusBarsPadding()) {
                 if (!online) Banner(t("showing_saved"), Bad)
@@ -220,8 +223,9 @@ private fun MainApp(vm: PitlaneViewModel) {
             LaunchedEffect(route) {
                 when (route) {
                     "home" -> vm.track("view:home"); "settings" -> vm.track("view:me"); "admin" -> vm.track("view:admin")
-                    "race" -> vm.track("act:race_summary"); "combo" -> vm.track("act:leaderboard"); "track" -> vm.track("act:track_page")
-                    "lap" -> vm.track("act:compare"); "session" -> vm.track("view:session"); "profile" -> vm.track("view:profile")
+                    "race" -> { vm.curView = "race"; vm.track("act:race_summary") }; "combo" -> { vm.curView = "leaderboard"; vm.track("act:leaderboard") }
+                    "track" -> { vm.curView = "track"; vm.track("act:track_page") }
+                    "lap" -> { vm.curView = "lap"; vm.track("act:compare") } "session" -> vm.track("view:session"); "profile" -> vm.track("view:profile")
                     "notes" -> vm.track("view:notes"); "drinks" -> vm.track("view:drinks")
                 }
             }
@@ -242,7 +246,59 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("admin") { AdminScreen(vm, nav) }
             }
         }
+        // the feedback button: bottom left, just above the floating tab bar, on every screen (never in demo data)
+        if (!demo && ShotMode.route == null) FeedbackFab(Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = pad.calculateBottomPadding() + 10.dp)) {
+            vm.track("act:feedback_button"); feedback = true
+        }
+        }
     }
+    if (feedback) FeedbackSheet(vm) { feedback = false }
+    }
+}
+
+/** The small round feedback button floating over the screen. */
+@Composable
+private fun FeedbackFab(modifier: Modifier, onClick: () -> Unit) {
+    Box(
+        modifier.size(44.dp).clip(CircleShape).background(Surface2).border(1.dp, Color(0xFF2E3A4A), CircleShape).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) { Icon(Icons.Default.Feedback, t("fb_title"), tint = Accent, modifier = Modifier.size(22.dp)) }
+}
+
+/** Share your feedback, like the PC's and the web's window: optional stars, a text box, Cancel and Send. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FeedbackSheet(vm: PitlaneViewModel, close: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    var stars by rememberSaveable { mutableStateOf(0) }
+    var busy by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    ModalBottomSheet(onDismissRequest = { if (!busy) close() }, containerColor = Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).imePadding().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(t("fb_title"), fontSize = 20.sp, fontWeight = FontWeight.Black, color = Fg)
+            Text(t("fb_text"), color = Muted, fontSize = 13.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                (1..5).forEach { k ->
+                    Text("★", fontSize = 28.sp, color = if (k <= stars) Accent else Muted.copy(alpha = .45f), modifier = Modifier.clip(CircleShape).clickable { stars = if (stars == k) 0 else k }.padding(4.dp))
+                }
+            }
+            OutlinedTextField(text, { if (it.length <= 4000) text = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), minLines = 4, maxLines = 10)
+            err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton({ close() }, enabled = !busy) { Text(t("cancel"), color = Muted) }
+                Button(
+                    onClick = {
+                        busy = true; err = null
+                        vm.sendFeedback(text.trim(), stars.takeIf { it > 0 }) { e ->
+                            busy = false
+                            if (e == null) { android.widget.Toast.makeText(ctx, t("fb_thanks"), android.widget.Toast.LENGTH_SHORT).show(); close() } else err = e
+                        }
+                    },
+                    enabled = !busy && text.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)
+                ) { Text(t("fb_send"), fontWeight = FontWeight.Black) }
+            }
+        }
     }
 }
 

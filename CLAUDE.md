@@ -29,11 +29,16 @@
   from the PC and the web, with stars, device, version and screen), Content (the shared items), Sessions, Coach (GET
   `/community/admin/coach`: the buckets kind × corner speed with cases, gains, thumbs, turning a kind off, the confidence
   switch) and Server (the emails, the tools with what each does, the blocked sign-ins). The phones have no feedback
-  pop-up and no "Send feedback" entry (the owner's choice: those are the PC's and the web's).
+  pop-up of their own, but a small round feedback button floats at the bottom left above the tab bar on every screen
+  while signed in (never in demo data; `FeedbackFab`/`FeedbackSheet` on Android, `MainView`'s overlay and
+  `FeedbackSheet` on iOS): "Share your feedback" with 1 to 5 optional stars, a text box (up to 4000), Cancel and Send,
+  POST `/community/feedback` {text, rating, device android|ios, v, view "menu:<view>"}, a toast when it went
+  (`act:feedback_button`, `act:feedback_sent`).
 - What the drivers use, for the admin panel (`Usage`: `use`/`sendUsage` in AccountRepository.kt, `vm.track`; `Usage` in
   Account.swift): the phone counts "view:<screen>" with the PC's view names (home, laps, coach, cloudlaps, races, live,
   standings, tyres, community, leagues, me, admin, session, profile, notes, drinks), "act:<action>" (compare,
-  race_summary, leaderboard, track_page, plan_to_overlay, connect, watch_code, share_code, drinks) and "game:iracing" /
+  race_summary, leaderboard, track_page, plan_to_overlay, connect, watch_code, share_code, drinks, feedback_button,
+  feedback_sent) and "game:iracing" /
   "game:lmu", keys matching ^(view|act|game):[a-z0-9_.-]{1,40}$, kept on the device until the server has them and sent
   (POST `/community/usage` {device, v, counts}) every 5 minutes while the app is on the screen and when it goes to the
   background; never in demo data, only signed in, cleared at sign-out.

@@ -477,7 +477,16 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- what the drivers use: counted on the phone, sent every 5 minutes on the screen and when it goes away ----------
     /** One use of a screen ("view:laps"), an action ("act:compare") or a game ("game:lmu"); never in demo data. */
-    fun track(key: String) { if (!demo.value) repo.use(key) }
+    fun track(key: String) { if (key.startsWith("view:")) curView = key.removePrefix("view:"); if (!demo.value) repo.use(key) }
+    /** The screen on view, by the PC's view names: where the feedback button was pressed ("menu:<view>"). */
+    var curView = "home"
+    /** Sends the feedback button's answer; done gets null when it went, else the error's key or the server's message. */
+    fun sendFeedback(text: String, rating: Int?, done: (String?) -> Unit) = viewModelScope.launch(Dispatchers.IO) {
+        val err = runCatching { repo.sendFeedback(text, rating, curView) }.exceptionOrNull()
+        if (err == null) track("act:feedback_sent")
+        if (err is SignedOut) signedOut()
+        withContext(Dispatchers.Main) { done(err?.let { errKey(it) }) }
+    }
     private var usageJob: Job? = null
     private fun startUsage() {
         usageJob?.cancel()

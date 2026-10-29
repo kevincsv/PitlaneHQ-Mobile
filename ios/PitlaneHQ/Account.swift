@@ -36,7 +36,11 @@ enum Usage {
     private static let key = "usage"
     private static let lock = NSLock()
     private static let pattern = try? NSRegularExpression(pattern: "^(view|act|game):[a-z0-9_.-]{1,40}$")
+    /// the screen on view, by the PC's view names: where the feedback button was pressed ("menu:<view>")
+    static var view = "home"
+    private static let actView = ["act:race_summary": "race", "act:leaderboard": "leaderboard", "act:track_page": "track", "act:compare": "lap"]
     static func count(_ k: String) {
+        if k.hasPrefix("view:") { view = String(k.dropFirst(5)) } else if let v = actView[k] { view = v }
         guard !UserDefaults.standard.bool(forKey: "demo"), Vault.get("token") != nil,
               pattern?.firstMatch(in: k, range: NSRange(k.startIndex..., in: k)) != nil else { return }
         lock.lock(); defer { lock.unlock() }
@@ -1504,6 +1508,15 @@ final class Account: ObservableObject {
         guard !counts.isEmpty, signedIn, !demo else { return }
         let v = pitlaneClient.replacingOccurrences(of: "ios/", with: "")
         if (try? await call("POST", "/community/usage", body: ["device": "ios", "v": v, "counts": counts])) != nil { Usage.taken(counts) }
+    }
+    /// what the driver writes from the feedback button (POST /community/feedback), with the stars when given and the
+    /// screen it was sent from ("menu:<view>")
+    func sendFeedback(_ text: String, rating: Int?) async throws {
+        guard !demo else { return }
+        var b: [String: Any] = ["text": text, "device": "ios", "v": pitlaneClient.replacingOccurrences(of: "ios/", with: ""), "view": "menu:" + Usage.view]
+        if let r = rating, (1...5).contains(r) { b["rating"] = r }
+        _ = try await call("POST", "/community/feedback", body: b)
+        Usage.count("act:feedback_sent")
     }
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     func nameFree(_ name: String) async -> Bool {
