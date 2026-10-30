@@ -602,6 +602,23 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     fun loadBests() = load(bests) { val g = repo.bests(); allBests = g.data; Got(g.data.filter { it.game == game }, g.stale) }
     fun loadLaps(id: String) { laps.value = Loadable(); load(laps) { repo.laps(id) } }
     fun loadCombos() = load(combos) { repo.combos() }
+
+    // ---------- the Planner (in development: admins with admin mode on) ----------
+    val season = MutableStateFlow(Loadable<SeasonData>())
+    fun loadSeason() { if (season.value.data == null && !season.value.loading) load(season) { repo.season() } }
+    val plannerFav = MutableStateFlow(repo.plannerFav)
+    val plannerPlan = MutableStateFlow(repo.plannerPlan)
+    fun toggleStar(sid: Long) { val f = plannerFav.value.toMutableSet(); if (!f.remove(sid)) f += sid; repo.plannerFav = f; plannerFav.value = f }
+    fun inPlan(sid: Long, t: Long) = plannerPlan.value.any { it.sid == sid && it.t == t }
+    fun togglePlan(s: SSeries, t: Long) {
+        val now = System.currentTimeMillis()
+        val p = plannerPlan.value.filter { it.t > now - 3 * 3_600_000L }.toMutableList()
+        if (p.removeAll { it.sid == s.sid && it.t == t }.not()) p += PlannedRace(s.sid, t, s.name, Season.weekAt(s, t).track)
+        p.sortBy { it.t }; repo.plannerPlan = p; plannerPlan.value = p
+    }
+    // the series page and the week the Planner opened
+    var plannerSeries by mutableStateOf<SSeries?>(null)
+
     // Le Mans Ultimate: "This car / Whole class" (each driver's best of any car of this car's class here), kept while the app runs
     val boardWhole = MutableStateFlow(false)
     val boardCls = MutableStateFlow<String?>(null)

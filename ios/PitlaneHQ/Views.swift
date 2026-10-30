@@ -668,6 +668,9 @@ enum Route: Hashable {
     case analysis(Int, CloudSession?)
     case profile(String?)
     case notes
+    /// the Planner (in development) and one of its series
+    case planner
+    case plannerSeries(SSeries)
 }
 
 extension View {
@@ -683,6 +686,8 @@ extension View {
             case let .analysis(tb, s): AnalysisView(startTab: tb, start: s)
             case let .profile(id): ProfileView(lapId: id).onAppear { Usage.count("view:profile") }
             case .notes: TrackNotesList().onAppear { Usage.count("view:notes") }
+            case .planner: PlannerView()
+            case let .plannerSeries(x): PlannerSeriesView(s: x)
             }
         }
     }
@@ -1866,6 +1871,8 @@ struct HomeView: View {
                     }
                 }.buttonStyle(.plain)
             }
+            // the Planner, in development: admins with admin mode on, on iRacing
+            if account.admin && account.game == "iracing" { PlannerCard() }
             // the server's count, the same as the PC's and the web's; what the phone has only when the server cannot say
             HomeKpis(stats: stats ?? (statsFailed ? localMonthStats(sessions: sessions, races: races) : nil), races: races)
             if let x = races.first {

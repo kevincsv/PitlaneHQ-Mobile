@@ -84,20 +84,20 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 // the pit wall look: one dark theme with the amber accent, never switched
-private val Ink = Color(0xFF0D1116)
-private val Surface = Color(0xFF161C24)
-private val Bg = Color(0xFF0D1116)
-private val Surface2 = Color(0xFF1E2631)
-private val Line = Color(0xFF263140)
-private val Fg = Color(0xFFE7EBF1)
-private val Muted = Color(0xFF9AA6B8)
-private val Accent = Color(0xFFFFB02E)
-private val Good = Color(0xFF4FE09A)
-private val Bad = Color(0xFFFF7A7A)
-private val Purple = Color(0xFFC9A4FF)
-private val Blue = Color(0xFF8CC4FF)
+internal val Ink = Color(0xFF0D1116)
+internal val Surface = Color(0xFF161C24)
+internal val Bg = Color(0xFF0D1116)
+internal val Surface2 = Color(0xFF1E2631)
+internal val Line = Color(0xFF263140)
+internal val Fg = Color(0xFFE7EBF1)
+internal val Muted = Color(0xFF9AA6B8)
+internal val Accent = Color(0xFFFFB02E)
+internal val Good = Color(0xFF4FE09A)
+internal val Bad = Color(0xFFFF7A7A)
+internal val Purple = Color(0xFFC9A4FF)
+internal val Blue = Color(0xFF8CC4FF)
 /** the floating tab bar's chosen tab */
-private val NavOn = Color(0xFF2E3846)
+internal val NavOn = Color(0xFF2E3846)
 
 private const val WEB_APP = "$SERVER/"
 
@@ -252,6 +252,8 @@ private fun MainApp(vm: PitlaneViewModel) {
                 composable("settings") { Settings(vm, nav) }
                 composable("drinks") { DrinksScreen(vm, nav) }
                 composable("admin") { AdminScreen(vm, nav) }
+                composable("planner") { PlannerScreen(vm, nav) }
+                composable("pseries") { PlannerSeriesScreen(vm, nav) }
             }
         }
         // the feedback button: bottom right, just above the floating tab bar, on every screen (never in demo data), with
@@ -558,7 +560,7 @@ private fun BottomBar(nav: NavHostController) {
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
     // the laps, the coach and a track's hub belong to Tracks: they open from a track
-    val tab = when (current) { "race" -> if (nav.previousBackStackEntry?.destination?.route in listOf("analysis", "track")) "tracks" else "home"; "analysis", "session", "lap", "track" -> "tracks"; "combo", "profile" -> "community"; "drinks", "admin", "notes" -> "settings"; else -> current }
+    val tab = when (current) { "race" -> if (nav.previousBackStackEntry?.destination?.route in listOf("analysis", "track")) "tracks" else "home"; "analysis", "session", "lap", "track" -> "tracks"; "combo", "profile" -> "community"; "drinks", "admin", "notes" -> "settings"; "planner", "pseries" -> "home"; else -> current }
     // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
     Row(
         Modifier.fillMaxWidth().background(Ink).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
@@ -579,7 +581,7 @@ private fun BottomBar(nav: NavHostController) {
 }
 
 @Composable
-private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, head: (@Composable () -> Unit)? = null, content: LazyListScope.() -> Unit) {
+internal fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, head: (@Composable () -> Unit)? = null, content: LazyListScope.() -> Unit) {
     LazyColumn(
         Modifier.fillMaxSize().background(Ink),
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 20.dp),
@@ -601,7 +603,7 @@ private fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, 
 }
 
 /** Loading bar, error with a retry button, and the "saved copy" note. */
-private fun <T> LazyListScope.state(l: Loadable<T>, retry: () -> Unit) {
+internal fun <T> LazyListScope.state(l: Loadable<T>, retry: () -> Unit) {
     if (l.loading) item { LinearProgressIndicator(Modifier.fillMaxWidth(), color = Accent, trackColor = Surface2) }
     l.error?.let { e ->
         item {
@@ -651,6 +653,8 @@ private fun Home(vm: PitlaneViewModel, nav: NavHostController) {
                 }
             }
         }
+        // the Planner, in development: admins with admin mode on, on iRacing
+        if (a.admin && gm == "iracing") item { PlannerCard(vm, nav) }
         state(r) { vm.loadRaces() }
         // the server's count, the same as the PC's and the web's; what the phone has only when the server cannot say
         item { HomeKpis(mst.data ?: if (mst.error != null) localMonthStats(sessions, races) else null, races) }
@@ -700,7 +704,7 @@ private fun agoText(ms: Long): String {
 
 /** A small tag of the kind of session: Race, Qualifying, Practice, Test drive */
 @Composable
-private fun KindTag(kind: String) {
+internal fun KindTag(kind: String) {
     val x = kind.lowercase()
     val (l, c) = when {
         "race" in x -> t("kind_race") to Accent
@@ -1879,7 +1883,7 @@ private fun ChartBody(
 
 /** A small on/off chip, like the web's toggles over the map. */
 @Composable
-private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
+internal fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
     Text(
         label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = if (on) Bg else Muted,
         modifier = Modifier.clip(RoundedCornerShape(999.dp)).background(if (on) Accent else Surface2).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp)
@@ -1887,7 +1891,7 @@ private fun Chip(label: String, on: Boolean, onClick: () -> Unit) {
 }
 
 // the disciplines iRacing splits its licenses into, and the license classes, like on the web
-private val DISCS = listOf("oval", "sports_car", "formula_car", "dirt_oval", "dirt_road")
+internal val DISCS = listOf("oval", "sports_car", "formula_car", "dirt_oval", "dirt_road")
 /** The disciplines' symbols as SVG path data (24 × 24), the same strokes as the web's DISC_IC. */
 private val DISC_PATHS = mapOf(
     "oval" to "M8.5 6h7a6 6 0 0 1 6 6a6 6 0 0 1-6 6h-7a6 6 0 0 1-6-6a6 6 0 0 1 6-6zM9.5 10h5a2 2 0 0 1 2 2a2 2 0 0 1-2 2h-5a2 2 0 0 1-2-2a2 2 0 0 1 2-2zM12 6v4",
@@ -1897,9 +1901,9 @@ private val DISC_PATHS = mapOf(
     "dirt_road" to "M2 15l5-6 3.5 4L14 8.5 22 15M9 21c1.5-2 4.5-2.5 5-5M4 21h.01M18 21h.01M20.5 19h.01",
 )
 /** The kind of a session for the filter: race, qual(ifying), prac(tice) or test (drive). */
-private fun kindOf(k: String): String { val x = k.lowercase(); return if ("race" in x) "race" else if ("qual" in x) "qual" else if ("test" in x) "test" else if ("prac" in x || "warm" in x || "offline" in x) "prac" else "" }
-private val LICS = listOf("R", "D", "C", "B", "A", "P")
-private fun discName(k: String?) = if (k in DISCS) t("disc_$k") else ""
+internal fun kindOf(k: String): String { val x = k.lowercase(); return if ("race" in x) "race" else if ("qual" in x) "qual" else if ("test" in x) "test" else if ("prac" in x || "warm" in x || "offline" in x) "prac" else "" }
+internal val LICS = listOf("R", "D", "C", "B", "A", "P")
+internal fun discName(k: String?) = if (k in DISCS) t("disc_$k") else ""
 /** The category of a session, a leaderboard or a record in its game: iRacing's discipline, or Le Mans Ultimate's
  *  class (Hypercar, LMP2, LMP3, LMGT3, GTE: the server's, else from the car's name). */
 private fun catOf(game: String, cat: String?, cls: String?, car: String): String = if (game == "lmu") lmuClass(cls, car) else cat ?: ""
@@ -1917,12 +1921,12 @@ private fun placeLine(x: CloudSession): String = x.place + if (x.inClass && x.po
 /** A session's category as its name: the discipline, or its Le Mans Ultimate class. */
 private fun sessCat(x: CloudSession): String = catName(x.game, catOf(x.game, x.cat, x.cls, x.car))
 /** Each discipline's colour, the same as the web's Community cards. */
-private fun discColor(k: String) = when (k) { "oval" -> Color(0xFFFFB02E); "sports_car" -> Color(0xFF5AA9FF); "formula_car" -> Color(0xFFB98CFF); "dirt_oval" -> Color(0xFFC99A5B); "dirt_road" -> Color(0xFF8FBF6A); else -> Fg }
-private fun licColor(k: String) = when (k) { "R" -> Color(0xFFFF6363); "D" -> Color(0xFFFF8F45); "C" -> Color(0xFFF2C94C); "B" -> Color(0xFF38C97C); "A" -> Color(0xFF5C9DFF); else -> Color(0xFFC9D1DC) }
+internal fun discColor(k: String) = when (k) { "oval" -> Color(0xFFFFB02E); "sports_car" -> Color(0xFF5AA9FF); "formula_car" -> Color(0xFFB98CFF); "dirt_oval" -> Color(0xFFC99A5B); "dirt_road" -> Color(0xFF8FBF6A); else -> Fg }
+internal fun licColor(k: String) = when (k) { "R" -> Color(0xFFFF6363); "D" -> Color(0xFFFF8F45); "C" -> Color(0xFFF2C94C); "B" -> Color(0xFF38C97C); "A" -> Color(0xFF5C9DFF); else -> Color(0xFFC9D1DC) }
 
 /** The license class as a small coloured square (R, D, C, B, A, Pro). */
 @Composable
-private fun LicBadge(k: String?, sr: String? = null) {
+internal fun LicBadge(k: String?, sr: String? = null) {
     if (k == null || k !in LICS) return
     val c = licColor(k)
     Text((if (k == "P") "Pro" else k) + (sr?.let { " $it" } ?: ""), color = Fg, fontSize = 10.sp, fontWeight = FontWeight.Black,
@@ -2741,7 +2745,7 @@ private class MyTrack(val name: String, val sessions: List<CloudSession>, val ra
 }
 
 /** The same circuit: "Spa-Francorchamps" and "Spa-Francorchamps - Grand Prix" too. */
-private fun sameTrack(a: String, b: String) = a.isNotBlank() && b.isNotBlank() && (a.equals(b, true) || a.startsWith(b, true) || b.startsWith(a, true))
+internal fun sameTrack(a: String, b: String) = a.isNotBlank() && b.isNotBlank() && (a.equals(b, true) || a.startsWith(b, true) || b.startsWith(a, true))
 
 /** Your circuits, the most driven first (the newest of a tie). */
 private fun myTracks(sessions: List<CloudSession>, races: List<Race>): List<MyTrack> {
@@ -4338,7 +4342,7 @@ private fun WebNote(text: String) {
     }
 }
 @Composable
-private fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+internal fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         // the sub-tabs: the chosen one amber, the others quiet blocks
         labels.forEachIndexed { i, l ->
@@ -4352,7 +4356,7 @@ private fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
 }
 
 @Composable
-private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Card(
         modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Surface),
         border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(12.dp)
@@ -4360,19 +4364,19 @@ private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScop
 }
 
 @Composable
-private fun Section(s: String) {
+internal fun Section(s: String) {
     Text(s, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp)
 }
 
 @Composable
-private fun Status(s: String, c: Color) {
+internal fun Status(s: String, c: Color) {
     Surface(color = Color.Transparent, border = BorderStroke(1.dp, c), shape = MaterialTheme.shapes.extraLarge) {
         Text(s, color = c, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
     }
 }
 
 @Composable
-private fun Metric(l: String, v: String, m: Modifier, color: Color = Fg, sub: String? = null) {
+internal fun Metric(l: String, v: String, m: Modifier, color: Color = Fg, sub: String? = null) {
     Panel(m) {
         Text(l.uppercase(), color = Muted, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(v, color = color, fontWeight = FontWeight.Black, fontSize = 18.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
@@ -4381,7 +4385,7 @@ private fun Metric(l: String, v: String, m: Modifier, color: Color = Fg, sub: St
 }
 
 @Composable
-private fun InfoRow(l: String, v: String, color: Color = Fg) {
+internal fun InfoRow(l: String, v: String, color: Color = Fg) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(l, color = Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
         Text(v, color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
@@ -4400,7 +4404,7 @@ private fun Bar(label: String, v: Double?, c: Color) {
 }
 
 @Composable
-private fun Empty(s: String) = Panel { Text(s, color = Muted, fontSize = 13.sp) }
+internal fun Empty(s: String) = Panel { Text(s, color = Muted, fontSize = 13.sp) }
 
 @Composable
 private fun Action(title: String, sub: String, icon: ImageVector, onClick: () -> Unit) {

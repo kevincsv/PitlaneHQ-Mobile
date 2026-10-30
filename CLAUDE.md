@@ -88,3 +88,4 @@ changing first, and update it in the same commit when the behaviour changes.
 | `analysis.md` | Telemetry and Analysis tabs, the shared analysis engine, lap list, maps, brake table, corner tips |
 | `admin-and-support.md` | Admin mode, the admin panel, usage counting, the floating support and feedback button |
 | `races-and-community.md` | DRINKS mode, races vs AI, LMU class leaderboards, wet badges, track notes, profiles |
+| `planner.md` | The Planner (in development): Home card, Weeks, My season, the week sheet and series page |

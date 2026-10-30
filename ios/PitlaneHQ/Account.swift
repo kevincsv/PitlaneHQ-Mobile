@@ -1132,6 +1132,29 @@ final class Account: ObservableObject {
 
     // ---------- community ----------
 
+    /// The Planner's season (iRacing's series and their weeks) with the tracks and cars the account raced.
+    func season() async throws -> Got<SeasonData> {
+        let g = try await cachedGet("/community/season")
+        let owned = try? await cachedGet("/api/sessions-owned").data as? [String: Any]
+        return Got(data: Season.parse(g.data as? [String: Any] ?? [:], owned: owned), stale: g.stale)
+    }
+    /// The Planner's starred series and the races in the plan, on this phone (like the web's pw.fav and pw.plan).
+    @Published var plannerFav: Set<Int64> = Set((UserDefaults.standard.array(forKey: "plannerFav") as? [NSNumber] ?? []).map { $0.int64Value }) {
+        didSet { UserDefaults.standard.set(plannerFav.map { NSNumber(value: $0) }, forKey: "plannerFav") }
+    }
+    @Published var plannerPlan: [PlannedRace] = (UserDefaults.standard.data(forKey: "plannerPlan").flatMap { try? JSONDecoder().decode([PlannedRace].self, from: $0) }) ?? [] {
+        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(plannerPlan), forKey: "plannerPlan") }
+    }
+    func toggleStar(_ sid: Int64) { if plannerFav.contains(sid) { plannerFav.remove(sid) } else { plannerFav.insert(sid) } }
+    func inPlan(_ sid: Int64, _ t: Double) -> Bool { plannerPlan.contains { $0.sid == sid && $0.t == t } }
+    func togglePlan(_ s: SSeries, _ t: Double) {
+        let now = Date().timeIntervalSince1970 * 1000
+        var p = plannerPlan.filter { $0.t > now - 3 * 3_600_000 }
+        if p.contains(where: { $0.sid == s.sid && $0.t == t }) { p.removeAll { $0.sid == s.sid && $0.t == t } }
+        else { p.append(PlannedRace(sid: s.sid, t: t, name: s.name, track: Season.weekAt(s, t).track)) }
+        plannerPlan = p.sorted { $0.t < $1.t }
+    }
+
     func combos(game gm: String? = nil) async throws -> Got<[Combo]> {
         if demo { return Got(data: Demo.combos()) }
         let g = try await cachedGet("/community/combos?game=\(gm ?? game)")

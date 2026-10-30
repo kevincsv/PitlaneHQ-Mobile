@@ -4,6 +4,10 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.8.1 beta
+
+- Fixes and improvements.
+
 ## 0.8.0 beta
 
 - A new layout with a Tracks tab. Every circuit you drove opens its own page with your laps, sessions, races, the leaderboard and your notes.

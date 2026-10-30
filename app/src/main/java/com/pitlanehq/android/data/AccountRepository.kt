@@ -964,6 +964,20 @@ class AccountRepository(context: Context) {
         val pts = (0 until a.length()).mapNotNull { a.optJSONArray(it)?.let { q -> q.optInt(0) to q.optDouble(1) } }
         return if (pts.size >= 10 && j.optInt("n") > 0) com.pitlanehq.android.viewmodel.PitLane(j.optInt("n"), pts) else null
     }
+    /** The season for the Planner (in development) and the tracks and cars the account raced (its owned marks). */
+    fun season(): Got<SeasonData> {
+        val g = cachedGet("/community/season")
+        val owned = runCatching { cachedGet("/api/sessions-owned").data }.getOrNull()
+        return Got(Season.parse(g.data, owned), g.stale)
+    }
+    /** The Planner's stars (series ids) and plan, kept on this phone like the web keeps them in its browser. */
+    var plannerFav: Set<Long>
+        get() = runCatching { JSONArray(app.getString("plannerFav", "[]")).let { a -> (0 until a.length()).map { a.getLong(it) }.toSet() } }.getOrDefault(emptySet())
+        set(v) = app.edit().putString("plannerFav", JSONArray(v.toList()).toString()).apply()
+    var plannerPlan: List<PlannedRace>
+        get() = runCatching { JSONArray(app.getString("plannerPlan", "[]")).let { a -> (0 until a.length()).map { val o = a.getJSONObject(it); PlannedRace(o.getLong("sid"), o.getLong("t"), o.optString("name"), o.optString("track")) } } }.getOrDefault(emptyList())
+        set(v) = app.edit().putString("plannerPlan", JSONArray(v.map { JSONObject().put("sid", it.sid).put("t", it.t).put("name", it.name).put("track", it.track) }).toString()).apply()
+
     fun combos(gm: String = game): Got<List<Combo>> {
         if (demo) return Got(Demo.combos())
         val g = cachedGet("/community/combos?game=$gm")
