@@ -1113,7 +1113,7 @@ class AccountRepository(context: Context) {
     fun publishProfileRaces() {
         if (demo) return
         val a = saved("races")?.let { JSONArray(it) } ?: return
-        val cats = mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "sportscar" to "sports_car")
+        val cats = mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "formula" to "formula_car", "sportscar" to "sports_car")
         val out = JSONArray()
         (0 until a.length()).mapNotNull { a.optJSONObject(it) }.filter { it.optInt("finish") > 0 && it.optLong("when") > 0 && !it.optBoolean("partial") && (it.optJSONArray("drinks")?.length() ?: 0) == 0 && !isAIRace(it) }
             .sortedByDescending { it.optLong("when") }.take(20).forEach { r ->

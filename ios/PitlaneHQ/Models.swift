@@ -456,7 +456,7 @@ struct Race: Identifiable, Hashable {
 /// for sports and formula cars alike, so the car name tells which.
 func raceDisc(_ cat: String?, _ car: String) -> String {
     let c = (cat ?? "").lowercased().replacingOccurrences(of: "[ _-]", with: "", options: .regularExpression)
-    let known = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "sportscar": "sports_car"]
+    let known = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "formula": "formula_car", "sportscar": "sports_car"]
     if let k = known[c] { return k }
     if !c.isEmpty && c != "road" { return c }
     if car.isEmpty { return "" }

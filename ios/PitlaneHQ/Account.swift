@@ -1458,7 +1458,7 @@ final class Account: ObservableObject {
     /// Your profile's recent races: a summary of your own result in each (the race history itself stays encrypted).
     func publishProfileRaces() async {
         guard !demo, signedIn, let d = saved("races"), let a = try? JSONSerialization.jsonObject(with: d) as? [[String: Any]] else { return }
-        let cats = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "sportscar": "sports_car"]
+        let cats = ["oval": "oval", "dirtoval": "dirt_oval", "dirtroad": "dirt_road", "formulacar": "formula_car", "formula": "formula_car", "sportscar": "sports_car"]
         let list: [[String: Any]] = a.filter { int($0["finish"]) > 0 && (num($0["when"]) ?? 0) > 0 && !($0["partial"] as? Bool ?? false) && ($0["drinks"] as? [Any] ?? []).isEmpty && !isAIRace($0) }
             .sorted { (num($0["when"]) ?? 0) > (num($1["when"]) ?? 0) }.prefix(20).map { r -> [String: Any] in
                 let me = (r["results"] as? [[String: Any]] ?? []).first { $0["me"] as? Bool ?? false }

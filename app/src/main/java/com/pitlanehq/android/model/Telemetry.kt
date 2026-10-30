@@ -263,7 +263,7 @@ data class Race(
  *  for sports and formula cars alike, so the car name tells which. */
 fun raceDisc(cat: String?, car: String): String {
     val c = (cat ?: "").lowercase().replace(Regex("[ _-]"), "")
-    mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "sportscar" to "sports_car")[c]?.let { return it }
+    mapOf("oval" to "oval", "dirtoval" to "dirt_oval", "dirtroad" to "dirt_road", "formulacar" to "formula_car", "formula" to "formula_car", "sportscar" to "sports_car")[c]?.let { return it }
     if (c.isNotEmpty() && c != "road") return c
     if (car.isEmpty()) return ""
     if (Regex("p217|lmp|\\bgtp\\b|\\bdpi?\\b|prototype|hypercar", RegexOption.IGNORE_CASE).containsMatchIn(car)) return "sports_car"
