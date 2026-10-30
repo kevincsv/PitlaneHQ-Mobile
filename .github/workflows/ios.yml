@@ -7,13 +7,7 @@ on:
         description: Publish the GitHub release v<version> with the files
         type: boolean
         default: false
-  push:
-    branches: ["master"]
-    tags: ["v*"]
-    paths: ["ios/**", ".github/workflows/ios.yml", "version.txt", "CHANGELOG.md"]
-  pull_request:
-    branches: ["master"]
-    paths: ["ios/**", ".github/workflows/ios.yml", "version.txt", "CHANGELOG.md"]
+  # by hand only: pushes, tags and pull requests never build
 
 permissions:
   contents: write

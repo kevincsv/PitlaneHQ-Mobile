@@ -15,8 +15,10 @@ changing first, and update it in the same commit when the behaviour changes.
 - Changes are released in big batches, never one by one. Every change is committed and pushed to the working branch
   only (never master), tested together, and goes to master in one push when the owner asks for the batch. A fix that
   cannot wait (the app broken for people) is the one exception, and only when the owner says so.
-- `master` is the main branch the builds come from. Running both workflows by hand with `release` ticked
-  (or a `v…` tag) builds both apps and attaches the APK, AAB and IPA to the GitHub release (notes in
+- `master` is the main branch the builds come from. Pushing (branches, tags or PRs) never builds: `android.yml` and
+  `ios.yml` run only when started by hand (Actions → Run workflow, or `gh workflow run <file> --ref master`), and
+  never unless the owner says "build"/"compila"; "sube"/"push" means push only. Running both with `release` ticked
+  builds both apps and attaches the APK, AAB and IPA to the GitHub release (notes in
   `.github/release-notes.md`).
 - The notices the apps show in their inbox come from the server (`web/dist/app-news.json` in Pitwall-test): never add
   or change one without asking the owner first, even when they say "sube todo".
