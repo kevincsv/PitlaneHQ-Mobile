@@ -4075,7 +4075,7 @@ private fun Licences(vm: PitlaneViewModel) {
 private fun LicDetail(k: String, r: Triple<Int, String, Long>?, races: List<Race>) {
     val col = discColor(k)
     val line = irRaces(races, k, 20)
-    val vals = if (line.isEmpty()) emptyList() else irVals(line, r?.first)
+    val vals = if (line.isEmpty()) emptyList<Int>() else irVals(line, r?.first)
     val chg = line.sumOf { it.irChange }
     var pick by remember(k, line.size) { mutableStateOf<Int?>(null) }
     val lic = r?.second?.trim()?.uppercase() ?: ""
@@ -4653,7 +4653,7 @@ private fun LiveMap(vm: PitlaneViewModel, s: LiveState) {
             drawContext.canvas.save(); drawContext.canvas.translate(1.5f * dpx, 2.5f * dpx)
             drawPath(track, Color.Black.copy(alpha = .38f), style = Stroke(width = w + 2 * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
             drawContext.canvas.restore()
-            drawPath(track, edge ?: Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(track, Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
             drawPath(track, Color(0xFF151A21), style = Stroke(width = w - 3.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
             // the start/finish line across the road and the way the cars go beside it
             val p0 = pt(0); val p1 = pt(maxOf(2, n / 60))
