@@ -447,6 +447,8 @@ final class Account: ObservableObject {
         }
         // every call says which app and version it is ("ios/0.6.0"), for the admin page's Online tab
         r.setValue(pitlaneClient, forHTTPHeaderField: "X-Pitlane-Client")
+        // admin mode on: the race rivals show by their name (the server checks the account is an admin's)
+        if admin { r.setValue("1", forHTTPHeaderField: "X-Pitlane-Admin") }
         let pair: (Data, URLResponse)
         do {
             pair = try await URLSession.shared.data(for: r)

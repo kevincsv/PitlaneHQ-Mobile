@@ -80,9 +80,14 @@ data class Habit(val kind: String, val tracks: Int, val sessions: Int)
 val CLIENT = "android/" + com.pitlanehq.android.BuildConfig.VERSION_NAME.removeSuffix("-beta")
 
 class AccountRepository(context: Context) {
-    // every call says which app and version it is ("android/0.6.0"), for the admin page's Online tab
+    // every call says which app and version it is ("android/0.6.0"), for the admin page's Online tab; with admin mode on
+    // the race rivals show by their name (the server checks the account is an admin's)
     private val client = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).callTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().header("X-Pitlane-Client", CLIENT).build()) }.build()
+        .addInterceptor { chain ->
+            val b = chain.request().newBuilder().header("X-Pitlane-Client", CLIENT)
+            if (prefs.getBoolean("admin", false) && adminMode) b.header("X-Pitlane-Admin", "1")
+            chain.proceed(b.build())
+        }.build()
     private val prefs = context.getSharedPreferences("pitlane-account", Context.MODE_PRIVATE)
     private val app = context.getSharedPreferences("pitlane-app", Context.MODE_PRIVATE)
     private val usage = context.getSharedPreferences("pitlane-usage", Context.MODE_PRIVATE)
