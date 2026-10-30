@@ -20,8 +20,8 @@ func plHm(_ t: Double) -> String { let d = DateFormatter(); d.locale = locale();
 private func plDay(_ t: Double) -> String { fmt(t, "dMMM") }
 private func plWeekday(_ t: Double) -> String { fmt(t, "EEE") }
 private func plLongDay(_ t: Double) -> String { fmt(t, "EEEEdMMM") }
-func plUntil(_ t: Double, _ now: Double = plNow()) -> String {
-    let m = Int(((t - now) / 60_000).rounded())
+func plUntil(_ at: Double, _ now: Double = plNow()) -> String {
+    let m = Int(((at - now) / 60_000).rounded())
     if m < 1 { return t("pl_now") }
     if m < 60 { return t("pl_in_min", m) }
     let h = m / 60
@@ -129,10 +129,10 @@ private struct StarButton: View {
 /// + / ✓: puts a race in the plan or takes it out.
 private struct AddRound: View {
     @EnvironmentObject var account: Account
-    let s: SSeries, t: Double
+    let s: SSeries, at: Double
     var body: some View {
-        let on = account.inPlan(s.sid, t)
-        Button { account.togglePlan(s, t) } label: {
+        let on = account.inPlan(s.sid, at)
+        Button { account.togglePlan(s, at) } label: {
             Text(on ? "✓" : "+").font(.system(size: 16, weight: .black)).foregroundColor(on ? Theme.ink : Theme.fg).frame(width: 32, height: 32)
                 .background(on ? Theme.accent : Theme.surface2).overlay(Circle().stroke(on ? Theme.accent : btnEdge, lineWidth: 1)).clipShape(Circle())
         }.buttonStyle(.plain)
@@ -140,10 +140,10 @@ private struct AddRound: View {
 }
 private struct AddButton: View {
     @EnvironmentObject var account: Account
-    let s: SSeries, t: Double
+    let s: SSeries, at: Double
     var body: some View {
-        let on = account.inPlan(s.sid, t)
-        Button { account.togglePlan(s, t) } label: {
+        let on = account.inPlan(s.sid, at)
+        Button { account.togglePlan(s, at) } label: {
             Text(on ? "✓ " + t("pl_in_plan") : "+ " + t("pl_plan")).font(.system(size: 12, weight: .bold)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.fg)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(on ? Theme.accent : Theme.surface2)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(on ? Theme.accent : btnEdge, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 10))
@@ -152,10 +152,10 @@ private struct AddButton: View {
 }
 private struct TimeChip: View {
     @EnvironmentObject var account: Account
-    let s: SSeries, t: Double, label: String
+    let s: SSeries, at: Double, label: String
     var body: some View {
-        let on = account.inPlan(s.sid, t)
-        Button { account.togglePlan(s, t) } label: {
+        let on = account.inPlan(s.sid, at)
+        Button { account.togglePlan(s, at) } label: {
             Text(label).font(.system(size: 12, weight: .bold, design: .monospaced)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.fg)
                 .padding(.horizontal, 9).padding(.vertical, 6).background(on ? Theme.accent : Theme.surface2)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? Theme.accent : Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 8))
@@ -351,7 +351,7 @@ struct PlannerView: View {
                     Spacer()
                     if let n = Season.nextRace(s, now) {
                         Text(plHm(n.0)).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(Theme.accent)
-                        AddRound(s: s, t: n.0)
+                        AddRound(s: s, at: n.0)
                     }
                 }
             }
@@ -413,7 +413,7 @@ private struct WeekSheet: View {
                         else {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 6) {
-                                    ForEach(ts, id: \.self) { tm in TimeChip(s: s, t: tm, label: (w.start > now + Season.DAY ? plWeekday(tm) + " " : "") + plHm(tm)) }
+                                    ForEach(ts, id: \.self) { tm in TimeChip(s: s, at: tm, label: (w.start > now + Season.DAY ? plWeekday(tm) + " " : "") + plHm(tm)) }
                                 }
                             }
                         }
@@ -482,7 +482,7 @@ struct PlannerSeriesView: View {
                         Text(plHm(tm)).font(.system(.body, design: .monospaced).bold()).foregroundColor(Theme.fg).frame(width: 64, alignment: .leading)
                         Text(plUntil(tm, now)).font(.caption).foregroundColor(Theme.muted)
                         Spacer()
-                        AddButton(s: s, t: tm)
+                        AddButton(s: s, at: tm)
                     }.padding(.vertical, 2)
                 }
             }
