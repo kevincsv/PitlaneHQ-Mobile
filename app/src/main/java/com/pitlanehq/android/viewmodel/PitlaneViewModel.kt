@@ -627,6 +627,16 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     val trackPage = MutableStateFlow(Loadable<TrackPage>())
     var trackRef: Pair<Long, String>? = null
     fun openTrack(id: Long, name: String) { trackRef = id to name; trackPage.value = Loadable(); load(trackPage) { repo.trackPage(id) } }
+    /** The Tracks tab's main card: the layout of the circuit you drove most (null while it loads or when it has none). */
+    val heroLayout = MutableStateFlow<Pair<Long, Pair<List<Double>, List<Double>>?>?>(null)
+    private var heroGame = ""
+    fun loadHeroLayout(trackId: Long) {
+        val g = game
+        if (trackId <= 0 || (heroLayout.value?.first == trackId && heroGame == g)) return
+        heroGame = g
+        heroLayout.value = trackId to null
+        viewModelScope.launch { heroLayout.value = trackId to withContext(Dispatchers.IO) { runCatching { repo.trackLayout(trackId, g) }.getOrNull() } }
+    }
     fun loadReports() = load(reports) { repo.reports() }
     fun loadSetups() = load(setups) { repo.setups() }
     fun loadDevices() = load(devices) { Got(repo.devices()) }

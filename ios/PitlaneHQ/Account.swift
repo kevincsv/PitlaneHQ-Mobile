@@ -1164,7 +1164,7 @@ final class Account: ObservableObject {
     /// One track: its layout and official turns, how many drivers and laps it has, and the record of every car on it.
     func trackPage(trackId: Int64) async throws -> Got<TrackPage> {
         let gm = game
-        if demo { return Got(data: TrackPage(trackId: trackId, track: "", drivers: 0, laps: 0, layout: nil, turns: [], cars: [], game: gm)) }
+        if demo || trackId <= 0 { return Got(data: TrackPage(trackId: trackId, track: "", drivers: 0, laps: 0, layout: nil, turns: [], cars: [], game: gm)) }
         let g = try await cachedGet("/community/track?game=\(gm)&trackId=\(trackId)")
         let j = g.data as? [String: Any] ?? [:]
         var lay: ([Double], [Double])? = nil

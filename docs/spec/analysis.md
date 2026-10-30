@@ -2,6 +2,23 @@
 
 How this part of the phone apps behaves. Read it before changing this area; keep it up to date when the behaviour changes. The PC and web behaviour it mirrors is in Pitwall-test's `docs/spec/`.
 
+- The layout is "Track First" (the owner's choice of the ten redesigns). The tab bar is Home, Tracks, Live, Community
+  and Me (`BottomBar` on Android, `MainView.bar` on iOS). Analysis is no longer a tab: it opens over a track's hub (a
+  session there opens Laps, "Coach for <track>" opens the Coach on your newest session there) and over Home ("Analyse
+  my laps", "See all"), with Back (`Route.analysis(tab, session)` on iOS, the "analysis" route on Android).
+- Tracks (`Tracks` / `TracksView`): every circuit you drove, from your sessions and races of the chosen game, grouped
+  by name (`myTracks`, `sameTrack`: "Spa-Francorchamps" and "Spa-Francorchamps - Grand Prix" are one). The most driven
+  (the newest of a tie) is a large card with its map (the community's layout, its id found by name among the
+  leaderboards, `trackIdOf`), the others are tiles with their initials. Each shows your sessions, laps and best lap
+  there. A search box finds a track by name.
+- A track's hub (`TrackPageScreen` / `TrackPageView`, also what every "Track page" link opens) has the sub-tabs You
+  here (the map with its turns, your best against the record, Sessions here, Races here, "Coach for <track>"),
+  Leaderboard (the record of every car there) and Notes (your track notes). The track's layout name is under the title.
+- The phone's analysis is a short version: Tracks, a track's hub, Analysis, a session's laps and the lap comparison
+  start with one grey line with the PC's symbol, "A short version. The full lap analyser is on the web and in the
+  Windows app." (`an_short`); Telemetry (all its tabs) says the same of the telemetry (`live_short`). `ShortNote` on
+  both.
+
 - Android and iOS stay the same app: same screens, same features, same wording, and the PC's: Telemetry has the PC's
   Telemetry, Standings and Tyres (`Live` in PitlaneApp.kt, `LiveTabs.swift`, fed by `LiveField`); Analysis has Laps,
   Coach, My sessions and My races (`Analysis` in PitlaneApp.kt, `AnalysisView` and `Analysis.swift`), lap B is your own

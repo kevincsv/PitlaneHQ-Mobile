@@ -110,6 +110,8 @@ struct MetricGrid: View {
 /// discipline of the session you are in, so each updates when you drive it with Pitlane HQ open).
 struct Licences: View {
     @EnvironmentObject var account: Account
+    // a licence you press opens its iRating line under the list; Sports Car is open to start
+    @State private var sel = "sports_car"
     var body: some View {
         let all = account.ratings()
         let races = account.races
@@ -118,12 +120,55 @@ struct Licences: View {
             SectionLabel(text: t("licences"))
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 8) {
-                    ForEach(row, id: \.self) { k in LicCard(k: k, r: all[k], races: races) }
+                    ForEach(row, id: \.self) { k in
+                        Button { sel = k } label: { LicCard(k: k, r: all[k], races: races, on: sel == k) }.buttonStyle(.plain)
+                    }
                     if row.count < 2 { Color.clear.frame(maxWidth: .infinity) }
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
+            LicDetail(k: sel, r: all[sel], races: races).id(sel)
             Text(t("lic_note")).font(.caption2).foregroundColor(Theme.muted)
+        }
+    }
+}
+
+/// The licence you chose: its iRating and class, what its last races gave and their iRating line, which the finger reads.
+struct LicDetail: View {
+    let k: String
+    let r: (ir: Int, lic: String, at: Double)?
+    let races: [Race]
+    @State private var pick: Int?
+    var body: some View {
+        let col = discColor(k)
+        let line = irRaces(races, k, 20)
+        let chg = line.reduce(0) { $0 + $1.irChange }
+        let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
+        let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
+        let parts = lic.split(separator: " ")
+        let sr: String? = parts.count > 1 ? String(parts[1]) : nil
+        let x: Race? = pick.flatMap { $0 < line.count ? line[$0] : nil }
+        Panel {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(discName(k)).font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted)
+                    Text(r.map { "\($0.ir)" } ?? "–").font(.system(size: 26, weight: .black, design: .monospaced)).foregroundColor(r == nil ? Theme.muted : col)
+                    if r != nil, let cls { LicBadge(k: cls, sr: sr) }
+                    if line.isEmpty {
+                        Text(t("no_races_yet").trimmingCharacters(in: CharacterSet(charactersIn: "."))).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted)
+                    } else {
+                        Text(t("lic_gain", signed(chg), line.count)).font(.system(size: 11, design: .monospaced)).foregroundColor(chg >= 0 ? Theme.good : Theme.bad)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    if line.count >= 2 {
+                        Text(x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)).font(.system(size: 10)).lineLimit(1)
+                            .foregroundColor(x.map { $0.irChange >= 0 ? Theme.good : Theme.bad } ?? Theme.muted)
+                        IrLine(vals: irVals(line, r?.ir), col: col, height: 60, sel: $pick, area: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
     }
 }
@@ -162,7 +207,7 @@ struct LicCard: View {
     let k: String
     let r: (ir: Int, lic: String, at: Double)?
     let races: [Race]
-    @State var sel: Int?
+    var on = false
     var body: some View {
         let col = discColor(k)
         let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.noIr && $0.ir != 1 }.prefix(5) // races against the AI give no iRating
@@ -171,12 +216,10 @@ struct LicCard: View {
         let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
         let parts = lic.split(separator: " ")
         let sr: String? = parts.count > 1 ? String(parts[1]) : nil
-        let line = irRaces(races, k, 10)
-        VStack(alignment: .leading, spacing: 4) {
         HStack(spacing: 10) {
             DiscIcon(k: k)
             VStack(alignment: .leading, spacing: 3) {
-                Text(discName(k)).font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted)
+                Text(discName(k)).font(.system(size: 12, weight: .semibold)).foregroundColor(on ? Theme.accent : Theme.muted)
                 HStack(alignment: .lastTextBaseline, spacing: 6) {
                     Text(r.map { "\($0.ir)" } ?? "–").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(r == nil ? Theme.muted : col)
                     if r != nil, !last.isEmpty, chg != 0 {
@@ -187,25 +230,13 @@ struct LicCard: View {
             }
             Spacer(minLength: 0)
         }
-        // the iRating after each of its last races: the finger reads the race under it
-        if line.count >= 2 { spark(line, col) }
-        }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(col.opacity(0.4), lineWidth: 1))
+        .background(on ? Theme.surface2 : Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? Theme.accent : col.opacity(0.4), lineWidth: on ? 1.5 : 1))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .opacity(r == nil ? 0.55 : 1)
-    }
-}
-
-extension LicCard {
-    @ViewBuilder func spark(_ line: [Race], _ col: Color) -> some View {
-        let x: Race? = sel.flatMap { $0 < line.count ? line[$0] : nil }
-        let label: String = x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)
-        let tint: Color = x.map { $0.irChange >= 0 ? Theme.good : Theme.bad } ?? Theme.muted
-        Text(label).font(.system(size: 10)).lineLimit(1).foregroundColor(tint)
-        IrLine(vals: irVals(line, r?.ir), col: col, height: 30, sel: $sel)
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .opacity(r == nil && !on ? 0.55 : 1)
     }
 }
 
@@ -417,6 +448,17 @@ struct WebNote: View {
     }
 }
 
+/// The phone's short versions say where the full one is: a small grey line with the PC's symbol.
+struct ShortNote: View {
+    let key: String
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "desktopcomputer").font(.system(size: 13)).foregroundColor(Theme.muted.opacity(0.7))
+            Text(t(key)).font(.system(size: 12)).foregroundColor(Theme.muted).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 struct EmptyNote: View {
     let text: String
     var body: some View { Panel { Text(text).font(.subheadline).foregroundColor(Theme.muted) } }
@@ -622,6 +664,8 @@ enum Route: Hashable {
     case lap(CloudSession, CloudLap, [CloudLap])
     case combo(Combo)
     case track(TrackRef)
+    /// Analysis on one of its tabs (Laps, Coach, My sessions, My races), on a session or on your newest
+    case analysis(Int, CloudSession?)
     case profile(String?)
     case notes
 }
@@ -636,6 +680,7 @@ extension View {
             case let .lap(s, l, all): LapView(session: s, lap: l, all: all).onAppear { Usage.count("act:compare") }
             case let .combo(c): ComboView(combo: c).onAppear { Usage.count("act:leaderboard") }
             case let .track(r): TrackPageView(ref: r).onAppear { Usage.count("act:track_page") }
+            case let .analysis(tb, s): AnalysisView(startTab: tb, start: s)
             case let .profile(id): ProfileView(lapId: id).onAppear { Usage.count("view:profile") }
             case .notes: TrackNotesList().onAppear { Usage.count("view:notes") }
             }
@@ -1046,7 +1091,7 @@ struct MainView: View {
         VStack(spacing: 0) {
         TabView(selection: $tab) {
             NavigationStack { HomeView().routes() }.tag(0).toolbar(.hidden, for: .tabBar)
-            NavigationStack { AnalysisView().routes() }.tag(1).toolbar(.hidden, for: .tabBar)
+            NavigationStack { TracksView().routes() }.tag(1).toolbar(.hidden, for: .tabBar)
             NavigationStack { LiveView() }.tag(3).toolbar(.hidden, for: .tabBar)
             NavigationStack { CommunityView().routes() }.tag(2).toolbar(.hidden, for: .tabBar)
             NavigationStack { SettingsView() }.tag(4).toolbar(.hidden, for: .tabBar)
@@ -1124,6 +1169,7 @@ struct MainView: View {
     private func countTab(_ i: Int) {
         switch i {
         case 0: Usage.count("view:home")
+        case 1: Usage.count("view:tracks")
         case 3: Usage.count("view:live")
         case 4: Usage.count("view:me")
         default: break
@@ -1134,10 +1180,10 @@ struct MainView: View {
     private var bar: some View {
         HStack(spacing: 0) {
             item(0, t("home"), "house")
-            item(1, t("analysis"), "chart.xyaxis.line")
-            item(3, t("live"), "antenna.radiowaves.left.and.right")
+            item(1, t("tab_tracks"), "map")
+            item(3, t("tab_live"), "antenna.radiowaves.left.and.right")
             item(2, t("community"), "person.3")
-            item(4, t("account_tab"), "person")
+            item(4, t("tab_me"), "person")
         }
         .padding(6)
         .background(Theme.navBar)
@@ -1823,9 +1869,9 @@ struct HomeView: View {
             // the server's count, the same as the PC's and the web's; what the phone has only when the server cannot say
             HomeKpis(stats: stats ?? (statsFailed ? localMonthStats(sessions: sessions, races: races) : nil), races: races)
             if let x = races.first {
-                HomeLastRace(race: x, onLaps: { inbox.analysisTab = 0; inbox.goTab = 1 })
+                HomeLastRace(race: x)
             }
-            HomeRecent(races: Array(races.dropFirst()), sessions: sessions) { inbox.analysisTab = 2; inbox.goTab = 1 }
+            HomeRecent(races: Array(races.dropFirst()), sessions: sessions)
             if races.isEmpty && sessions.isEmpty { EmptyNote(text: t("no_races")) }
             // Le Mans Ultimate has no iRating nor licences: its Safety Rating and Driver Rank in their place
             if account.game == "iracing" { Licences() } else if account.game == "lmu" { LmuRatings() }
@@ -1892,7 +1938,6 @@ struct HomeKpis: View {
 /// Your last race: the place against the start, the position lap by lap, the iRating, incidents and best lap
 struct HomeLastRace: View {
     let race: Race
-    let onLaps: () -> Void
     var body: some View {
         let x = race
         let gain = x.start > 0 && x.finish > 0 && !x.dnf ? x.start - x.finish : 0
@@ -1943,7 +1988,7 @@ struct HomeLastRace: View {
             .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 16) {
                 NavigationLink(value: Route.race(x)) { Text(t("hm_race_summary")).font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent) }
-                Button(action: onLaps) { Text(t("hm_analyse_laps")).font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent) }
+                NavigationLink(value: Route.analysis(0, nil)) { Text(t("hm_analyse_laps")).font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent) }
             }
             .padding(.top, 4)
         }
@@ -1963,7 +2008,6 @@ struct HomeLastRace: View {
 struct HomeRecent: View {
     let races: [Race]
     let sessions: [CloudSession]
-    let onAll: () -> Void
     private enum Item { case race(Race), ses(CloudSession) }
     var body: some View {
         let items: [(Double, Item)] = (races.map { ($0.when, Item.race($0)) } + sessions.filter { !$0.kind.lowercased().contains("race") }.map { ($0.started, Item.ses($0)) })
@@ -1973,53 +2017,53 @@ struct HomeRecent: View {
                 HStack {
                     SectionLabel(text: t("hm_recent"))
                     Spacer()
-                    Button(t("see_all"), action: onAll).font(.caption).foregroundColor(Theme.accent)
+                    NavigationLink(value: Route.analysis(2, nil)) { Text(t("see_all")).font(.caption).foregroundColor(Theme.accent) }
                 }
                 ForEach(Array(items.enumerated()), id: \.offset) { k, e in
                     if k > 0 { Divider().background(Theme.line) }
                     switch e.1 {
                     case .race(let r):
-                        let ir: Int? = r.noIr || r.irChange == 0 ? nil : r.irChange
                         NavigationLink(value: Route.race(r)) {
-                            row(r.dnf ? t("dnf") : "P\(r.finish)", r.dnf ? Theme.bad : Theme.fg, r.track, "race", raceDisc(r.cat, r.car), r.car + " · " + agoText(r.when), ir, r.laps.count, r.best) {
+                            homeRow(r.dnf ? t("dnf") : "P\(r.finish)", r.dnf ? Theme.bad : Theme.fg, r.track, "race", raceDisc(r.cat, r.car), r.car + " · " + agoText(r.when), r.laps.count, r.best) {
                                 HStack(spacing: 6) { DrinksBadge(race: r); AiBadge(race: r) }
                             }
                         }.buttonStyle(.plain)
                     case .ses(let x):
                         NavigationLink(value: Route.session(x)) {
-                            row(x.place, x.pos != nil ? Theme.fg : Theme.muted, fixText(x.track), x.kind, x.cat ?? "", fixText(x.car) + " · " + agoText(x.started), nil, x.laps, x.best, x.inClass && x.pos != nil ? t("in_class") : "") { SessionBadges(x: x) }
+                            homeRow(x.place, x.pos != nil ? Theme.fg : Theme.muted, fixText(x.track), x.kind, x.cat ?? "", fixText(x.car) + " · " + agoText(x.started), x.laps, x.best, x.inClass && x.pos != nil ? t("in_class") : "") { SessionBadges(x: x) }
                         }.buttonStyle(.plain)
                     }
                 }
             }
         }
     }
+}
 
-    private func row<B: View>(_ place: String, _ pc: Color, _ track: String, _ kind: String, _ disc: String, _ sub: String, _ ir: Int?, _ laps: Int, _ best: Double?, _ placeSub: String = "", @ViewBuilder _ badges: () -> B) -> some View {
-        HStack(spacing: 8) {
-            // the place ("P3", a session's "P3/20"), with "class" under it when it counts within your class
-            VStack(alignment: .leading, spacing: 0) {
-                Text(place).font(.system(size: place.count > 4 ? 12 : 14, weight: .black, design: .monospaced)).foregroundColor(pc).lineLimit(1).minimumScaleFactor(0.7)
-                if !placeSub.isEmpty { Text(placeSub).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1) }
-            }
-            .frame(width: 54, alignment: .leading)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) { Text(track).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: kind) }
-                badges()
-                HStack(spacing: 4) {
-                    Circle().fill(disc.isEmpty ? Theme.muted : discColor(disc)).frame(width: 6, height: 6)
-                    Text(sub).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
-                    if let ir { Text("· \(signed(ir)) iR").font(.system(size: 11, weight: .bold)).foregroundColor(ir > 0 ? Theme.good : Theme.bad) }
-                }
-            }
-            Spacer(minLength: 4)
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(t("laps_n", laps)).font(.system(size: 11)).foregroundColor(Theme.muted)
-                Text(lapTime(best)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.muted)
+/// One row of the recent sessions (and of a track's sessions and races): the place, the track or car with the kind of
+/// session, the car's discipline and when, the laps and the fastest lap.
+func homeRow<B: View>(_ place: String, _ pc: Color, _ track: String, _ kind: String, _ disc: String, _ sub: String, _ laps: Int, _ best: Double?, _ placeSub: String = "", @ViewBuilder _ badges: () -> B) -> some View {
+    HStack(spacing: 8) {
+        // the place ("P3", a session's "P3/20"), with "class" under it when it counts within your class
+        VStack(alignment: .leading, spacing: 0) {
+            Text(place).font(.system(size: place.count > 4 ? 12 : 14, weight: .black, design: .monospaced)).foregroundColor(pc).lineLimit(1).minimumScaleFactor(0.7)
+            if !placeSub.isEmpty { Text(placeSub).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1) }
+        }
+        .frame(width: 54, alignment: .leading)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) { Text(track).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: kind) }
+            badges()
+            HStack(spacing: 4) {
+                Circle().fill(disc.isEmpty ? Theme.muted : discColor(disc)).frame(width: 6, height: 6)
+                Text(sub).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
             }
         }
-        .padding(.vertical, 8).contentShape(Rectangle())
+        Spacer(minLength: 4)
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(t("laps_n", laps)).font(.system(size: 11)).foregroundColor(Theme.muted)
+            Text(lapTime(best)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.fg)
+        }
     }
+    .padding(.vertical, 8).contentShape(Rectangle())
 }
 
 /// The days you drove, like the web and the PC: the last 26 weeks in squares, brighter the more races and sessions that day.
@@ -2106,11 +2150,11 @@ struct RaceView: View {
             MetricGrid(items: ([
                 MetricData(label: t("start"), value: "P\(x.start)"),
                 MetricData(label: t("finish"), value: x.dnf ? t("dnf") : "P\(x.finish)", color: x.finish == 1 ? Theme.purple : Theme.fg),
-                // a race against the AI has no iRating; Le Mans Ultimate none at all (nor a strength of field), its contacts instead
-                x.contacts ? nil : x.ai ? MetricData(label: "iRating", value: "—", color: Theme.muted, sub: t("vs_ai")) : MetricData(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil),
+                // a race against the AI has no iRating; Le Mans Ultimate none at all (nor a strength of field): the drivers and the best lap instead
+                x.contacts ? MetricData(label: t("rs_drivers"), value: "\(x.field)") : x.ai ? MetricData(label: "iRating", value: "—", color: Theme.muted, sub: t("vs_ai")) : MetricData(label: "iRating", value: signed(x.irChange), color: x.irChange > 0 ? Theme.good : x.irChange < 0 ? Theme.bad : Theme.fg, sub: x.ir > 0 ? "\(x.ir) → \(x.ir + x.irChange)" : nil),
                 MetricData(label: x.incLabel, value: x.incText, color: x.inc >= 8 ? Theme.bad : Theme.fg),
                 MetricData(label: t("pos_gain"), value: signed(x.start - x.finish), color: x.start > x.finish ? Theme.good : x.start < x.finish ? Theme.bad : Theme.fg),
-                x.contacts ? nil : MetricData(label: t("sof"), value: x.sof > 0 ? "\(x.sof)" : "—"),
+                x.contacts ? MetricData(label: t("best_lap"), value: lapTime(x.best), color: Theme.purple) : MetricData(label: t("sof"), value: x.sof > 0 ? "\(x.sof)" : "—"),
             ] as [MetricData?]).compactMap { $0 }, columns: 3)
             Panel {
                 InfoRow(label: t("best_lap"), value: lapTime(x.best), color: Theme.purple)
@@ -2281,6 +2325,10 @@ struct AnalysisView: View {
     @EnvironmentObject var account: Account
     @EnvironmentObject var net: NetMonitor
     @EnvironmentObject private var inbox: Inbox
+    /// the tab it opens on and the session (nil: your newest)
+    var startTab = 0
+    var start: CloudSession? = nil
+    @State private var started = false
     @StateObject private var sessions = Loader<[CloudSession]>()
     @StateObject private var bests = Loader<[PersonalBest]>()
     @StateObject private var laps = Loader<[CloudLap]>()
@@ -2467,6 +2515,7 @@ struct AnalysisView: View {
             Tabs(labels: [t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")], selected: $tab)
                 .onAppear { Usage.count("view:" + ["laps", "coach", "cloudlaps", "races"][min(max(tab, 0), 3)]) }
                 .onChange(of: tab) { v in Usage.count("view:" + ["laps", "coach", "cloudlaps", "races"][min(max(v, 0), 3)]) }
+            ShortNote(key: "an_short")
             switch tab {
             case 0, 1: lapsAndCoach
             case 2: mySessions
@@ -2483,6 +2532,11 @@ struct AnalysisView: View {
             if account.demo != lastDemo || account.game != lastGame {
                 lastDemo = account.demo; lastGame = account.game; fCat = ""; cur = nil; sessions.data = nil; bests.data = nil; laps.data = nil; coach = nil; coachKey = ""
             }
+            if !started {
+                started = true
+                cur = start
+                if startTab != tab { tab = startTab; return } // the task runs again for the new tab
+            }
             if tab < 2 { pickFor = tab }
             if tab == 1 && laps.data != nil { await loadCoach() }
             if tab == 3 { return }
@@ -2491,7 +2545,6 @@ struct AnalysisView: View {
         .onChange(of: net.cameBack) { _ in Task { await load() } }
         // the account was read again (the app came back, the live room's nudge): the session list too
         .onChange(of: account.refreshTick) { _ in if sessions.data != nil { Task { await sessions.load { try await account.sessions() } } } }
-        .onReceive(inbox.$analysisTab.compactMap { $0 }) { v in tab = v; inbox.analysisTab = nil }
     }
 }
 
@@ -2502,6 +2555,7 @@ struct SessionView: View {
 
     var body: some View {
         Screen(title: session.track, sub: session.car) {
+            ShortNote(key: "an_short")
             LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await laps.load { try await account.laps(session.id) } } }
             if !sessCat(session).isEmpty {
                 HStack(spacing: 6) { Text(t("viewing", session.car, sessCat(session))).font(.caption).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
@@ -2565,6 +2619,7 @@ struct LapView: View {
     var body: some View {
         let d = refTime.map { lap.time - $0 }
         Screen(title: t("lap_analysis") + " · L\(lap.n)", sub: session.track + " · " + session.car) {
+            ShortNote(key: "an_short")
             HStack(spacing: 8) {
                 Text(t("compare_with")).font(.caption).foregroundColor(Theme.muted)
                 Tabs(labels: [t("my_best"), "▲ " + t("next_level"), "★ " + t("record")], selected: Binding(get: { kind == .myBest ? 0 : kind == .level ? 1 : 2 }, set: { kind = $0 == 0 ? .myBest : $0 == 1 ? .level : .record }))
@@ -4112,61 +4167,280 @@ struct RecordCard: View {
 
 /// The track page: the map with the official turns and the direction arrow, how many drivers and laps the track has,
 /// and the record of every car on it.
+/// A track's hub: you here (the map, your best against the record, your sessions and races here, the coach for this
+/// track), its leaderboard (the record of every car) and your notes.
 struct TrackPageView: View {
     @EnvironmentObject var account: Account
     let ref: TrackRef
     @StateObject private var page = Loader<TrackPage>()
+    @State private var sessions: [CloudSession] = []
+    @State private var tab = 0
 
     var body: some View {
-        Screen(title: ref.name.isEmpty ? t("track_page") : ref.name, sub: t("track_page")) {
-            do {
-                LoadState(loading: page.loading, error: page.error, stale: page.stale) { Task { await page.load { try await account.trackPage(trackId: ref.id) } } }
-                if let d = page.data {
-                    HStack(spacing: 6) {
-                        GameBadge(game: d.game)
-                        Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.caption).foregroundColor(Theme.muted)
-                    }
-                    Panel {
-                        if let lay = d.layout, lay.0.count >= 20 {
-                            Canvas { ctx, size in drawTrackRoad(ctx, size, lay.0, lay.1, d.turns) }.frame(height: 240)
-                        } else {
-                            Text(t("track_no_map")).font(.caption).foregroundColor(Theme.muted)
-                        }
-                    }
-                    TrackNotesPanel(trackId: ref.id, track: d.track.isEmpty ? ref.name : d.track)
-                    SectionLabel(text: t("records_per_car"))
-                    if d.cars.isEmpty { EmptyNote(text: t("no_records")) }
-                    ForEach(d.cars) { x in
-                        NavigationLink(value: Route.combo(x.combo)) {
-                            Panel {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        HStack(spacing: 6) {
-                                            Text(x.car).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                                            GameBadge(game: x.game)
-                                        }
-                                        Text([catName(account.game, catOf(account.game, x.cat, x.cls, x.car)), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
-                                    }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 2) {
-                                        Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
-                                        WetBadges(w: x.wet)
-                                    }
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+        let d = page.data
+        let name = (d?.track.isEmpty == false ? d?.track : nil) ?? ref.name
+        let mine = myTracks(sessions, account.races).first { sameTrack($0.name, name) }
+        let cfg = mine?.sessions.map { fixText($0.trackConfig) }.first { !$0.isEmpty } ?? ""
+        Screen(title: name.isEmpty ? t("track_page") : name, sub: cfg) {
+            Tabs(labels: [t("hub_you"), t("hub_board"), t("hub_notes")], selected: $tab)
+            ShortNote(key: "an_short")
+            LoadState(loading: page.loading, error: page.error, stale: page.stale) { Task { await page.load { try await account.trackPage(trackId: ref.id) } } }
+            switch tab {
+            case 0: you(d, mine, name)
+            case 1: board(d)
+            default:
+                if ref.id > 0 { TrackNotesPanel(trackId: ref.id, track: name) } else { EmptyNote(text: t("nothing_found")) }
             }
         }
         .task(id: ref.id) { await page.load { try await account.trackPage(trackId: ref.id) } }
+        .task(id: account.game) { if let g = try? await account.sessions() { sessions = g.data } }
+        .onChange(of: tab) { v in Usage.count("view:" + ["track", "trackboard", "tracknotes"][min(max(v, 0), 2)]) }
+    }
+
+    @ViewBuilder private func you(_ d: TrackPage?, _ mine: MyTrack?, _ name: String) -> some View {
+        Panel {
+            if let lay = d?.layout, lay.0.count >= 20 {
+                Canvas { ctx, size in drawTrackRoad(ctx, size, lay.0, lay.1, d?.turns ?? []) }.frame(height: 240)
+            } else {
+                Text(t("track_no_map")).font(.caption).foregroundColor(Theme.muted)
+            }
+        }
+        let bestS = mine?.sessions.filter { ($0.best ?? 0) > 0 }.min { ($0.best ?? 0) < ($1.best ?? 0) }
+        let rec = d?.cars.min { $0.time < $1.time }
+        HStack(spacing: 8) {
+            Metric(label: t("your_best"), value: lapTime(mine?.best), sub: bestS.map { fixText($0.car) })
+            Metric(label: t("record"), value: lapTime(rec?.time), color: Theme.purple, sub: rec.map { $0.alias == "Anonymous" ? t("anonymous") : $0.alias })
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        let drives = (mine?.drives ?? []).sorted { $0.started > $1.started }
+        if !drives.isEmpty {
+            Panel {
+                SectionLabel(text: t("sessions_here"))
+                ForEach(Array(drives.enumerated()), id: \.offset) { k, x in
+                    if k > 0 { Divider().background(Theme.line) }
+                    NavigationLink(value: Route.analysis(0, x)) {
+                        homeRow(x.place, x.pos != nil ? Theme.fg : Theme.muted, fixText(x.car), x.kind, x.cat ?? "", agoText(x.started), x.laps, x.best, x.inClass && x.pos != nil ? t("in_class") : "") { SessionBadges(x: x) }
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+        let rs = (mine?.races ?? []).sorted { $0.when > $1.when }
+        if !rs.isEmpty {
+            Panel {
+                SectionLabel(text: t("races_here"))
+                ForEach(Array(rs.enumerated()), id: \.offset) { k, r in
+                    if k > 0 { Divider().background(Theme.line) }
+                    NavigationLink(value: Route.race(r)) {
+                        homeRow(r.dnf ? t("dnf") : "P\(r.finish)", r.dnf ? Theme.bad : Theme.fg, r.car, "race", raceDisc(r.cat, r.car), agoText(r.when), r.laps.count, r.best) {
+                            HStack(spacing: 6) { DrinksBadge(race: r); AiBadge(race: r) }
+                        }
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+        // the coach opens on your newest session here
+        if let x = mine?.sessions.max(by: { $0.started < $1.started }) {
+            NavigationLink(value: Route.analysis(1, x)) {
+                Text(t("coach_for", name)).font(.system(size: 15, weight: .bold)).lineLimit(1).foregroundColor(Theme.ink)
+                    .frame(maxWidth: .infinity, minHeight: 48).background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 14))
+            }.buttonStyle(.plain)
+        }
+        if mine == nil && !page.loading { EmptyNote(text: t("no_sessions")) }
+    }
+
+    @ViewBuilder private func board(_ d: TrackPage?) -> some View {
+        if let d {
+            HStack(spacing: 6) {
+                GameBadge(game: d.game)
+                Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.caption).foregroundColor(Theme.muted)
+            }
+            SectionLabel(text: t("records_per_car"))
+            if d.cars.isEmpty { EmptyNote(text: t("no_records")) }
+            ForEach(d.cars) { x in
+                NavigationLink(value: Route.combo(x.combo)) {
+                    Panel {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(x.car).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                                    GameBadge(game: x.game)
+                                }
+                                Text([catName(account.game, catOf(account.game, x.cat, x.cls, x.car)), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                                WetBadges(w: x.wet)
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+// ---------- Tracks ----------
+
+/// A circuit you drove: every session there (races too, for their laps) and every race.
+struct MyTrack {
+    let name: String
+    let sessions: [CloudSession]
+    let races: [Race]
+    /// practice, qualifying and test drives: the races are in races
+    var drives: [CloudSession] { sessions.filter { !$0.kind.lowercased().contains("race") } }
+    var count: Int { drives.count + races.count }
+    var laps: Int { drives.reduce(0) { $0 + $1.laps } + races.reduce(0) { $0 + $1.laps.count } }
+    var best: Double? { (sessions.compactMap(\.best) + races.compactMap(\.best)).filter { $0 > 0 }.min() }
+    var last: Double { max(sessions.map(\.started).max() ?? 0, races.map(\.when).max() ?? 0) }
+}
+
+/// The same circuit: "Spa-Francorchamps" and "Spa-Francorchamps - Grand Prix" too.
+func sameTrack(_ a: String, _ b: String) -> Bool {
+    guard !a.isEmpty, !b.isEmpty else { return false }
+    let x = a.lowercased(), y = b.lowercased()
+    return x == y || x.hasPrefix(y) || y.hasPrefix(x)
+}
+
+/// Your circuits, the most driven first (the newest of a tie).
+func myTracks(_ sessions: [CloudSession], _ races: [Race]) -> [MyTrack] {
+    var names: [String] = []
+    func nameOf(_ s: String) -> String {
+        let x = fixText(s).trimmingCharacters(in: .whitespaces)
+        if let n = names.first(where: { sameTrack($0, x) }) { return n }
+        names.append(x)
+        return x
+    }
+    let ss = Dictionary(grouping: sessions) { nameOf($0.track) }
+    let rs = Dictionary(grouping: races) { nameOf($0.track) }
+    return names.map { MyTrack(name: $0, sessions: ss[$0] ?? [], races: rs[$0] ?? []) }
+        .sorted { $0.count != $1.count ? $0.count > $1.count : $0.last > $1.last }
+}
+
+/// The community's id of a circuit, found by its name among the leaderboards (0: nobody shared a lap there yet).
+func trackIdOf(_ combos: [Combo], _ name: String) -> Int64 {
+    (combos.first { $0.track.lowercased() == name.lowercased() } ?? combos.first { sameTrack($0.track, name) })?.trackId ?? 0
+}
+
+/// Every circuit you drove: the most driven on top with its map, the others as tiles. Each opens its hub.
+struct TracksView: View {
+    @EnvironmentObject var account: Account
+    @State private var sessions: [CloudSession]?
+    @State private var combos: [Combo] = []
+    @State private var heroId: Int64 = 0
+    @State private var heroLayout: ([Double], [Double])?
+    @State private var err: String?
+    @State private var q = ""
+    @State private var lastGame = ""
+
+    private func reload() async {
+        let gm = account.game
+        if lastGame != gm { lastGame = gm; sessions = nil; combos = []; heroId = 0; heroLayout = nil }
+        do {
+            let g = try await account.sessions()
+            if gm == account.game { sessions = g.data; err = nil }
+        } catch {
+            if !Task.isCancelled && sessions == nil { err = (error as? AppError)?.key ?? error.localizedDescription }
+        }
+        if let c = try? await account.combos(), gm == account.game { combos = c.data }
+        if let top = myTracks(sessions ?? [], account.races).first {
+            let id = trackIdOf(combos, top.name)
+            if id > 0 && id != heroId {
+                let lay = await account.trackLayout(trackId: id)
+                if gm == account.game { heroId = id; heroLayout = lay }
+            }
+        }
+    }
+
+    var body: some View {
+        let all = myTracks(sessions ?? [], account.races)
+        let list = all.filter { q.isEmpty || $0.name.localizedCaseInsensitiveContains(q) }
+        let hero: MyTrack? = list.first.flatMap { $0.name == all.first?.name ? $0 : nil }
+        let rest = hero == nil ? list : Array(list.dropFirst())
+        let rows: [[MyTrack]] = stride(from: 0, to: rest.count, by: 2).map { Array(rest[$0..<min($0 + 2, rest.count)]) }
+        Screen(title: t("tab_tracks"), gameSeg: true) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass").foregroundColor(Theme.muted)
+                TextField(t("find_track"), text: $q).foregroundColor(Theme.fg).autocorrectionDisabled()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 10).background(Theme.surface2)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
+            ShortNote(key: "an_short")
+            LoadState(loading: sessions == nil && err == nil, error: err) { Task { await reload() } }
+            if sessions != nil && all.isEmpty { EmptyNote(text: t("no_tracks")) }
+            else if !all.isEmpty && list.isEmpty { EmptyNote(text: t("nothing_found")) }
+            if let x = hero {
+                let id = trackIdOf(combos, x.name)
+                NavigationLink(value: Route.track(TrackRef(id: id, name: x.name))) { TrackHero(x: x, layout: id > 0 && id == heroId ? heroLayout : nil) }.buttonStyle(.plain)
+            }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 8) {
+                    ForEach(row, id: \.name) { x in
+                        NavigationLink(value: Route.track(TrackRef(id: trackIdOf(combos, x.name), name: x.name))) { TrackTile(x: x) }.buttonStyle(.plain)
+                    }
+                    if row.count < 2 { Color.clear.frame(maxWidth: .infinity) }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .task(id: "\(account.game)|\(account.demo)|\(account.refreshTick)") { await reload() }
+        .refreshable { await reload() }
+    }
+}
+
+/// The circuit you drove most: its map as the picture, then its name, your sessions, laps and best there.
+struct TrackHero: View {
+    let x: MyTrack
+    let layout: ([Double], [Double])?
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let lay = layout, lay.0.count >= 20 {
+                Canvas { ctx, size in drawTrackRoad(ctx, size, lay.0, lay.1, [], edge: Theme.accent) }.frame(height: 170)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t("most_driven")).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundColor(Theme.accent)
+                Text(x.name.uppercased()).font(.system(size: 22, weight: .black)).foregroundColor(Theme.fg).lineLimit(2)
+                Text(t("trk_counts", x.count, x.laps) + (x.best.map { " · " + t("trk_best", lapTime($0)) } ?? "")).font(.caption).foregroundColor(Theme.muted)
+            }
+            .padding(.horizontal, 6).padding(.bottom, 6).padding(.top, 4)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RadialGradient(colors: [Color(red: 0x24 / 255, green: 0x30 / 255, blue: 0x3F / 255), Theme.surface], center: UnitPoint(x: 0.5, y: 0.2), startRadius: 0, endRadius: 320))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .contentShape(RoundedRectangle(cornerRadius: 20))
+    }
+}
+
+/// Another circuit you drove: its initials, its name, your sessions and laps there and your best.
+struct TrackTile: View {
+    let x: MyTrack
+    var body: some View {
+        let mono = x.name.split(whereSeparator: { $0 == " " || $0 == "-" }).prefix(2).map { String($0.prefix(1)) }.joined().uppercased()
+        VStack(alignment: .leading, spacing: 2) {
+            Text(mono).font(.system(size: 17, weight: .black)).foregroundColor(Theme.accent)
+                .frame(width: 40, height: 40).background(Theme.surface2)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.bottom, 6)
+            Text(x.name).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.fg).lineLimit(2).multilineTextAlignment(.leading)
+            Text(t("trk_counts", x.count, x.laps)).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+            Spacer(minLength: 0)
+            Text(lapTime(x.best)).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(Theme.fg).padding(.top, 4)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .contentShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
 /// A track's layout as a road with depth, its start/finish line, the direction arrow and the official turns: the same
 /// drawing as the live map, without the cars.
-func drawTrackRoad(_ ctx: GraphicsContext, _ size: CGSize, _ xs: [Double], _ ys: [Double], _ turns: [Double]) {
+func drawTrackRoad(_ ctx: GraphicsContext, _ size: CGSize, _ xs: [Double], _ ys: [Double], _ turns: [Double], edge: Color? = nil) {
     let n = xs.count, pad: CGFloat = 22
     guard n >= 20 else { return }
     let minX = xs.min() ?? 0, maxX = xs.max() ?? 1, minY = ys.min() ?? 0, maxY = ys.max() ?? 1
@@ -4179,7 +4453,7 @@ func drawTrackRoad(_ ctx: GraphicsContext, _ size: CGSize, _ xs: [Double], _ ys:
     let w: CGFloat = 11
     // the track as a road with depth: its shadow, the rim and the darker asphalt inside
     ctx.stroke(track.offsetBy(dx: 1.5, dy: 2.5), with: .color(.black.opacity(0.38)), style: StrokeStyle(lineWidth: w + 2, lineCap: .round, lineJoin: .round))
-    ctx.stroke(track, with: .color(Color(red: 0x3F / 255, green: 0x49 / 255, blue: 0x56 / 255)), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
+    ctx.stroke(track, with: .color(edge ?? Color(red: 0x3F / 255, green: 0x49 / 255, blue: 0x56 / 255)), style: StrokeStyle(lineWidth: w, lineCap: .round, lineJoin: .round))
     ctx.stroke(track, with: .color(Color(red: 0x15 / 255, green: 0x1A / 255, blue: 0x21 / 255)), style: StrokeStyle(lineWidth: w - 3.5, lineCap: .round, lineJoin: .round))
     // the start/finish line across the road and the way the cars go beside it
     let p0 = pt(0), p1 = pt(max(2, n / 60))
@@ -4454,6 +4728,7 @@ struct LiveView: View {
 
     var body: some View {
         Screen(title: t("live_title")) {
+            ShortNote(key: "live_short")
             // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
             Panel {
                 Text(t("your_pc_anywhere")).font(.headline.weight(.black))

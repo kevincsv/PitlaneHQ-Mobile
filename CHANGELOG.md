@@ -6,6 +6,11 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
 
 ## 0.8.0 beta
 
+- A new layout with a Tracks tab. Every circuit you drove opens its own page with your laps, sessions, races, the leaderboard and your notes.
+- The coach and your laps open from the track you pick.
+- Tap a licence on Home to see its iRating over your last races.
+- Recent sessions show a Race, Qualifying or Practice badge and your fastest lap.
+- A Le Mans Ultimate race summary shows the drivers and your best lap.
 - A small clock after a driver's name says they have a penalty or a slowdown to serve.
 - Recent records, the track page and the leaderboards show the game of each record.
 - Maps show the track's own layout, with no lines drawn over it.

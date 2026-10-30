@@ -22,3 +22,10 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   notes.json changes, sealed with the account's key, like driver notes); Account → Track notes lists them all. A
   driver's profile shows their leaderboards, records (P1) and top 3 places, and a recent record opens its driver's
   profile when they have one (`prof`).
+- Home (like the web's): Your last race (place, places gained, the track with its RACE tag, the car with its
+  discipline's dot, the position by lap, iRating, incidents and best; Le Mans Ultimate shows contacts and best, never
+  an iRating), then Recent sessions: races, qualifying and practice together, newest first, each with its kind badge
+  (Race amber, Qualifying purple, Practice blue) and the fastest lap in the last column (races too, never the
+  iRating). The licences: pressing one marks it in amber and opens its card under the list (iRating, class and SR,
+  what its last races gave and its iRating line, which follows the finger); Sports Car is open to start.
+- A Le Mans Ultimate race summary shows Start, Finish, Drivers, Contacts, Positions and Best lap (no iRating nor SOF).

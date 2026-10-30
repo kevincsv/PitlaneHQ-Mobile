@@ -36,6 +36,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.graphics.drawscope.withTransform
@@ -238,6 +239,7 @@ private fun MainApp(vm: PitlaneViewModel) {
             NavHost(nav, "home", Modifier.weight(1f)) {
                 composable("home") { Home(vm, nav) }
                 composable("race") { RaceDetail(vm, nav) }
+                composable("tracks") { Tracks(vm, nav) }
                 composable("analysis") { Analysis(vm, nav) }
                 composable("session") { SessionDetail(vm, nav) }
                 composable("lap") { LapDetail(vm, nav) }
@@ -549,13 +551,14 @@ private fun Banner(s: String, c: Color, onClick: (() -> Unit)? = null) {
 private fun BottomBar(nav: NavHostController) {
     val dests = listOf(
         Dest("home", t("home"), Icons.Default.Home),
-        Dest("analysis", t("analysis"), Icons.Default.QueryStats),
-        Dest("live", t("live"), Icons.Default.Sensors),
+        Dest("tracks", t("tab_tracks"), Icons.Default.Map),
+        Dest("live", t("tab_live"), Icons.Default.Sensors),
         Dest("community", t("community"), Icons.Default.Groups),
-        Dest("settings", t("account_tab"), Icons.Default.Person)
+        Dest("settings", t("tab_me"), Icons.Default.Person)
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
-    val tab = when (current) { "race" -> if (nav.previousBackStackEntry?.destination?.route == "analysis") "analysis" else "home"; "session", "lap" -> "analysis"; "combo" -> "community"; "drinks", "admin" -> "settings"; else -> current }
+    // the laps, the coach and a track's hub belong to Tracks: they open from a track
+    val tab = when (current) { "race" -> if (nav.previousBackStackEntry?.destination?.route in listOf("analysis", "track")) "tracks" else "home"; "analysis", "session", "lap", "track" -> "tracks"; "combo", "profile" -> "community"; "drinks", "admin", "notes" -> "settings"; else -> current }
     // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
     Row(
         Modifier.fillMaxWidth().background(Ink).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
@@ -780,11 +783,8 @@ private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: 
         rows.forEachIndexed { k, (_, o) ->
             if (k > 0) HorizontalDivider(color = Line)
             when (o) {
-                is Race -> {
-                    val ir = if (o.noIr || o.irChange == 0) null else o.irChange
-                    HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.track, "race", raceDisc(o.cat, o.car), o.car + " · " + agoText(o.whenMs), ir, o.laps.size, o.best, { onRace(o) }) { DrinksBadge(o); AiBadge(o) }
-                }
-                is CloudSession -> HomeRow(o.place, if (o.pos != null) Fg else Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + agoText(o.started), null, o.laps, o.best, { onSession(o) }, if (o.inClass && o.pos != null) t("in_class") else "") {
+                is Race -> HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.track, "race", raceDisc(o.cat, o.car), o.car + " · " + agoText(o.whenMs), o.laps.size, o.best, { onRace(o) }) { DrinksBadge(o); AiBadge(o) }
+                is CloudSession -> HomeRow(o.place, if (o.pos != null) Fg else Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + agoText(o.started), o.laps, o.best, { onSession(o) }, if (o.inClass && o.pos != null) t("in_class") else "") {
                     if (o.drvs.isNotEmpty() || o.ai || o.game == "lmu") SessionBadges(o)
                 }
             }
@@ -793,7 +793,7 @@ private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: 
 }
 
 @Composable
-private fun HomeRow(place: String, placeCol: Color, track: String, kind: String, disc: String, sub: String, ir: Int?, laps: Int, best: Double?, onClick: () -> Unit, placeSub: String = "", badges: @Composable () -> Unit) {
+private fun HomeRow(place: String, placeCol: Color, track: String, kind: String, disc: String, sub: String, laps: Int, best: Double?, onClick: () -> Unit, placeSub: String = "", badges: @Composable () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         // the place ("P3", a session's "P3/20"), with "class" under it when it counts within your class
         Column(Modifier.width(54.dp)) {
@@ -809,12 +809,11 @@ private fun HomeRow(place: String, placeCol: Color, track: String, kind: String,
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(if (disc.isNotBlank()) discColor(disc) else Muted))
                 Text(" $sub", color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (ir != null) Text(" · ${signed(ir)} iR", color = if (ir > 0) Good else Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
             }
         }
         Column(horizontalAlignment = Alignment.End) {
             Text(t("laps_n", laps), color = Muted, fontSize = 11.sp)
-            Text(lapTime(best), color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+            Text(lapTime(best), color = Fg, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1062,13 +1061,13 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                 listOfNotNull(
                     MetricData(t("start"), "P${x.start}"),
                     MetricData(t("finish"), if (x.dnf) t("dnf") else "P${x.finish}", if (x.finish == 1) Purple else Fg),
-                    // Le Mans Ultimate has no iRating (nor a strength of field): its contacts instead
-                    if (x.contacts) null
+                    // Le Mans Ultimate has no iRating (nor a strength of field): the drivers and the best lap instead
+                    if (x.contacts) MetricData(t("rs_drivers"), "${x.field}")
                     else if (x.ai) MetricData("iRating", "—", Muted, t("vs_ai")) // a race against the AI has none
                     else MetricData("iRating", signed(x.irChange), if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Fg, if (x.ir > 0) "${x.ir} → ${x.ir + x.irChange}" else null),
                     MetricData(incLabel(x), incText(x), if (x.inc >= 8) Bad else Fg),
                     MetricData(t("pos_gain"), signed(x.start - x.finish), if (x.start > x.finish) Good else if (x.start < x.finish) Bad else Fg),
-                    if (x.contacts) null else MetricData(t("sof"), if (x.sof > 0) "${x.sof}" else "—")
+                    if (x.contacts) MetricData(t("best_lap"), lapTime(x.best), Purple) else MetricData(t("sof"), if (x.sof > 0) "${x.sof}" else "—")
                 ), columns = 3
             )
         }
@@ -1244,8 +1243,9 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     LaunchedEffect(s.data) { if (vm.session == null) s.data?.firstOrNull()?.let { vm.session = it; vm.loadLaps(it.id) } }
     LaunchedEffect(tab, cur?.id, l.data) { val x = vm.session; val ls = l.data; if (tab == 1 && x != null && ls != null && !l.loading) vm.coachFor(x, ls) }
     val open = { x: CloudSession -> vm.session = x; vm.loadLaps(x.id); tab = pickFor }
-    Screen(t("analysis"), head = { GameSeg(vm) }) {
+    Screen(t("analysis"), back = { nav.popBackStack() }, head = { GameSeg(vm) }) {
         item { Tabs(listOf(t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")), tab) { tab = it; if (it < 2) pickFor = it } }
+        item { ShortNote("an_short") }
         when (tab) {
             0, 1 -> {
                 if (cur == null) {
@@ -1667,6 +1667,7 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.session ?: return
     val l by vm.laps.collectAsState()
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
+        item { ShortNote("an_short") }
         state(l) { vm.loadLaps(x.id) }
         if (sessCat(x).isNotEmpty()) item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1689,6 +1690,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
     // the point you touch on a chart, shared by the three charts
     var pick by remember(an) { mutableStateOf<Int?>(null) }
     Screen(t("lap_analysis") + (an?.let { " · L${it.lap.n}" } ?: ""), x.track + " · " + x.car, back = { nav.popBackStack() }) {
+        item { ShortNote("an_short") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(t("compare_with"), color = Muted, fontSize = 12.sp)
@@ -2631,35 +2633,205 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
 private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val ref = vm.trackRef ?: return
     val p by vm.trackPage.collectAsState()
-    Screen(ref.second.ifEmpty { t("track_page") }, t("track_page"), back = { nav.popBackStack() }) {
+    val sl by vm.sessions.collectAsState()
+    val r by vm.races.collectAsState()
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        if (sl.data == null && !sl.loading) vm.loadSessions()
+        if (r.data == null && !r.loading) vm.loadRaces()
+    }
+    LaunchedEffect(tab) { vm.track("view:" + listOf("track", "trackboard", "tracknotes")[tab.coerceIn(0, 2)]) }
+    val d = p.data
+    val name = d?.track?.ifBlank { null } ?: ref.second
+    val mine = remember(sl.data, r.data, name) { myTracks(sl.data ?: emptyList(), r.data ?: emptyList()).firstOrNull { sameTrack(it.name, name) } }
+    val cfg = mine?.sessions?.firstNotNullOfOrNull { fixText(it.trackConfig).takeIf { c -> c.isNotBlank() } } ?: ""
+    val toAnalysis = { x: CloudSession, tb: Int -> vm.session = x; vm.loadLaps(x.id); vm.analysisTab = tb; nav.navigate("analysis") }
+    Screen(name.ifEmpty { t("track_page") }, cfg, back = { nav.popBackStack() }) {
+        item { Tabs(listOf(t("hub_you"), t("hub_board"), t("hub_notes")), tab) { tab = it } }
+        item { ShortNote("an_short") }
         state(p) { vm.openTrack(ref.first, ref.second) }
-        val d = p.data ?: return@Screen
-        item {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                GameBadge(d.game)
-                Text(t("track_counts", d.drivers, d.laps, d.cars.size), color = Muted, fontSize = 12.sp)
-            }
-        }
-        item { Panel { TrackLayoutMap(d.layout, d.turns) } }
-        item { TrackNotesPanel(vm, ref.first, d.track.ifEmpty { ref.second }) }
-        item { Section(t("records_per_car")) }
-        if (d.cars.isEmpty()) item { Empty(t("no_records")) }
-        items(d.cars, key = { it.carId }) { x ->
-            Panel(Modifier.clickable { vm.combo = x.combo; vm.loadBoard(x.combo); nav.navigate("combo") }) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(x.car, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                            GameBadge(x.game)
-                        }
-                        Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        when (tab) {
+            // you here: the map, your best against the record, your sessions and races here and the coach for this track
+            0 -> {
+                item { Panel { TrackLayoutMap(d?.layout, d?.turns ?: emptyList()) } }
+                val bestS = mine?.sessions?.filter { (it.best ?: 0.0) > 0 }?.minByOrNull { it.best!! }
+                val rec = d?.cars?.minByOrNull { it.time }
+                item {
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Metric(t("your_best"), lapTime(mine?.best), Modifier.weight(1f).fillMaxHeight(), sub = bestS?.let { fixText(it.car) })
+                        Metric(t("record"), lapTime(rec?.time), Modifier.weight(1f).fillMaxHeight(), color = Purple, sub = rec?.let { if (it.alias == "Anonymous") t("anonymous") else it.alias })
                     }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                        WetBadges(x.wet)
+                }
+                val drives = mine?.drives?.sortedByDescending { it.started } ?: emptyList()
+                if (drives.isNotEmpty()) item {
+                    Panel {
+                        Section(t("sessions_here"))
+                        drives.forEachIndexed { k, o ->
+                            if (k > 0) HorizontalDivider(color = Line)
+                            HomeRow(o.place, if (o.pos != null) Fg else Muted, fixText(o.car), o.kind, o.cat ?: "", agoText(o.started), o.laps, o.best, { toAnalysis(o, 0) }, if (o.inClass && o.pos != null) t("in_class") else "") {
+                                if (o.drvs.isNotEmpty() || o.ai || o.game == "lmu") SessionBadges(o)
+                            }
+                        }
+                    }
+                }
+                val rs = mine?.races?.sortedByDescending { it.whenMs } ?: emptyList()
+                if (rs.isNotEmpty()) item {
+                    Panel {
+                        Section(t("races_here"))
+                        rs.forEachIndexed { k, o ->
+                            if (k > 0) HorizontalDivider(color = Line)
+                            HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.car, "race", raceDisc(o.cat, o.car), agoText(o.whenMs), o.laps.size, o.best, { vm.race = o; nav.navigate("race") }) { DrinksBadge(o); AiBadge(o) }
+                        }
+                    }
+                }
+                // the coach opens on your newest session here
+                mine?.sessions?.maxByOrNull { it.started }?.let { x ->
+                    item {
+                        Button({ toAnalysis(x, 1) }, Modifier.fillMaxWidth().height(48.dp), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) {
+                            Text(t("coach_for", name), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+                if (mine == null && sl.data != null) item { Empty(t("no_sessions")) }
+            }
+            // the leaderboard: the record of every car here
+            1 -> {
+                if (d != null) item {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        GameBadge(d.game)
+                        Text(t("track_counts", d.drivers, d.laps, d.cars.size), color = Muted, fontSize = 12.sp)
+                    }
+                }
+                item { Section(t("records_per_car")) }
+                val cars = d?.cars ?: emptyList()
+                if (d != null && cars.isEmpty()) item { Empty(t("no_records")) }
+                items(cars, key = { it.carId }) { x ->
+                    Panel(Modifier.clickable { vm.combo = x.combo; vm.loadBoard(x.combo); nav.navigate("combo") }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(x.car, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                                    GameBadge(x.game)
+                                }
+                                Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                WetBadges(x.wet)
+                            }
+                        }
                     }
                 }
             }
+            // your notes on this track, the same the PC and the web write
+            else -> item { if (ref.first > 0) TrackNotesPanel(vm, ref.first, name) else Empty(t("nothing_found")) }
+        }
+    }
+}
+
+// ---------- Tracks ----------
+/** A circuit you drove: every session there (races too, for their laps) and every race. */
+private class MyTrack(val name: String, val sessions: List<CloudSession>, val races: List<Race>) {
+    /** practice, qualifying and test drives: the races are in [races] */
+    val drives = sessions.filter { !it.kind.contains("race", true) }
+    val count = drives.size + races.size
+    val laps = drives.sumOf { it.laps } + races.sumOf { it.laps.size }
+    val best = (sessions.mapNotNull { it.best } + races.mapNotNull { it.best }).filter { it > 0 }.minOrNull()
+    val last = maxOf(sessions.maxOfOrNull { it.started } ?: 0L, races.maxOfOrNull { it.whenMs } ?: 0L)
+}
+
+/** The same circuit: "Spa-Francorchamps" and "Spa-Francorchamps - Grand Prix" too. */
+private fun sameTrack(a: String, b: String) = a.isNotBlank() && b.isNotBlank() && (a.equals(b, true) || a.startsWith(b, true) || b.startsWith(a, true))
+
+/** Your circuits, the most driven first (the newest of a tie). */
+private fun myTracks(sessions: List<CloudSession>, races: List<Race>): List<MyTrack> {
+    val names = mutableListOf<String>()
+    fun nameOf(s: String): String { val x = fixText(s).trim(); return names.firstOrNull { sameTrack(it, x) } ?: x.also { names.add(it) } }
+    val ss = sessions.groupBy { nameOf(it.track) }
+    val rs = races.groupBy { nameOf(it.track) }
+    return names.map { MyTrack(it, ss[it] ?: emptyList(), rs[it] ?: emptyList()) }
+        .sortedWith(compareByDescending<MyTrack> { it.count }.thenByDescending { it.last })
+}
+
+/** The community's id of a circuit, found by its name among the leaderboards (0: nobody shared a lap there yet). */
+private fun trackIdOf(combos: List<Combo>, name: String): Long =
+    (combos.firstOrNull { it.track.equals(name, true) } ?: combos.firstOrNull { sameTrack(it.track, name) })?.trackId ?: 0L
+
+/** Every circuit you drove: the most driven on top with its map, the others as tiles. Each opens its hub. */
+@Composable
+private fun Tracks(vm: PitlaneViewModel, nav: NavHostController) {
+    val sl by vm.sessions.collectAsState()
+    val r by vm.races.collectAsState()
+    val c by vm.combos.collectAsState()
+    val hero by vm.heroLayout.collectAsState()
+    var q by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(Unit) {
+        vm.track("view:tracks")
+        if (sl.data == null && !sl.loading) vm.loadSessions()
+        if (r.data == null && !r.loading) vm.loadRaces()
+        if (c.data == null && !c.loading) vm.loadCombos()
+    }
+    val all = remember(sl.data, r.data) { myTracks(sl.data ?: emptyList(), r.data ?: emptyList()) }
+    val combos = c.data ?: emptyList()
+    val top = all.firstOrNull()
+    val topId = top?.let { trackIdOf(combos, it.name) } ?: 0L
+    LaunchedEffect(topId) { vm.loadHeroLayout(topId) }
+    val open = { x: MyTrack -> vm.openTrack(trackIdOf(combos, x.name), x.name); nav.navigate("track") }
+    val list = all.filter { q.isBlank() || it.name.contains(q, true) }
+    Screen(t("tab_tracks"), head = { GameSeg(vm) }) {
+        item {
+            OutlinedTextField(q, { q = it }, placeholder = { Text(t("find_track")) }, singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
+                shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
+        }
+        item { ShortNote("an_short") }
+        state(sl) { vm.loadSessions() }
+        if (sl.data != null && all.isEmpty()) item { Empty(t("no_tracks")) }
+        else if (all.isNotEmpty() && list.isEmpty()) item { Empty(t("nothing_found")) }
+        val heroT = list.firstOrNull()?.takeIf { it === top }
+        if (heroT != null) item { TrackHero(heroT, hero?.takeIf { it.first == topId }?.second) { open(heroT) } }
+        items((if (heroT != null) list.drop(1) else list).chunked(2)) { row ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                row.forEach { x -> TrackTile(x, Modifier.weight(1f).fillMaxHeight()) { open(x) } }
+                if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/** The circuit you drove most: its map as the picture, then its name, your sessions, laps and best there. */
+@Composable
+private fun TrackHero(x: MyTrack, layout: Pair<List<Double>, List<Double>>?, onClick: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = Surface),
+        border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(20.dp)
+    ) {
+        Column(Modifier.background(Brush.radialGradient(listOf(Color(0xFF24303F), Surface), radius = 900f)).padding(10.dp)) {
+            if (layout != null) TrackLayoutMap(layout, emptyList(), 170.dp, Accent)
+            Column(Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(t("most_driven"), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(x.name.uppercase(), color = Fg, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(t("trk_counts", x.count, x.laps) + (x.best?.let { " · " + t("trk_best", lapTime(it)) } ?: ""), color = Muted, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+/** Another circuit you drove: its initials, its name, your sessions and laps there and your best. */
+@Composable
+private fun TrackTile(x: MyTrack, m: Modifier, onClick: () -> Unit) {
+    val mono = x.name.split(Regex("[\\s-]+")).filter { it.isNotEmpty() }.take(2).joinToString("") { it.take(1) }.uppercase()
+    Card(
+        m.clip(RoundedCornerShape(16.dp)).clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = Surface),
+        border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.fillMaxHeight().padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Box(Modifier.padding(bottom = 6.dp).size(40.dp).clip(RoundedCornerShape(12.dp)).background(Surface2).border(1.dp, Line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                Text(mono, color = Accent, fontSize = 17.sp, fontWeight = FontWeight.Black)
+            }
+            Text(x.name, color = Fg, fontSize = 14.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(t("trk_counts", x.count, x.laps), color = Muted, fontSize = 11.sp, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            Text(lapTime(x.best), color = Fg, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
@@ -2667,14 +2839,14 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
 /** A track's layout as a road with depth, its start/finish line, the direction arrow and the official turns: the
  *  same drawing as the live map, without the cars. */
 @Composable
-private fun TrackLayoutMap(layout: Pair<List<Double>, List<Double>>?, turns: List<Double>) {
+private fun TrackLayoutMap(layout: Pair<List<Double>, List<Double>>?, turns: List<Double>, height: Dp = 240.dp, edge: Color? = null) {
     if (layout == null || layout.first.size < 20) { Text(t("track_no_map"), color = Muted, fontSize = 12.sp); return }
     val dpx = with(LocalDensity.current) { 1.dp.toPx() }
     val labelPx = with(LocalDensity.current) { 9.sp.toPx() }
     val turnPaint = remember(labelPx) { android.graphics.Paint().apply { color = android.graphics.Color.rgb(0x8A, 0x97, 0xA9); textSize = labelPx; isFakeBoldText = true; isAntiAlias = true; textAlign = android.graphics.Paint.Align.CENTER } }
     val xs = layout.first; val ys = layout.second; val n = xs.size
     val minX = xs.min(); val maxX = xs.max(); val minY = ys.min(); val maxY = ys.max()
-    Canvas(Modifier.fillMaxWidth().height(240.dp)) {
+    Canvas(Modifier.fillMaxWidth().height(height)) {
         val pad = 22f * dpx
         val k = minOf((size.width - 2 * pad) / maxOf(1e-6, maxX - minX).toFloat(), (size.height - 2 * pad) / maxOf(1e-6, maxY - minY).toFloat())
         val ox = (size.width - 2 * pad - (maxX - minX).toFloat() * k) / 2; val oy = (size.height - 2 * pad - (maxY - minY).toFloat() * k) / 2
@@ -2686,7 +2858,7 @@ private fun TrackLayoutMap(layout: Pair<List<Double>, List<Double>>?, turns: Lis
         drawContext.canvas.save(); drawContext.canvas.translate(1.5f * dpx, 2.5f * dpx)
         drawPath(track, Color.Black.copy(alpha = .38f), style = Stroke(width = w + 2 * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawContext.canvas.restore()
-        drawPath(track, Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawPath(track, edge ?: Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawPath(track, Color(0xFF151A21), style = Stroke(width = w - 3.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
         // the start/finish line across the road and the way the cars go beside it
         val p0 = pt(0); val p1 = pt(maxOf(2, n / 60))
@@ -2944,6 +3116,7 @@ private fun Live(vm: PitlaneViewModel) {
     var codeIn by rememberSaveable { mutableStateOf("") }
     var codeErr by remember { mutableStateOf(false) }
     Screen(t("live_title")) {
+        item { ShortNote("live_short") }
         // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
         item {
             Panel {
@@ -3882,15 +4055,49 @@ private fun Licences(vm: PitlaneViewModel) {
     val bv by vm.bundleVer.collectAsState()
     val all = remember(acc, bv) { vm.ratings() }
     val races = r.data ?: emptyList()
+    // a licence you press opens its iRating line under the list; Sports Car is open to start
+    var sel by rememberSaveable { mutableStateOf("sports_car") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Section(t("licences"))
         DISCS.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { k -> LicCard(k, all[k], races, Modifier.weight(1f).fillMaxHeight()) }
+                row.forEach { k -> LicCard(k, all[k], races, sel == k, Modifier.weight(1f).fillMaxHeight()) { sel = k } }
                 repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
+        LicDetail(sel, all[sel], races)
         Text(t("lic_note"), color = Muted, fontSize = 11.sp)
+    }
+}
+
+/** The licence you chose: its iRating and class, what its last races gave and their iRating line, which the finger reads. */
+@Composable
+private fun LicDetail(k: String, r: Triple<Int, String, Long>?, races: List<Race>) {
+    val col = discColor(k)
+    val line = irRaces(races, k, 20)
+    val vals = if (line.isEmpty()) emptyList() else irVals(line, r?.first)
+    val chg = line.sumOf { it.irChange }
+    var pick by remember(k, line.size) { mutableStateOf<Int?>(null) }
+    val lic = r?.second?.trim()?.uppercase() ?: ""
+    val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(discName(k), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(r?.first?.toString() ?: "–", color = if (r == null) Muted else col, fontSize = 26.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                if (r != null && cls != null) LicBadge(cls, lic.split(Regex("\\s+")).getOrNull(1))
+                if (line.isEmpty()) Text(t("no_races_yet").trimEnd('.'), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                else Text(t("lic_gain", signed(chg), line.size), color = if (chg >= 0) Good else Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            }
+            Column(Modifier.weight(1f)) {
+                val x = pick?.let { line.getOrNull(it) }
+                if (line.size >= 2) {
+                    Text(x?.let { it.track + " " + signed(it.irChange) } ?: t("spark_last", line.size), color = if (x == null) Muted else if (x.irChange >= 0) Good else Bad,
+                        fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    IrLine(vals, col, 60.dp, pick, area = true) { pick = it }
+                }
+            }
+        }
     }
 }
 
@@ -3920,24 +4127,21 @@ private fun LmuRatings(vm: PitlaneViewModel) {
 /** One discipline's card: its symbol, the iRating (with what your last five races of it gave, like the web) and the
  *  licence pill ("B 3.21" in the licence's colour); dim while the PC has seen nothing of it. */
 @Composable
-private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>, m: Modifier) {
+private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>, on: Boolean, m: Modifier, onClick: () -> Unit) {
     val col = discColor(k)
     val last = races.filter { raceDisc(it.cat, it.car) == k && !it.noIr && it.ir != 1 }.take(5) // races against the AI give no iRating
     val chg = last.sumOf { it.irChange }
     val lic = r?.second?.trim()?.uppercase() ?: ""
     val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }
     val sr = lic.split(Regex("\\s+")).getOrNull(1)
-    val line = irRaces(races, k, 10)
-    var sel by remember(line.size) { mutableStateOf<Int?>(null) }
     Card(
-        m.alpha(if (r == null) 0.55f else 1f), colors = CardDefaults.cardColors(containerColor = Surface),
-        border = BorderStroke(1.dp, col.copy(alpha = 0.4f)), shape = RoundedCornerShape(12.dp)
+        m.alpha(if (r == null && !on) 0.55f else 1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = if (on) Surface2 else Surface),
+        border = BorderStroke(if (on) 1.5.dp else 1.dp, if (on) Accent else col.copy(alpha = 0.4f)), shape = RoundedCornerShape(12.dp)
     ) {
-      Column(Modifier.fillMaxHeight()) {
-        Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = if (line.size >= 2) 4.dp else 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxHeight().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             DiscIcon(k, 30.dp)
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(discName(k), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 14.sp)
+                Text(discName(k), color = if (on) Accent else Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 14.sp)
                 Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(r?.first?.toString() ?: "–", color = if (r == null) Muted else col, fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, lineHeight = 22.sp)
                     if (r != null && last.isNotEmpty() && chg != 0)
@@ -3946,14 +4150,6 @@ private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>,
                 if (r != null && cls != null) LicBadge(cls, sr)
             }
         }
-        // the iRating after each of its last races: the finger reads the race under it
-        if (line.size >= 2) Column(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 10.dp)) {
-            val x = sel?.let { line.getOrNull(it) }
-            Text(x?.let { it.track + " " + signed(it.irChange) } ?: t("spark_last", line.size), color = if (x == null) Muted else if (x.irChange >= 0) Good else Bad,
-                fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            IrLine(irVals(line, r?.first), col, 30.dp, sel) { sel = it }
-        }
-      }
     }
 }
 
@@ -4115,6 +4311,15 @@ private fun CarCard(k: org.json.JSONObject, tr: Trace) {
         Text(brakeLine, fontSize = 13.sp)
         Text(shiftLine, fontSize = 13.sp)
         Text(vmaxLine, fontSize = 13.sp)
+    }
+}
+
+/** The phone's short versions say where the full one is: a small grey line with the PC's symbol. */
+@Composable
+private fun ShortNote(key: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(Icons.Default.Computer, null, tint = Muted.copy(alpha = .7f), modifier = Modifier.size(16.dp))
+        Text(t(key), color = Muted, fontSize = 12.sp, lineHeight = 16.sp)
     }
 }
 
@@ -4448,7 +4653,7 @@ private fun LiveMap(vm: PitlaneViewModel, s: LiveState) {
             drawContext.canvas.save(); drawContext.canvas.translate(1.5f * dpx, 2.5f * dpx)
             drawPath(track, Color.Black.copy(alpha = .38f), style = Stroke(width = w + 2 * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
             drawContext.canvas.restore()
-            drawPath(track, Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            drawPath(track, edge ?: Line.copy(red = minOf(1f, Line.red + .12f), green = minOf(1f, Line.green + .12f), blue = minOf(1f, Line.blue + .12f)), style = Stroke(width = w, cap = StrokeCap.Round, join = StrokeJoin.Round))
             drawPath(track, Color(0xFF151A21), style = Stroke(width = w - 3.5f * dpx, cap = StrokeCap.Round, join = StrokeJoin.Round))
             // the start/finish line across the road and the way the cars go beside it
             val p0 = pt(0); val p1 = pt(maxOf(2, n / 60))
