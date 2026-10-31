@@ -2,8 +2,8 @@
 
 How this part of the phone apps behaves. Read it before changing this area; keep it up to date when the behaviour changes. The PC and web behaviour it mirrors is in Pitwall-test's `docs/spec/`.
 
-- The layout is "Track First" (the owner's choice of the ten redesigns). The tab bar is Home, Tracks, Live, Community
-  and Me (`BottomBar` on Android, `MainView.bar` on iOS). Analysis is no longer a tab: it opens over a track's hub (a
+- The layout is "Track First" (the owner's choice of the ten redesigns). The tab bar is Home, Tracks, Telemetry, Community
+  and Account, the PC's names (`BottomBar` on Android, `MainView.bar` on iOS). Analysis is no longer a tab: it opens over a track's hub (a
   session there opens Laps, "Coach for <track>" opens the Coach on your newest session there) and over Home ("Analyse
   my laps", "See all"), with Back (`Route.analysis(tab, session)` on iOS, the "analysis" route on Android).
 - Tracks (`Tracks` / `TracksView`): every circuit you drove, from your sessions and races of the chosen game, grouped

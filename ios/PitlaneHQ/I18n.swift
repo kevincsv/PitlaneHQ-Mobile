@@ -32,8 +32,6 @@ private let strings: [String: (String, String, String)] = [
     "live": ("Telemetry", "Telemetría", "Telemetria"),
     "account_tab": ("Account", "Cuenta", "Conta"),
     "tab_tracks": ("Tracks", "Circuitos", "Pistas"),
-    "tab_live": ("Live", "En vivo", "Ao vivo"),
-    "tab_me": ("Me", "Yo", "Eu"),
     "find_track": ("Find a track", "Buscar circuito", "Buscar pista"),
     "most_driven": ("MOST DRIVEN", "EL MÁS RODADO", "A MAIS PILOTADA"),
     "trk_counts": ("{0} sessions · {1} laps", "{0} sesiones · {1} vueltas", "{0} sessões · {1} voltas"),

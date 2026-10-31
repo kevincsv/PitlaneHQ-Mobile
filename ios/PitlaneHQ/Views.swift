@@ -1203,9 +1203,9 @@ struct MainView: View {
         HStack(spacing: 0) {
             item(0, t("home"), "house")
             item(1, t("tab_tracks"), "map")
-            item(3, t("tab_live"), "antenna.radiowaves.left.and.right")
+            item(3, t("live"), "antenna.radiowaves.left.and.right")
             item(2, t("community"), "person.3")
-            item(4, t("tab_me"), "person")
+            item(4, t("account_tab"), "person")
         }
         .padding(6)
         .background(Theme.navBar)

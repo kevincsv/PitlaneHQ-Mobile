@@ -570,9 +570,9 @@ private fun BottomBar(nav: NavHostController) {
     val dests = listOf(
         Dest("home", t("home"), Icons.Default.Home),
         Dest("tracks", t("tab_tracks"), Icons.Default.Map),
-        Dest("live", t("tab_live"), Icons.Default.Sensors),
+        Dest("live", t("live"), Icons.Default.Sensors),
         Dest("community", t("community"), Icons.Default.Groups),
-        Dest("settings", t("tab_me"), Icons.Default.Person)
+        Dest("settings", t("account_tab"), Icons.Default.Person)
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
     // the laps, the coach and a track's hub belong to Tracks: they open from a track

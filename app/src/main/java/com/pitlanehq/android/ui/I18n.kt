@@ -32,8 +32,6 @@ private val STRINGS: Map<String, L> = mapOf(
     "live" to L("Telemetry", "Telemetría", "Telemetria"),
     "account_tab" to L("Account", "Cuenta", "Conta"),
     "tab_tracks" to L("Tracks", "Circuitos", "Pistas"),
-    "tab_live" to L("Live", "En vivo", "Ao vivo"),
-    "tab_me" to L("Me", "Yo", "Eu"),
     "find_track" to L("Find a track", "Buscar circuito", "Buscar pista"),
     "most_driven" to L("MOST DRIVEN", "EL MÁS RODADO", "A MAIS PILOTADA"),
     "trk_counts" to L("{0} sessions · {1} laps", "{0} sesiones · {1} vueltas", "{0} sessões · {1} voltas"),
