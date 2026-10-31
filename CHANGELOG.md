@@ -7,6 +7,7 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
 ## 0.9.1 beta
 
 - The new layout now has its full look on every screen, with new fonts, cards, switches and tab bar.
+- A track's leaderboard and map now show even when you open it right after the app starts.
 - Fixes and improvements.
 
 ## 0.9.0 beta
