@@ -55,7 +55,6 @@ private let strings: [String: (String, String, String)] = [
     "sessions_here": ("SESSIONS HERE", "SESIONES AQUÍ", "SESSÕES AQUI"),
     "races_here": ("RACES HERE", "CARRERAS AQUÍ", "CORRIDAS AQUI"),
     "coach_for": ("Coach for {0}", "Coach para {0}", "Coach para {0}"),
-    "live_short": ("A short version. The full telemetry is on the web and in the Windows app.", "Una versión corta. La telemetría completa está en la web y en la app de Windows.", "Uma versão curta. A telemetria completa está na web e no app do Windows."),
     "lic_gain": ("{0} in {1} races", "{0} en {1} carreras", "{0} em {1} corridas"),
     "rs_drivers": ("Drivers", "Pilotos", "Pilotos"),
     "settings": ("Settings", "Ajustes", "Configurações"),

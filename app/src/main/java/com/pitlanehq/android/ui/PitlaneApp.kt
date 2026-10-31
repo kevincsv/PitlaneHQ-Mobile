@@ -3212,7 +3212,7 @@ private fun Live(vm: PitlaneViewModel) {
     var codeIn by rememberSaveable { mutableStateOf("") }
     var codeErr by remember { mutableStateOf(false) }
     Screen(t("live_title")) {
-        item { ShortNote("live_short") }
+        item { WebNote(t("community_web")) }
         // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
         item {
             Panel {
@@ -4452,15 +4452,6 @@ private fun CarCard(k: org.json.JSONObject, tr: Trace) {
         Text(brakeLine, fontSize = 13.sp)
         Text(shiftLine, fontSize = 13.sp)
         Text(vmaxLine, fontSize = 13.sp)
-    }
-}
-
-/** The phone's short versions say where the full one is: a small grey line with the PC's symbol. */
-@Composable
-private fun ShortNote(key: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Icon(Icons.Default.Computer, null, tint = Muted.copy(alpha = .7f), modifier = Modifier.size(16.dp))
-        Text(t(key), color = Muted, fontSize = 12.sp, lineHeight = 16.sp)
     }
 }
 

@@ -17,7 +17,7 @@ How this part of the phone apps behaves. Read it before changing this area; keep
 - The phone's analysis is a short version: Tracks, a track's hub, Analysis, a session's laps and the lap comparison
   start with the same note as Community's Leaderboards, "The full coach and lap comparisons are on the web and in the PC
   app. We are working on bringing them to this app." with "Open the web version" (`community_web`, `WebNote` on both).
-  Telemetry (all its tabs) has one grey line with the PC's symbol about the telemetry (`live_short`, `ShortNote`).
+  Telemetry (all its tabs) starts with the same note.
 - A track's hub finds its circuit on the leaderboards by name and the layout you drove most there, ignoring case,
   accents and punctuation (`trackIdOf`); opened before the leaderboards loaded, it finds it once they have.
 

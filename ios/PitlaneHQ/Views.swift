@@ -447,17 +447,6 @@ struct WebNote: View {
     }
 }
 
-/// The phone's short versions say where the full one is: a small grey line with the PC's symbol.
-struct ShortNote: View {
-    let key: String
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "desktopcomputer").font(.system(size: 13)).foregroundColor(Theme.muted.opacity(0.7))
-            Text(t(key)).font(.ui(12)).foregroundColor(Theme.muted).fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
 struct EmptyNote: View {
     let text: String
     var body: some View { Panel { Text(text).font(.ui(15)).foregroundColor(Theme.muted) } }
@@ -4927,7 +4916,7 @@ struct LiveView: View {
 
     var body: some View {
         Screen(title: t("live_title")) {
-            ShortNote(key: "live_short")
+            WebNote(text: t("community_web"))
             // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
             Panel {
                 Text(t("your_pc_anywhere")).font(.ui(17, .black))

@@ -7,6 +7,7 @@ web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new featur
 ## 0.9.2 beta
 
 - My profile and Track notes open again from the Account tab on iPhone.
+- Telemetry starts with the same note as the other screens, with a link to the web version.
 - Fixes and improvements.
 
 ## 0.9.1 beta
