@@ -2578,7 +2578,7 @@ struct AnalysisView: View {
             Tabs(labels: [t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")], selected: $tab)
                 .onAppear { Usage.count("view:" + ["laps", "coach", "cloudlaps", "races"][min(max(tab, 0), 3)]) }
                 .onChange(of: tab) { v in Usage.count("view:" + ["laps", "coach", "cloudlaps", "races"][min(max(v, 0), 3)]) }
-            ShortNote(key: "an_short")
+            WebNote(text: t("community_web"))
             switch tab {
             case 0, 1: lapsAndCoach
             case 2: mySessions
@@ -2618,7 +2618,7 @@ struct SessionView: View {
 
     var body: some View {
         Screen(title: session.track, sub: session.car) {
-            ShortNote(key: "an_short")
+            WebNote(text: t("community_web"))
             LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await laps.load { try await account.laps(session.id) } } }
             if !sessCat(session).isEmpty {
                 HStack(spacing: 6) { Text(t("viewing", session.car, sessCat(session))).font(.caption).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
@@ -2682,7 +2682,7 @@ struct LapView: View {
     var body: some View {
         let d = refTime.map { lap.time - $0 }
         Screen(title: t("lap_analysis") + " · L\(lap.n)", sub: session.track + " · " + session.car) {
-            ShortNote(key: "an_short")
+            WebNote(text: t("community_web"))
             HStack(spacing: 8) {
                 Text(t("compare_with")).font(.caption).foregroundColor(Theme.muted)
                 Tabs(labels: [t("my_best"), "▲ " + t("next_level"), "★ " + t("record")], selected: Binding(get: { kind == .myBest ? 0 : kind == .level ? 1 : 2 }, set: { kind = $0 == 0 ? .myBest : $0 == 1 ? .level : .record }))
@@ -4238,6 +4238,9 @@ struct TrackPageView: View {
     @StateObject private var page = Loader<TrackPage>()
     @State private var sessions: [CloudSession] = []
     @State private var tab = 0
+    /// the circuit's id found on the leaderboards when it was opened without one (before they had loaded)
+    @State private var foundId: Int64 = 0
+    private var trackId: Int64 { ref.id > 0 ? ref.id : foundId }
 
     var body: some View {
         let d = page.data
@@ -4246,17 +4249,25 @@ struct TrackPageView: View {
         let cfg = mine?.sessions.map { fixText($0.trackConfig) }.first { !$0.isEmpty } ?? ""
         Screen(title: name.isEmpty ? t("track_page") : name, sub: cfg) {
             Tabs(labels: [t("hub_you"), t("hub_board"), t("hub_notes")], selected: $tab)
-            ShortNote(key: "an_short")
-            LoadState(loading: page.loading, error: page.error, stale: page.stale) { Task { await page.load { try await account.trackPage(trackId: ref.id) } } }
+            WebNote(text: t("community_web"))
+            LoadState(loading: page.loading, error: page.error, stale: page.stale) { Task { await page.load { try await account.trackPage(trackId: trackId) } } }
             switch tab {
             case 0: you(d, mine, name)
             case 1: board(d)
             default:
-                if ref.id > 0 { TrackNotesPanel(trackId: ref.id, track: name) } else { EmptyNote(text: t("nothing_found")) }
+                if trackId > 0 { TrackNotesPanel(trackId: trackId, track: name) } else { EmptyNote(text: t("nothing_found")) }
             }
         }
-        .task(id: ref.id) { await page.load { try await account.trackPage(trackId: ref.id) } }
-        .task(id: account.game) { if let g = try? await account.sessions() { sessions = g.data } }
+        .task(id: trackId) { await page.load { try await account.trackPage(trackId: trackId) } }
+        .task(id: account.game) {
+            if let g = try? await account.sessions() { sessions = g.data }
+            // opened before the leaderboards had loaded (or by a name they write differently): find the circuit there now
+            if ref.id <= 0, let c = try? await account.combos() {
+                let m = myTracks(sessions, account.races).first { sameTrack($0.name, ref.name) }
+                let id = trackIdOf(c.data, ref.name, configsOf(m))
+                if id > 0 { foundId = id }
+            }
+        }
         .onChange(of: tab) { v in Usage.count("view:" + ["track", "trackboard", "tracknotes"][min(max(v, 0), 2)]) }
     }
 
@@ -4363,7 +4374,31 @@ struct MyTrack {
 func sameTrack(_ a: String, _ b: String) -> Bool {
     guard !a.isEmpty, !b.isEmpty else { return false }
     let x = a.lowercased(), y = b.lowercased()
-    return x == y || x.hasPrefix(y) || y.hasPrefix(x)
+    if x == y || x.hasPrefix(y) || y.hasPrefix(x) { return true }
+    let p = trackKey(a), q = trackKey(b) // "Autódromo" and "Autodromo" too
+    return !p.isEmpty && !q.isEmpty && (p == q || p.hasPrefix(q) || q.hasPrefix(p))
+}
+
+/// A circuit's name to compare: no case, accents or punctuation ("Autódromo Hermanos Rodríguez · Grand Prix" = "autodromo hermanos rodriguez grand prix").
+func trackKey(_ s: String) -> String {
+    let f = fixText(s).folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX")).lowercased()
+    var out = "", gap = false
+    for u in f.unicodeScalars {
+        let v = u.value
+        if (v >= 97 && v <= 122) || (v >= 48 && v <= 57) {
+            if gap && !out.isEmpty { out += " " }
+            gap = false
+            out.unicodeScalars.append(u)
+        } else { gap = true }
+    }
+    return out
+}
+
+/// The layouts you drove at a circuit, the most driven first.
+func configsOf(_ x: MyTrack?) -> [String] {
+    var n: [String: Int] = [:]
+    for s in x?.sessions ?? [] { let c = fixText(s.trackConfig).trimmingCharacters(in: .whitespaces); if !c.isEmpty { n[c, default: 0] += 1 } }
+    return n.sorted { $0.value > $1.value }.map(\.key)
 }
 
 /// Your circuits, the most driven first (the newest of a tie).
@@ -4381,9 +4416,18 @@ func myTracks(_ sessions: [CloudSession], _ races: [Race]) -> [MyTrack] {
         .sorted { $0.count != $1.count ? $0.count > $1.count : $0.last > $1.last }
 }
 
-/// The community's id of a circuit, found by its name among the leaderboards (0: nobody shared a lap there yet).
-func trackIdOf(_ combos: [Combo], _ name: String) -> Int64 {
-    (combos.first { $0.track.lowercased() == name.lowercased() } ?? combos.first { sameTrack($0.track, name) })?.trackId ?? 0
+/// The community's id of a circuit, found by its name among the leaderboards (0: nobody shared a lap there yet). The
+/// leaderboards name a circuit with its layout ("Okayama International Circuit · Short"): the layout you drove most there wins.
+func trackIdOf(_ combos: [Combo], _ name: String, _ configs: [String] = []) -> Int64 {
+    let k = trackKey(name)
+    if k.isEmpty { return 0 }
+    // every circuit of the leaderboards once, with its laps
+    var keys: [Int64: String] = [:], laps: [Int64: Int] = [:]
+    for c in combos { if keys[c.trackId] == nil { keys[c.trackId] = trackKey(c.track) }; laps[c.trackId, default: 0] += c.laps }
+    func best(_ ok: (String) -> Bool) -> Int64? { keys.filter { ok($0.value) }.max { (laps[$0.key] ?? 0) < (laps[$1.key] ?? 0) }?.key }
+    for c in configs { let kc = trackKey(name + " " + c); if let id = best({ $0 == kc }) { return id } }
+    if let id = best({ $0 == k }) { return id }
+    return best({ $0.hasPrefix(k + " ") || k.hasPrefix($0 + " ") }) ?? 0
 }
 
 /// Every circuit you drove: the most driven on top with its map, the others as tiles. Each opens its hub.
@@ -4408,7 +4452,7 @@ struct TracksView: View {
         }
         if let c = try? await account.combos(), gm == account.game { combos = c.data }
         if let top = myTracks(sessions ?? [], account.races).first {
-            let id = trackIdOf(combos, top.name)
+            let id = trackIdOf(combos, top.name, configsOf(top))
             if id > 0 && id != heroId {
                 let lay = await account.trackLayout(trackId: id)
                 if gm == account.game { heroId = id; heroLayout = lay }
@@ -4429,18 +4473,18 @@ struct TracksView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 10).background(Theme.surface2)
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
-            ShortNote(key: "an_short")
+            WebNote(text: t("community_web"))
             LoadState(loading: sessions == nil && err == nil, error: err) { Task { await reload() } }
             if sessions != nil && all.isEmpty { EmptyNote(text: t("no_tracks")) }
             else if !all.isEmpty && list.isEmpty { EmptyNote(text: t("nothing_found")) }
             if let x = hero {
-                let id = trackIdOf(combos, x.name)
+                let id = trackIdOf(combos, x.name, configsOf(x))
                 NavigationLink(value: Route.track(TrackRef(id: id, name: x.name))) { TrackHero(x: x, layout: id > 0 && id == heroId ? heroLayout : nil) }.buttonStyle(.plain)
             }
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 8) {
                     ForEach(row, id: \.name) { x in
-                        NavigationLink(value: Route.track(TrackRef(id: trackIdOf(combos, x.name), name: x.name))) { TrackTile(x: x) }.buttonStyle(.plain)
+                        NavigationLink(value: Route.track(TrackRef(id: trackIdOf(combos, x.name, configsOf(x)), name: x.name))) { TrackTile(x: x) }.buttonStyle(.plain)
                     }
                     if row.count < 2 { Color.clear.frame(maxWidth: .infinity) }
                 }

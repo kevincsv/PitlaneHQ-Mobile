@@ -1265,7 +1265,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
     val open = { x: CloudSession -> vm.session = x; vm.loadLaps(x.id); tab = pickFor }
     Screen(t("analysis"), back = { nav.popBackStack() }, head = { GameSeg(vm) }) {
         item { Tabs(listOf(t("tab_laps"), t("tab_coach"), t("tab_my_sessions"), t("tab_my_races")), tab) { tab = it; if (it < 2) pickFor = it } }
-        item { ShortNote("an_short") }
+        item { WebNote(t("community_web")) }
         when (tab) {
             0, 1 -> {
                 if (cur == null) {
@@ -1687,7 +1687,7 @@ private fun SessionDetail(vm: PitlaneViewModel, nav: NavHostController) {
     val x = vm.session ?: return
     val l by vm.laps.collectAsState()
     Screen(x.track, x.car, back = { nav.popBackStack() }) {
-        item { ShortNote("an_short") }
+        item { WebNote(t("community_web")) }
         state(l) { vm.loadLaps(x.id) }
         if (sessCat(x).isNotEmpty()) item {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1710,7 +1710,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
     // the point you touch on a chart, shared by the three charts
     var pick by remember(an) { mutableStateOf<Int?>(null) }
     Screen(t("lap_analysis") + (an?.let { " · L${it.lap.n}" } ?: ""), x.track + " · " + x.car, back = { nav.popBackStack() }) {
-        item { ShortNote("an_short") }
+        item { WebNote(t("community_web")) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(t("compare_with"), color = Muted, fontSize = 12.sp)
@@ -2656,19 +2656,27 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val sl by vm.sessions.collectAsState()
     val r by vm.races.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    val c by vm.combos.collectAsState()
     LaunchedEffect(Unit) {
         if (sl.data == null && !sl.loading) vm.loadSessions()
         if (r.data == null && !r.loading) vm.loadRaces()
+        if (ref.first <= 0 && c.data == null && !c.loading) vm.loadCombos()
     }
     LaunchedEffect(tab) { vm.track("view:" + listOf("track", "trackboard", "tracknotes")[tab.coerceIn(0, 2)]) }
     val d = p.data
     val name = d?.track?.ifBlank { null } ?: ref.second
     val mine = remember(sl.data, r.data, name) { myTracks(sl.data ?: emptyList(), r.data ?: emptyList()).firstOrNull { sameTrack(it.name, name) } }
+    // opened before the leaderboards had loaded (or by a name they write differently): find the circuit there now
+    LaunchedEffect(ref, c.data, mine) {
+        if (ref.first > 0) return@LaunchedEffect
+        val id = trackIdOf(c.data ?: return@LaunchedEffect, ref.second, configsOf(mine))
+        if (id > 0) vm.openTrack(id, ref.second)
+    }
     val cfg = mine?.sessions?.firstNotNullOfOrNull { fixText(it.trackConfig).takeIf { c -> c.isNotBlank() } } ?: ""
     val toAnalysis = { x: CloudSession, tb: Int -> vm.session = x; vm.loadLaps(x.id); vm.analysisTab = tb; nav.navigate("analysis") }
     Screen(name.ifEmpty { t("track_page") }, cfg, back = { nav.popBackStack() }) {
         item { Tabs(listOf(t("hub_you"), t("hub_board"), t("hub_notes")), tab) { tab = it } }
-        item { ShortNote("an_short") }
+        item { WebNote(t("community_web")) }
         state(p) { vm.openTrack(ref.first, ref.second) }
         when (tab) {
             // you here: the map, your best against the record, your sessions and races here and the coach for this track
@@ -2761,7 +2769,12 @@ private class MyTrack(val name: String, val sessions: List<CloudSession>, val ra
 }
 
 /** The same circuit: "Spa-Francorchamps" and "Spa-Francorchamps - Grand Prix" too. */
-internal fun sameTrack(a: String, b: String) = a.isNotBlank() && b.isNotBlank() && (a.equals(b, true) || a.startsWith(b, true) || b.startsWith(a, true))
+internal fun sameTrack(a: String, b: String): Boolean {
+    if (a.isBlank() || b.isBlank()) return false
+    if (a.equals(b, true) || a.startsWith(b, true) || b.startsWith(a, true)) return true
+    val x = trackKey(a); val y = trackKey(b) // "Autódromo" and "Autodromo" too
+    return x.isNotEmpty() && y.isNotEmpty() && (x == y || x.startsWith(y) || y.startsWith(x))
+}
 
 /** Your circuits, the most driven first (the newest of a tie). */
 private fun myTracks(sessions: List<CloudSession>, races: List<Race>): List<MyTrack> {
@@ -2773,9 +2786,28 @@ private fun myTracks(sessions: List<CloudSession>, races: List<Race>): List<MyTr
         .sortedWith(compareByDescending<MyTrack> { it.count }.thenByDescending { it.last })
 }
 
-/** The community's id of a circuit, found by its name among the leaderboards (0: nobody shared a lap there yet). */
-private fun trackIdOf(combos: List<Combo>, name: String): Long =
-    (combos.firstOrNull { it.track.equals(name, true) } ?: combos.firstOrNull { sameTrack(it.track, name) })?.trackId ?: 0L
+/** A circuit's name to compare: no case, accents or punctuation ("Autódromo Hermanos Rodríguez · Grand Prix" = "autodromo hermanos rodriguez grand prix"). */
+internal fun trackKey(s: String): String =
+    java.text.Normalizer.normalize(fixText(s), java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+
+/** The community's id of a circuit, found by its name among the leaderboards (0: nobody shared a lap there yet). The
+ *  leaderboards name a circuit with its layout ("Okayama International Circuit · Short"): the layout you drove most there wins. */
+internal fun trackIdOf(combos: List<Combo>, name: String, configs: List<String> = emptyList()): Long {
+    val k = trackKey(name)
+    if (k.isEmpty()) return 0L
+    // every circuit of the leaderboards once, with its laps
+    val tracks = combos.groupBy { it.trackId }.map { (id, l) -> Triple(id, trackKey(l.first().track), l.sumOf { it.laps }) }
+    for (c in configs) {
+        val kc = trackKey("$name $c")
+        tracks.filter { it.second == kc }.maxByOrNull { it.third }?.let { return it.first }
+    }
+    tracks.filter { it.second == k }.maxByOrNull { it.third }?.let { return it.first }
+    return tracks.filter { it.second.startsWith("$k ") || k.startsWith(it.second + " ") }.maxByOrNull { it.third }?.first ?: 0L
+}
+
+/** The layouts you drove at a circuit, the most driven first. */
+private fun configsOf(x: MyTrack?): List<String> =
+    x?.sessions?.map { fixText(it.trackConfig).trim() }?.filter { it.isNotEmpty() }?.groupingBy { it }?.eachCount()?.entries?.sortedByDescending { it.value }?.map { it.key } ?: emptyList()
 
 /** Every circuit you drove: the most driven on top with its map, the others as tiles. Each opens its hub. */
 @Composable
@@ -2794,16 +2826,16 @@ private fun Tracks(vm: PitlaneViewModel, nav: NavHostController) {
     val all = remember(sl.data, r.data) { myTracks(sl.data ?: emptyList(), r.data ?: emptyList()) }
     val combos = c.data ?: emptyList()
     val top = all.firstOrNull()
-    val topId = top?.let { trackIdOf(combos, it.name) } ?: 0L
+    val topId = top?.let { trackIdOf(combos, it.name, configsOf(it)) } ?: 0L
     LaunchedEffect(topId) { vm.loadHeroLayout(topId) }
-    val open = { x: MyTrack -> vm.openTrack(trackIdOf(combos, x.name), x.name); nav.navigate("track") }
+    val open = { x: MyTrack -> vm.openTrack(trackIdOf(combos, x.name, configsOf(x)), x.name); nav.navigate("track") }
     val list = all.filter { q.isBlank() || it.name.contains(q, true) }
     Screen(t("tab_tracks"), head = { GameSeg(vm) }) {
         item {
             OutlinedTextField(q, { q = it }, placeholder = { Text(t("find_track")) }, singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
                 shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
         }
-        item { ShortNote("an_short") }
+        item { WebNote(t("community_web")) }
         state(sl) { vm.loadSessions() }
         if (sl.data != null && all.isEmpty()) item { Empty(t("no_tracks")) }
         else if (all.isNotEmpty() && list.isEmpty()) item { Empty(t("nothing_found")) }

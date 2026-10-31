@@ -15,9 +15,11 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   here (the map with its turns, your best against the record, Sessions here, Races here, "Coach for <track>"),
   Leaderboard (the record of every car there) and Notes (your track notes). The track's layout name is under the title.
 - The phone's analysis is a short version: Tracks, a track's hub, Analysis, a session's laps and the lap comparison
-  start with one grey line with the PC's symbol, "A short version. The full lap analyser is on the web and in the
-  Windows app." (`an_short`); Telemetry (all its tabs) says the same of the telemetry (`live_short`). `ShortNote` on
-  both.
+  start with the same note as Community's Leaderboards, "The full coach and lap comparisons are on the web and in the PC
+  app. We are working on bringing them to this app." with "Open the web version" (`community_web`, `WebNote` on both).
+  Telemetry (all its tabs) has one grey line with the PC's symbol about the telemetry (`live_short`, `ShortNote`).
+- A track's hub finds its circuit on the leaderboards by name and the layout you drove most there, ignoring case,
+  accents and punctuation (`trackIdOf`); opened before the leaderboards loaded, it finds it once they have.
 
 - Android and iOS stay the same app: same screens, same features, same wording, and the PC's: Telemetry has the PC's
   Telemetry, Standings and Tyres (`Live` in PitlaneApp.kt, `LiveTabs.swift`, fed by `LiveField`); Analysis has Laps,

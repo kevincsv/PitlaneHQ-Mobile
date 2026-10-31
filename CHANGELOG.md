@@ -4,6 +4,11 @@ Pitlane HQ is in **beta**. The phone apps share their version number with Pitlan
 web (`version.txt`), `0.MINOR.PATCH`. A MINOR version brings a set of new features, and fixes go in as
 "Fixes and improvements". 1.0.0 comes when the beta ends. Newest first.
 
+## 0.9.1 beta
+
+- A track's leaderboard and map now show even when you open it right after the app starts.
+- Fixes and improvements.
+
 ## 0.9.0 beta
 
 - Turn on notifications in Account to hear when another driver beats your record and to get a summary of your week.
