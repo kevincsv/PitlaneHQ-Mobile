@@ -26,6 +26,11 @@ targets:
             CFBundleURLSchemes:
               - pitlanehq
         UIUserInterfaceStyle: Dark
+        # Account → Notifications (Notify.swift): the background check of the server's alerts
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.pitlanehq.ios.alerts
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UISupportedInterfaceOrientations~ipad:

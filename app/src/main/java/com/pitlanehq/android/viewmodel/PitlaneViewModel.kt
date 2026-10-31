@@ -545,11 +545,14 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     }
     /** A log a driver sent (admins), or null. */
     suspend fun adminLog(id: String): String? = withContext(Dispatchers.IO) { runCatching { repo.adminLog(id) }.getOrNull() }
-    /** Me → Weekly email: on or off (null while unknown). */
-    val digest = MutableStateFlow<Boolean?>(null)
-    fun loadDigest() { viewModelScope.launch(Dispatchers.IO) { runCatching { repo.digest() }.onSuccess { digest.value = it } } }
-    fun setDigest(on: Boolean) {
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.setDigest(on) }.onSuccess { digest.value = it; track(if (it) "act:digest_on" else "act:digest_off") } }
+    /** Account → Notifications: on in this phone (the server writes the week's summary only for the accounts with them on). */
+    val notify = MutableStateFlow(com.pitlanehq.android.data.Notify.on(app))
+    fun setNotify(on: Boolean) {
+        val ctx = getApplication<Application>()
+        com.pitlanehq.android.data.Notify.setOn(ctx, on, plannerPlan.value)
+        notify.value = on
+        track(if (on) "act:notify_on" else "act:notify_off")
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.setAlertsOn(on) } }
     }
     private var usageJob: Job? = null
     private fun startUsage() {
@@ -632,6 +635,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         val p = plannerPlan.value.filter { it.t > now - 3 * 3_600_000L }.toMutableList()
         if (p.removeAll { it.sid == s.sid && it.t == t }.not()) p += PlannedRace(s.sid, t, s.name, Season.weekAt(s, t).track)
         p.sortBy { it.t }; repo.plannerPlan = p; plannerPlan.value = p
+        com.pitlanehq.android.data.Notify.plan(getApplication(), p) // a reminder 15 minutes before each, with notifications on
     }
     // the series page and the week the Planner opened
     var plannerSeries by mutableStateOf<SSeries?>(null)

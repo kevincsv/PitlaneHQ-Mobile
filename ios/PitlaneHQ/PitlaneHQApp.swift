@@ -16,6 +16,7 @@ struct PitlaneHQApp: App {
     init() {
         lastCrash = Reports.take()
         Reports.install()
+        Notify.register()
     }
 
     var body: some Scene {
@@ -52,7 +53,9 @@ struct PitlaneHQApp: App {
                     account.startSupport()
                     Task { await account.syncIfDue() }
                     if account.signedIn { live.resume(token: account.token, key: account.dataKey, demo: account.demo) }
+                    Task { await Notify.check() } // the alerts iOS's background refresh did not get to
                 } else {
+                    Notify.schedule()
                     account.stopMinuteSync()
                     account.stopUsage()
                     account.stopSupport()

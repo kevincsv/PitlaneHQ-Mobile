@@ -937,20 +937,23 @@ struct CodeSheet: View {
 /// Account → Discord: link it with Discord's sign-in (the password first), show it on your profile so other drivers can
 /// find you there (off until you say), or unlink it (the password again). A link the bot's /link made never signs in:
 /// "Link it again" does it with Discord's sign-in.
-/// Account → Weekly email: Monday's email with the week's laps and personal bests (the server's digest.js), off until
-/// the driver turns it on.
-struct DigestPanel: View {
+/// Account → Notifications: a record of yours beaten, your week on Monday and a reminder 15 minutes before each planned
+/// race, on this phone only when turned on (iOS asks for the permission first). Never by email.
+struct NotifyPanel: View {
     @EnvironmentObject var account: Account
-    @State private var on: Bool?
+    @State private var on = Notify.on
     var body: some View {
         Panel {
-            Toggle(t("digest_title"), isOn: Binding(get: { on ?? false }, set: { v in
+            Toggle(t("notify_title"), isOn: Binding(get: { on }, set: { v in
                 on = v
-                Task { on = (try? await account.setDigest(v)) ?? !v }
+                Task {
+                    on = await Notify.setOn(v, plan: account.plannerPlan)
+                    Usage.count(on ? "act:notify_on" : "act:notify_off")
+                    await account.setAlertsOn(on)
+                }
             }))
-            .font(.subheadline.bold()).tint(Theme.accent).disabled(on == nil)
+            .font(.subheadline.bold()).tint(Theme.accent)
         }
-        .task { on = try? await account.digest() }
     }
 }
 
@@ -5457,9 +5460,10 @@ struct SettingsView: View {
             if (devices.data?.count ?? 0) > 1 {
                 Button(t("sign_out_others")) { revoke("others") }.foregroundColor(Theme.bad)
             }
+            SectionLabel(text: t("notify_title"))
+            NotifyPanel()
             SectionLabel(text: "DISCORD")
             DiscordPanel()
-            DigestPanel()
             SectionLabel(text: "STEAM")
             SteamPanel()
             SectionLabel(text: t("language"))

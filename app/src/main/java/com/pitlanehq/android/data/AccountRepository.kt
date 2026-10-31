@@ -1253,9 +1253,10 @@ class AccountRepository(context: Context) {
         call("POST", "/community/crash", j, auth = prefs.getString("token", null) != null)
     }
 
-    // ---------- the weekly email (Me → Weekly email, the server's digest.js) ----------
-    fun digest(): Boolean = !demo && JSONObject(call("GET", "/community/digest")).optBoolean("on")
-    fun setDigest(on: Boolean): Boolean = JSONObject(call("POST", "/community/digest", JSONObject().put("on", on).put("lang", com.pitlanehq.android.ui.I18n.lang))).optBoolean("on")
+    // ---------- the phone's notifications (Account → Notifications, the server's alerts.js) ----------
+    /** The account's alerts after `since` (a beaten record, the week's summary) and the server's time {now, alerts}. */
+    fun alerts(since: Long): JSONObject = JSONObject(call("GET", "/community/alerts?since=$since"))
+    fun setAlertsOn(on: Boolean): Boolean = !demo && JSONObject(call("POST", "/community/alerts/on", JSONObject().put("on", on).put("lang", com.pitlanehq.android.ui.I18n.lang))).optBoolean("on")
 
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     fun nameFree(name: String): Boolean = runCatching { JSONObject(call("POST", "/community/name-check", JSONObject().put("name", name))).optBoolean("free", true) }.getOrDefault(true)

@@ -57,5 +57,10 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   own process, iOS's OSLogStore) with a line naming the app, the version and the phone (POST
   `/community/support/logs`); the server adds "Logs sent" to the chat. An admin's thread shows "Open the logs" under
   that line (GET `/community/admin/support/logs/:id`), the log in a window with Copy.
-- Account → Weekly email (under Discord): the switch for Monday's email (GET/POST `/community/digest` {on, lang}), off
-  until the driver turns it on.
+- Account → Notifications (its own section before Discord; `data/Notify.kt`, `Notify.swift`), off until the driver
+  turns it on (Android 13 and later and iOS ask for the permission first) and never by email. On, the phone tells the
+  server (POST `/community/alerts/on` {on, lang}, so Monday's summary of the week is written for the account) and reads
+  GET `/community/alerts?since=` in the background (Android every 30 minutes with a network, `AlertJob`; iOS when it
+  gives the app a background refresh, `com.pitlanehq.ios.alerts`, and each time the app opens): "Your record at Spa was
+  beaten" (who, the time, the car and the gap; "Another driver" for an anonymous one) and the week's summary as the
+  server wrote it. The Planner's races get a reminder 15 minutes before (`docs/spec/planner.md`). Off stops all of it.

@@ -20,6 +20,9 @@ It is left out of the changelog and the release notes while it is in development
 - Owned marks come only from what the account raced: names are matched by shared words (score 0.6 or more), and a
   track counts with all its layouts.
 - The stars and the plan stay on the phone (`plannerFav`, `plannerPlan`). Races more than 3 hours old leave the plan.
+- With Account → Notifications on, each race of the plan gets a notification 15 minutes before it starts ("<series>
+  starts in 15 minutes" and the track; an alarm per race on Android, `Notify.plan`, set again after a restart; a
+  scheduled notification on iOS), changed whenever the plan changes. Never by email.
 
 ## Screens
 

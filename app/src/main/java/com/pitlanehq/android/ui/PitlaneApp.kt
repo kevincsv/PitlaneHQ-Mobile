@@ -3696,9 +3696,10 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
             }
         }
         if ((d.data?.size ?: 0) > 1) item { TextButton({ vm.revoke("others") }) { Text(t("sign_out_others"), color = Bad) } }
+        item { Section(t("notify_title")) }
+        item { NotifyPanel(vm) }
         item { Section("DISCORD") }
         item { DiscordPanel(vm) }
-        item { DigestPanel(vm) }
         item { Section("STEAM") }
         item { SteamPanel(vm) }
         item { Section(t("language")) }
@@ -3746,15 +3747,20 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
     }
 }
 
-/** Me → Weekly email: the driver's week by email on Monday (the server's digest.js), on or off. */
+/** Account → Notifications: a record of yours beaten, your week on Monday and a reminder 15 minutes before each planned
+ *  race, on this phone only when turned on (Android 13 and later ask for the permission first). Never by email. */
 @Composable
-private fun DigestPanel(vm: PitlaneViewModel) {
-    val on by vm.digest.collectAsState()
-    LaunchedEffect(Unit) { vm.loadDigest() }
+private fun NotifyPanel(vm: PitlaneViewModel) {
+    val on by vm.notify.collectAsState()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok -> if (ok) vm.setNotify(true) }
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(t("digest_title"), fontWeight = FontWeight.Bold, color = Fg, modifier = Modifier.weight(1f))
-            Switch(on == true, { vm.setDigest(it) }, enabled = on != null, colors = SwitchDefaults.colors(checkedTrackColor = Accent))
+            Text(t("notify_title"), fontWeight = FontWeight.Bold, color = Fg, modifier = Modifier.weight(1f))
+            Switch(on, { v ->
+                if (v && !com.pitlanehq.android.data.Notify.allowed(ctx) && android.os.Build.VERSION.SDK_INT >= 33) ask.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                else vm.setNotify(v)
+            }, colors = SwitchDefaults.colors(checkedTrackColor = Accent))
         }
     }
 }

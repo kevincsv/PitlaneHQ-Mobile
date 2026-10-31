@@ -1145,7 +1145,11 @@ final class Account: ObservableObject {
         didSet { UserDefaults.standard.set(plannerFav.map { NSNumber(value: $0) }, forKey: "plannerFav") }
     }
     @Published var plannerPlan: [PlannedRace] = (UserDefaults.standard.data(forKey: "plannerPlan").flatMap { try? JSONDecoder().decode([PlannedRace].self, from: $0) }) ?? [] {
-        didSet { UserDefaults.standard.set(try? JSONEncoder().encode(plannerPlan), forKey: "plannerPlan") }
+        didSet {
+            UserDefaults.standard.set(try? JSONEncoder().encode(plannerPlan), forKey: "plannerPlan")
+            let p = plannerPlan
+            Task { await Notify.plan(p) } // a reminder 15 minutes before each, with notifications on
+        }
     }
     func toggleStar(_ sid: Int64) { if plannerFav.contains(sid) { plannerFav.remove(sid) } else { plannerFav.insert(sid) } }
     func inPlan(_ sid: Int64, _ t: Double) -> Bool { plannerPlan.contains { $0.sid == sid && $0.t == t } }
@@ -1653,13 +1657,11 @@ final class Account: ObservableObject {
         _ = try? await call("POST", "/community/crash", body: b, auth: token != nil)
     }
 
-    // ---------- the weekly email (Me → Weekly email, the server's digest.js) ----------
-    func digest() async throws -> Bool {
-        if demo { return false }
-        return (try JSONSerialization.jsonObject(with: await call("GET", "/community/digest")) as? [String: Any])?["on"] as? Bool ?? false
-    }
-    func setDigest(_ on: Bool) async throws -> Bool {
-        (try JSONSerialization.jsonObject(with: await call("POST", "/community/digest", body: ["on": on, "lang": I18n.shared.lang])) as? [String: Any])?["on"] as? Bool ?? on
+    // ---------- the phone's notifications (Account → Notifications, the server's alerts.js; Notify.swift) ----------
+    /// on or off in this phone; the server writes the week's summary only for the accounts with them on
+    func setAlertsOn(_ on: Bool) async {
+        guard !demo else { return }
+        _ = try? await call("POST", "/community/alerts/on", body: ["on": on, "lang": I18n.shared.lang])
     }
 
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
