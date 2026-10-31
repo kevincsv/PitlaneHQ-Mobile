@@ -2200,15 +2200,34 @@ func homeRow<B: View>(_ place: String, _ pc: Color, _ track: String, _ kind: Str
     .padding(.vertical, 10).contentShape(Rectangle())
 }
 
+/// How bright a day's square is: nothing driven, then four steps up to the busiest day.
+func dayAlpha(_ n: Int, _ mx: Int) -> Double {
+    n == 0 ? 0 : [0.35, 0.6, 0.8, 1.0][max(0, min(3, Int((Double(n) / Double(max(1, mx)) * 4).rounded(.up)) - 1))]
+}
+
+/// The app's language for dates (month and day names).
+func appLocale() -> Locale { Locale(identifier: I18n.shared.lang == "es" ? "es" : I18n.shared.lang == "pt" ? "pt_BR" : "en") }
+
+/// The weekdays' letters in the app's language, Sunday first.
+func weekdayLetters(_ loc: Locale) -> [String] {
+    var c = Calendar(identifier: .gregorian)
+    c.locale = loc
+    return c.veryShortStandaloneWeekdaySymbols
+}
+
+/// Monday first, the phone's time zone.
+private var mondayCal: Calendar { var c = Calendar.current; c.firstWeekday = 2; return c }
+
 /// The days you drove, like the web and the PC: the last 26 weeks in squares, brighter the more races and sessions that day.
-/// A day opens what you drove: the race summaries and the sessions.
+/// A tap opens them as a calendar (on the day tapped, when it was one you drove).
 struct DaysDriven: View {
     let races: [Race]
     @EnvironmentObject var account: Account
     @State private var sessions: [CloudSession] = []
-    @State private var open: Date?
+    @State private var go = false
+    @State private var pick: Date?
     private let weeks = 26
-    private var cal: Calendar { var c = Calendar.current; c.firstWeekday = 2; return c }
+    private var cal: Calendar { mondayCal }
 
     private func dayKey(_ ms: Double) -> Date { cal.startOfDay(for: Date(timeIntervalSince1970: ms / 1000)) }
     private var byRace: [Date: [Race]] { Dictionary(grouping: races) { dayKey($0.when) } }
@@ -2218,13 +2237,13 @@ struct DaysDriven: View {
         let wd = (cal.component(.weekday, from: today) + 5) % 7 // days since Monday
         return cal.date(byAdding: .day, value: -(wd + (weeks - 1) * 7), to: today)!
     }
-    private func count(_ d: Date) -> Int { (byRace[d]?.count ?? 0) + (bySes[d]?.count ?? 0) }
 
     var body: some View {
         let s = start, r = byRace, se = bySes
         let all: [Date] = (0..<(weeks * 7)).map { cal.date(byAdding: .day, value: $0, to: s)! }
-        let mx: Int = max(1, all.map { (r[$0]?.count ?? 0) + (se[$0]?.count ?? 0) }.max() ?? 1)
-        let driven: Int = all.filter { $0 <= today && ((r[$0]?.count ?? 0) + (se[$0]?.count ?? 0)) > 0 }.count
+        let cnt: (Date) -> Int = { (r[$0]?.count ?? 0) + (se[$0]?.count ?? 0) }
+        let mx: Int = max(1, all.map(cnt).max() ?? 1)
+        let driven: Int = all.filter { $0 <= today && cnt($0) > 0 }.count
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 SectionLabel(text: t("days_driven"))
@@ -2236,41 +2255,158 @@ struct DaysDriven: View {
                     HStack(spacing: 2) {
                         ForEach(0..<weeks, id: \.self) { w in
                             VStack(spacing: 2) {
-                                ForEach(0..<7, id: \.self) { d in cell(all[w * 7 + d], mx) }
+                                ForEach(0..<7, id: \.self) { d in cell(all[w * 7 + d], cnt(all[w * 7 + d]), mx) }
                             }
                         }
                     }
                 }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { pick = nil; go = true }
         }
         .task(id: "\(account.game)|\(account.refreshTick)") { if let g = try? await account.sessions() { sessions = g.data } }
-        .sheet(item: Binding(get: { open.map { DayRef(day: $0) } }, set: { open = $0?.day })) { ref in
-            NavigationStack {
-                List {
-                    ForEach(byRace[ref.day] ?? []) { x in
-                        NavigationLink(value: Route.race(x)) { Text("\(x.track) · P\(x.finish)/\(x.field) · \(x.incText)").bold() }
+        .navigationDestination(isPresented: $go) { DaysView(races: races, start: pick).onAppear { Usage.count("view:days") } }
+    }
+
+    @ViewBuilder private func cell(_ d: Date, _ n: Int, _ mx: Int) -> some View {
+        let fill: Color = d > today ? .clear : n == 0 ? Theme.surface2 : Theme.accent.opacity(dayAlpha(n, mx))
+        RoundedRectangle(cornerRadius: 3).fill(fill).frame(width: 11, height: 11)
+            .contentShape(Rectangle())
+            .onTapGesture { pick = n > 0 ? d : nil; go = true }
+    }
+}
+
+/// The days you drove as a calendar: a month in the same squares, bigger and with their numbers, brighter the more races
+/// and sessions that day; a day shows its races and sessions under it, each opening its summary.
+struct DaysView: View {
+    let races: [Race]
+    let start: Date?
+    @EnvironmentObject var account: Account
+    @State private var sessions: [CloudSession] = []
+    @State private var loading = true
+    @State private var picked: Date?
+    @State private var month: Date?
+    private var cal: Calendar { mondayCal }
+
+    private func dayKey(_ ms: Double) -> Date { cal.startOfDay(for: Date(timeIntervalSince1970: ms / 1000)) }
+    private func monthOf(_ d: Date) -> Date { cal.date(from: cal.dateComponents([.year, .month], from: d))! }
+
+    var body: some View {
+        let today = cal.startOfDay(for: Date())
+        let byRace = Dictionary(grouping: races.filter { $0.when > 0 }) { dayKey($0.when) }
+        let bySes = Dictionary(grouping: sessions.filter { $0.started > 0 }) { dayKey($0.started) }
+        let cnt: (Date) -> Int = { (byRace[$0]?.count ?? 0) + (bySes[$0]?.count ?? 0) }
+        let days = Set(byRace.keys).union(bySes.keys).filter { $0 <= today }
+        let mx = max(1, days.map(cnt).max() ?? 1)
+        let pk = picked ?? start ?? days.max() ?? today
+        let ym = month ?? monthOf(pk)
+        // from six months back (or the first day you drove, when earlier) to this month
+        let thisMonth = monthOf(today)
+        let first = min(cal.date(byAdding: .month, value: -5, to: thisMonth)!, days.min().map(monthOf) ?? thisMonth)
+        let loc = appLocale()
+        let go: (Int) -> Void = { by in
+            let m = cal.date(byAdding: .month, value: by, to: ym)!
+            if m >= first && m <= thisMonth { month = m }
+        }
+        Screen(title: t("days_drove")) {
+            Panel {
+                // the month, the days driven in it and the arrows to the months around it
+                HStack {
+                    Button { go(-1) } label: { Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).frame(width: 40, height: 36) }
+                        .buttonStyle(.plain).foregroundColor(ym > first ? Theme.fg : Theme.line).disabled(ym <= first)
+                    VStack(spacing: 1) {
+                        Text(monthTitle(ym, loc)).font(.display(20, .bold)).tracking(1).foregroundColor(Theme.fg)
+                        let n = (cal.range(of: .day, in: .month, for: ym) ?? 1..<29).filter { cnt(cal.date(byAdding: .day, value: $0 - 1, to: ym)!) > 0 }.count
+                        Text(t("hm_days_driven", n)).font(.ui(11)).foregroundColor(Theme.muted)
                     }
-                    ForEach(bySes[ref.day] ?? []) { x in
-                        NavigationLink(value: Route.session(x)) { Text("\(kindText(x.kind)) · \(x.track) · \(x.car) · \(lapTime(x.best))") }
+                    .frame(maxWidth: .infinity)
+                    Button { go(1) } label: { Image(systemName: "chevron.right").font(.system(size: 20, weight: .semibold)).frame(width: 40, height: 36) }
+                        .buttonStyle(.plain).foregroundColor(ym < thisMonth ? Theme.fg : Theme.line).disabled(ym >= thisMonth)
+                }
+                monthGrid(ym, today, pk, cnt, mx, loc).padding(.top, 8)
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 30).onEnded { v in if v.translation.width < -80 { go(1) } else if v.translation.width > 80 { go(-1) } })
+            dayList(pk, byRace[pk] ?? [], bySes[pk] ?? [], loc)
+        }
+        .task(id: "\(account.game)|\(account.refreshTick)") {
+            if let g = try? await account.sessions() { sessions = g.data }
+            loading = false
+        }
+    }
+
+    private func monthTitle(_ d: Date, _ loc: Locale) -> String {
+        let f = DateFormatter(); f.locale = loc; f.setLocalizedDateFormatFromTemplate("LLLLyyyy")
+        return f.string(from: d).uppercased(with: loc)
+    }
+
+    @ViewBuilder private func monthGrid(_ ym: Date, _ today: Date, _ pk: Date, _ cnt: @escaping (Date) -> Int, _ mx: Int, _ loc: Locale) -> some View {
+        let len = cal.range(of: .day, in: .month, for: ym)?.count ?? 30
+        let lead = (cal.component(.weekday, from: ym) + 5) % 7
+        let rows = (lead + len + 6) / 7
+        let names = weekdayLetters(loc) // Sunday first
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 5), count: 7)
+        VStack(spacing: 4) {
+            LazyVGrid(columns: cols, spacing: 5) {
+                ForEach(0..<7, id: \.self) { k in Text(names[(k + 1) % 7]).font(.ui(11)).foregroundColor(Theme.muted) }
+            }
+            LazyVGrid(columns: cols, spacing: 5) {
+                ForEach(0..<(rows * 7), id: \.self) { c in
+                    let i = c - lead
+                    if i < 0 || i >= len {
+                        Color.clear.aspectRatio(1, contentMode: .fit)
+                    } else {
+                        let d = cal.date(byAdding: .day, value: i, to: ym)!
+                        let n = cnt(d)
+                        let future = d > today
+                        let a = dayAlpha(n, mx)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 7).fill(future ? Color.clear : n == 0 ? Theme.surface2 : Theme.accent.opacity(a))
+                            if d == pk { RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.fg, lineWidth: 2) }
+                            else if d == today { RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.accent, lineWidth: 1) }
+                            Text("\(i + 1)").font(.mono(12, n > 0 ? Font.Weight.bold : Font.Weight.medium))
+                                .foregroundColor(future ? Theme.line : n > 0 && a >= 0.6 ? Theme.ink : n > 0 ? Theme.fg : Theme.muted)
+                        }
+                        .aspectRatio(1, contentMode: .fit)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if !future { picked = d } }
                     }
                 }
-                .navigationTitle(ref.day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
-                .routes()
-                .toolbar { Button(t("close")) { open = nil } }
             }
         }
     }
 
-    @ViewBuilder private func cell(_ d: Date, _ mx: Int) -> some View {
-        let n = count(d)
-        let a: Double = n == 0 ? 0 : [0.35, 0.6, 0.8, 1.0][max(0, min(3, Int((Double(n) / Double(mx) * 4).rounded(.up)) - 1))]
-        let fill: Color = d > today ? .clear : n == 0 ? Theme.surface2 : Theme.accent.opacity(a)
-        RoundedRectangle(cornerRadius: 3).fill(fill).frame(width: 11, height: 11)
-            .onTapGesture { if n > 0 { open = d } }
+    private enum Item { case race(Race), ses(CloudSession) }
+
+    /// the day picked: its races and sessions, newest first, each opening its summary
+    @ViewBuilder private func dayList(_ d: Date, _ dr: [Race], _ dsAll: [CloudSession], _ loc: Locale) -> some View {
+        // a race with its summary is shown once: its session only when no summary has that track
+        let ds = dsAll.filter { s in !s.kind.lowercased().contains("race") || !dr.contains { fixText($0.track) == fixText(s.track) } }
+        let items: [(Double, Item)] = (dr.map { ($0.when, Item.race($0)) } + ds.map { ($0.started, Item.ses($0)) }).sorted { $0.0 > $1.0 }
+        let hm: (Double) -> String = { Date(timeIntervalSince1970: $0 / 1000).formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(loc)) }
+        let title: String = { let f = DateFormatter(); f.locale = loc; f.setLocalizedDateFormatFromTemplate("EEEEdMMMM"); return f.string(from: d) }()
+        VStack(alignment: .leading, spacing: 0) {
+            SectionLabel(text: title).padding(.bottom, 2)
+            if items.isEmpty {
+                Text(t(loading ? "loading" : "day_no_drive")).font(.ui(13)).foregroundColor(Theme.muted).padding(.vertical, 10)
+            }
+            ForEach(Array(items.enumerated()), id: \.offset) { k, e in
+                if k > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
+                switch e.1 {
+                case .race(let r):
+                    NavigationLink(value: Route.race(r)) {
+                        homeRow(r.dnf ? t("dnf") : "P\(r.finish)", r.dnf ? Theme.bad : Theme.fg, r.track, "race", raceDisc(r.cat, r.car), r.car + " · " + hm(r.when), r.laps.count, r.best) {
+                            HStack(spacing: 6) { DrinksBadge(race: r); AiBadge(race: r) }
+                        }
+                    }.buttonStyle(.plain)
+                case .ses(let x):
+                    NavigationLink(value: Route.session(x)) {
+                        homeRow(x.place, x.pos != nil ? Theme.fg : Theme.muted, fixText(x.track), x.kind, x.cat ?? "", fixText(x.car) + " · " + hm(x.started), x.laps, x.best, x.inClass && x.pos != nil ? t("in_class") : "") { SessionBadges(x: x) }
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
     }
 }
-
-private struct DayRef: Identifiable { let day: Date; var id: Double { day.timeIntervalSince1970 } }
 
 struct RaceView: View {
     let race: Race

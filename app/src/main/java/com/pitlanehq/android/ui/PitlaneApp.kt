@@ -242,12 +242,13 @@ private fun MainApp(vm: PitlaneViewModel) {
                     "race" -> { vm.curView = "race"; vm.track("act:race_summary") }; "combo" -> { vm.curView = "leaderboard"; vm.track("act:leaderboard") }
                     "track" -> { vm.curView = "track"; vm.track("act:track_page") }
                     "lap" -> { vm.curView = "lap"; vm.track("act:compare") } "session" -> vm.track("view:session"); "profile" -> vm.track("view:profile")
-                    "notes" -> vm.track("view:notes"); "drinks" -> vm.track("view:drinks")
+                    "notes" -> vm.track("view:notes"); "drinks" -> vm.track("view:drinks"); "days" -> vm.track("view:days")
                 }
             }
             NavHost(nav, "home", Modifier.weight(1f)) {
                 composable("home") { Home(vm, nav) }
                 composable("race") { RaceDetail(vm, nav) }
+                composable("days") { DaysScreen(vm, nav) }
                 composable("tracks") { Tracks(vm, nav) }
                 composable("analysis") { Analysis(vm, nav) }
                 composable("session") { SessionDetail(vm, nav) }
@@ -869,63 +870,151 @@ private fun HomeRow(place: String, placeCol: Color, track: String, kind: String,
     }
 }
 
+/** The days of the races (race summaries) and of the sessions, by the phone's day. */
+private fun driveDays(races: List<Race>, sessions: List<CloudSession>): Pair<Map<java.time.LocalDate, List<Race>>, Map<java.time.LocalDate, List<CloudSession>>> {
+    val zone = java.time.ZoneId.systemDefault()
+    fun day(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
+    return races.filter { it.whenMs > 0 }.groupBy { day(it.whenMs) } to sessions.filter { it.started > 0 }.groupBy { day(it.started) }
+}
+
+/** How bright a day's square is: nothing driven, then four steps up to the busiest day. */
+private fun dayAlpha(n: Int, max: Int) = if (n == 0) 0f else listOf(.35f, .6f, .8f, 1f)[(kotlin.math.ceil(n.toDouble() / max.coerceAtLeast(1) * 4).toInt() - 1).coerceIn(0, 3)]
+
+private fun appLocale(): java.util.Locale = java.util.Locale.forLanguageTag(when (I18n.lang) { "es" -> "es"; "pt" -> "pt-BR"; else -> "en" })
+
 /**
  * The days you drove, like the web and the PC: the last 26 weeks in squares, brighter the more races and sessions that day.
- * A day opens what you drove: the race summaries and the sessions.
+ * A tap opens them as a calendar (on the day tapped, when it was one you drove).
  */
 @Composable
 private fun DaysDriven(vm: PitlaneViewModel, nav: NavHostController, races: List<Race>) {
     val sl by vm.sessions.collectAsState()
     LaunchedEffect(Unit) { if (sl.data == null && !sl.loading) vm.loadSessions() }
-    val sessions = sl.data ?: emptyList()
-    val zone = java.time.ZoneId.systemDefault()
-    fun day(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(zone).toLocalDate()
-    val byRace = races.groupBy { day(it.whenMs) }
-    val bySes = sessions.groupBy { day(it.started) }
-    val today = java.time.LocalDate.now(zone)
+    val (byRace, bySes) = driveDays(races, sl.data ?: emptyList())
+    val today = java.time.LocalDate.now()
     val weeks = 26
     val start = today.minusDays(((today.dayOfWeek.value - 1) + (weeks - 1) * 7).toLong())
     val count = { d: java.time.LocalDate -> (byRace[d]?.size ?: 0) + (bySes[d]?.size ?: 0) }
     val max = ((0 until weeks * 7).maxOfOrNull { count(start.plusDays(it.toLong())) } ?: 1).coerceAtLeast(1)
     val driven = (0 until weeks * 7).count { val d = start.plusDays(it.toLong()); !d.isAfter(today) && count(d) > 0 }
-    var open by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    val open = { d: java.time.LocalDate? -> vm.daysPick = d; nav.navigate("days") }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Section(t("days_driven")); Spacer(Modifier.weight(1f)); Text(t("days_in_6m", driven), color = Muted, fontSize = 11.sp)
     }
-    Panel {
+    Panel(Modifier.clickable { open(null) }) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             for (w in 0 until weeks) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 for (d in 0 until 7) {
                     val date = start.plusDays((w * 7 + d).toLong())
                     val n = count(date)
-                    val a = if (n == 0) 0f else listOf(.35f, .6f, .8f, 1f)[(kotlin.math.ceil(n.toDouble() / max * 4).toInt() - 1).coerceIn(0, 3)]
                     Box(
                         Modifier.size(11.dp).clip(RoundedCornerShape(3.dp))
-                            .background(if (date.isAfter(today)) Color.Transparent else if (n == 0) Surface2 else Accent.copy(alpha = a))
-                            .then(if (n > 0) Modifier.clickable { open = date } else Modifier)
+                            .background(if (date.isAfter(today)) Color.Transparent else if (n == 0) Surface2 else Accent.copy(alpha = dayAlpha(n, max)))
+                            .clickable { open(if (n > 0) date else null) }
                     )
                 }
             }
         }
     }
-    open?.let { d ->
-        AlertDialog(
-            onDismissRequest = { open = null },
-            confirmButton = { TextButton({ open = null }) { Text(t("close"), color = Accent) } },
-            title = { Text(d.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM")), fontWeight = FontWeight.Black) },
-            text = {
-                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    byRace[d]?.forEach { x ->
-                        Text("${x.track} · P${x.finish}/${x.field} · ${incText(x)}", fontWeight = FontWeight.Bold,
-                            modifier = Modifier.fillMaxWidth().clickable { open = null; vm.race = x; nav.navigate("race") }.padding(vertical = 6.dp))
+}
+
+/**
+ * The days you drove as a calendar: a month in the same squares, bigger and with their numbers, brighter the more races
+ * and sessions that day; a day shows its races and sessions under it, each opening its summary.
+ */
+@Composable
+private fun DaysScreen(vm: PitlaneViewModel, nav: NavHostController) {
+    val r by vm.races.collectAsState()
+    val sl by vm.sessions.collectAsState()
+    LaunchedEffect(Unit) { if (r.data == null && !r.loading) vm.loadRaces(); if (sl.data == null && !sl.loading) vm.loadSessions() }
+    val races = r.data ?: emptyList()
+    val sessions = sl.data ?: emptyList()
+    val (byRace, bySes) = driveDays(races, sessions)
+    val today = java.time.LocalDate.now()
+    val count = { d: java.time.LocalDate -> (byRace[d]?.size ?: 0) + (bySes[d]?.size ?: 0) }
+    val days = (byRace.keys + bySes.keys).filter { !it.isAfter(today) }
+    val last = days.maxOrNull()
+    // from six months back (or the first day you drove, when earlier) to this month
+    val thisMonth = java.time.YearMonth.from(today)
+    val first = listOfNotNull(thisMonth.minusMonths(5), days.minOrNull()?.let { java.time.YearMonth.from(it) }).min()
+    var pick by rememberSaveable { mutableStateOf((vm.daysPick ?: last ?: today).toEpochDay()) }
+    val picked = java.time.LocalDate.ofEpochDay(pick)
+    var month by rememberSaveable { mutableStateOf(java.time.YearMonth.from(picked).toString()) }
+    val ym = java.time.YearMonth.parse(month)
+    val max = (days.maxOfOrNull { count(it) } ?: 1).coerceAtLeast(1)
+    val loc = appLocale()
+    val gone = { by: Long -> val m = ym.plusMonths(by); if (!m.isBefore(first) && !m.isAfter(thisMonth)) month = m.toString() }
+    Screen(t("days_drove"), back = { nav.popBackStack() }) {
+        state(r) { vm.loadRaces() }
+        item {
+            Panel(Modifier.pointerInput(month) {
+                var dx = 0f
+                detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = { if (dx < -80) gone(1) else if (dx > 80) gone(-1) }) { _, d -> dx += d }
+            }) {
+                // the month, the days driven in it and the arrows to the months around it
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    val canBack = ym.isAfter(first); val canFwd = ym.isBefore(thisMonth)
+                    Text("‹", color = if (canBack) Fg else Line, fontSize = 26.sp, modifier = Modifier.clickable(enabled = canBack) { gone(-1) }.padding(horizontal = 10.dp))
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(ym.atDay(1).format(java.time.format.DateTimeFormatter.ofPattern("LLLL yyyy", loc)).uppercase(loc), color = Fg, fontFamily = DisplayFont, fontSize = 20.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                        val n = (1..ym.lengthOfMonth()).count { count(ym.atDay(it)) > 0 }
+                        Text(t("hm_days_driven", n), color = Muted, fontSize = 11.sp)
                     }
-                    bySes[d]?.forEach { x ->
-                        Text("${kindText(x.kind)} · ${x.track} · ${x.car} · ${lapTime(x.best)}", color = Fg,
-                            modifier = Modifier.fillMaxWidth().clickable { open = null; vm.session = x; vm.loadLaps(x.id); nav.navigate("session") }.padding(vertical = 6.dp))
+                    Text("›", color = if (canFwd) Fg else Line, fontSize = 26.sp, modifier = Modifier.clickable(enabled = canFwd) { gone(1) }.padding(horizontal = 10.dp))
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    for (d in java.time.DayOfWeek.values()) Text(d.getDisplayName(java.time.format.TextStyle.NARROW, loc), color = Muted, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(4.dp))
+                val lead = ym.atDay(1).dayOfWeek.value - 1
+                val cells = lead + ym.lengthOfMonth()
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    for (w in 0 until (cells + 6) / 7) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        for (k in 0 until 7) {
+                            val i = w * 7 + k - lead
+                            if (i < 0 || i >= ym.lengthOfMonth()) { Spacer(Modifier.weight(1f).aspectRatio(1f)); continue }
+                            val date = ym.atDay(i + 1)
+                            val n = count(date)
+                            val future = date.isAfter(today)
+                            val a = dayAlpha(n, max)
+                            Box(
+                                Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(7.dp))
+                                    .background(if (future) Color.Transparent else if (n == 0) Surface2 else Accent.copy(alpha = a))
+                                    .then(if (date == picked) Modifier.border(2.dp, Fg, RoundedCornerShape(7.dp)) else if (date == today) Modifier.border(1.dp, Accent, RoundedCornerShape(7.dp)) else Modifier)
+                                    .clickable(enabled = !future) { pick = date.toEpochDay() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("${i + 1}", fontFamily = MonoFont, fontSize = 12.sp, fontWeight = if (n > 0) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (future) Line else if (n > 0 && a >= .6f) Ink else if (n > 0) Fg else Muted)
+                            }
+                        }
                     }
                 }
             }
-        )
+        }
+        // the day picked: its races and sessions, newest first, each opening its summary
+        item {
+            val dr = byRace[picked] ?: emptyList()
+            // a race with its summary is shown once: its session only when no summary has that track
+            val ds = (bySes[picked] ?: emptyList()).filter { s -> !s.kind.contains("race", true) || dr.none { fixText(it.track) == fixText(s.track) } }
+            val rows: List<Pair<Long, Any>> = (dr.map { it.whenMs to (it as Any) } + ds.map { it.started to (it as Any) }).sortedByDescending { it.first }
+            val hm = java.time.format.DateTimeFormatter.ofLocalizedTime(java.time.format.FormatStyle.SHORT).withLocale(loc)
+            val at = { ms: Long -> java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).format(hm) }
+            Column(Modifier.fillMaxWidth()) {
+                Section(picked.format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM", loc)))
+                if (rows.isEmpty()) Text(t(if (sl.loading || r.loading) "loading" else "day_no_drive"), color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 10.dp))
+                rows.forEachIndexed { k, (_, o) ->
+                    if (k > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
+                    when (o) {
+                        is Race -> HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.track, "race", raceDisc(o.cat, o.car), o.car + " · " + at(o.whenMs), o.laps.size, o.best, { vm.race = o; nav.navigate("race") }) { DrinksBadge(o); AiBadge(o) }
+                        is CloudSession -> HomeRow(o.place, if (o.pos != null) Fg else Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + at(o.started), o.laps, o.best, { vm.session = o; vm.loadLaps(o.id); nav.navigate("session") }, if (o.inClass && o.pos != null) t("in_class") else "") {
+                            if (o.drvs.isNotEmpty() || o.ai || o.game == "lmu") SessionBadges(o)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

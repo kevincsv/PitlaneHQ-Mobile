@@ -87,6 +87,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
     var analysisTab: Int? = null
     var combo: Combo? = null
     var race: Race? = null
+    // the day the calendar of the days you drove opens on (null: the last one you drove)
+    var daysPick: java.time.LocalDate? = null
 
     // ---------- the game you look at: iRacing or Le Mans Ultimate (Home, Analysis, Community) ----------
     // Only what this phone shows: never what your PC reads. Telemetry follows the PC's live game.

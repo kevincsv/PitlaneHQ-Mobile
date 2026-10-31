@@ -431,6 +431,7 @@ private let strings: [String: (String, String, String)] = [
     "by_phase": ("WHERE THE TIME GOES, BY PHASE", "DÓNDE SE PIERDE EL TIEMPO, POR FASE", "ONDE O TEMPO SE PERDE, POR FASE"),
     "track_map": ("Track map", "Mapa del circuito", "Mapa da pista"),
     "days_driven": ("DAYS YOU DROVE", "DÍAS QUE HAS CORRIDO", "DIAS EM QUE CORREU"),
+    "day_no_drive": ("You did not drive this day", "No corriste este día", "Você não correu neste dia"),
     "days_in_6m": ("{0} days in 6 months", "{0} días en 6 meses", "{0} dias em 6 meses"),
     "close": ("Close", "Cerrar", "Fechar"),
     "incidents_n": ("{0} incident(s) on this lap (⚠ on the map). Incidents do not make a lap invalid.", "{0} incidente(s) en esta vuelta (⚠ en el mapa). Los incidentes no invalidan la vuelta.", "{0} incidente(s) nesta volta (⚠ no mapa). Incidentes não invalidam uma volta."),

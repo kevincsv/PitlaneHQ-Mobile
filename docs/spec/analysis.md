@@ -6,6 +6,12 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   and Account, the PC's names (`BottomBar` on Android, `MainView.bar` on iOS). Analysis is no longer a tab: it opens over a track's hub (a
   session there opens Laps, "Coach for <track>" opens the Coach on your newest session there) and over Home ("Analyse
   my laps", "See all"), with Back (`Route.analysis(tab, session)` on iOS, the "analysis" route on Android).
+- Home's days you drove (`DaysDriven`, the last 26 weeks in squares) opens on a tap the Days you drove screen
+  (`DaysScreen` on Android, the "days" route; `DaysView` on iOS), the web's calendar (`openDays`): one month in the same
+  squares, bigger and numbered, brighter the more races and sessions that day, from six months back (or the first day
+  driven) to this month with the arrows or a swipe. It opens on the square tapped when you drove that day, else on the
+  last day driven; the day chosen is outlined and its races and sessions are listed under the month, newest first, with
+  their time, each opening its summary (a race's session is left out when a race summary has that track).
 - Tracks (`Tracks` / `TracksView`): every circuit you drove, from your sessions and races of the chosen game, grouped
   by name (`myTracks`, `sameTrack`: "Spa-Francorchamps" and "Spa-Francorchamps - Grand Prix" are one). The most driven
   (the newest of a tie) is a large card with its map (the community's layout, its id found by name among the
