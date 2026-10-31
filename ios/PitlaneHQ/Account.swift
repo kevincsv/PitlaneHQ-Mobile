@@ -104,6 +104,8 @@ private func doubles(_ v: Any?) -> [Double] { (v as? [NSNumber] ?? []).map(\.dou
 /// One message of the support chat: `driver` the driver's own (else Support's), `rating` the stars of an old feedback.
 struct SupportMsg: Identifiable {
     let id: String, driver: Bool, text: String, created: Double, rating: Int
+    /// "logs": a driver's logs (`view` is "log:<id>", the admin opens them)
+    var kind = "chat", view = ""
 }
 /// One driver's conversation in the support inbox (admins): the last line, who wrote it, how many unread.
 struct SupportConv: Identifiable {
@@ -1598,7 +1600,8 @@ final class Account: ObservableObject {
         return (j["msgs"] as? [[String: Any]] ?? []).map { m in
             // who wrote it: "support" in an admin's thread, "me" (the driver's own) in the driver's
             let support = (m["support"] as? Bool) ?? (m["fromSupport"] as? Bool) ?? !((m["me"] as? Bool) ?? false)
-            return SupportMsg(id: str(m["id"]), driver: !support, text: str(m["text"]), created: num(m["created"]) ?? 0, rating: int(m["rating"]))
+            return SupportMsg(id: str(m["id"]), driver: !support, text: str(m["text"]), created: num(m["created"]) ?? 0, rating: int(m["rating"]),
+                              kind: str(m["kind"]).isEmpty ? "chat" : str(m["kind"]), view: str(m["view"]))
         }.sorted { $0.created < $1.created }
     }
     /// a thread: the driver's own ("", reading it marks Support's messages read) or a driver's (admins)
@@ -1632,6 +1635,33 @@ final class Account: ObservableObject {
         }
         await checkSupport()
     }
+    /// "Send the app's logs" in the support chat (POST /community/support/logs, the server adds a line to the chat)
+    func sendLogs(_ text: String) async throws {
+        guard !demo else { return }
+        _ = try await call("POST", "/community/support/logs", body: ["text": text, "device": "ios", "v": pitlaneClient.replacingOccurrences(of: "ios/", with: "")])
+        await checkSupport()
+    }
+    /// a log a driver sent (admins)
+    func adminLog(_ id: String) async throws -> String {
+        str((try JSONSerialization.jsonObject(with: await call("GET", "/community/admin/support/logs/" + idPath(id))) as? [String: Any])?["text"])
+    }
+    /// the crash of the last run (POST /community/crash), with the account when signed in
+    func sendCrash(_ j: [String: Any]) async {
+        var b = j
+        b["app"] = "ios"; b["v"] = pitlaneClient.replacingOccurrences(of: "ios/", with: "")
+        b["os"] = String("iOS \(UIDevice.current.systemVersion) · \(UIDevice.current.model)".prefix(60))
+        _ = try? await call("POST", "/community/crash", body: b, auth: token != nil)
+    }
+
+    // ---------- the weekly email (Me → Weekly email, the server's digest.js) ----------
+    func digest() async throws -> Bool {
+        if demo { return false }
+        return (try JSONSerialization.jsonObject(with: await call("GET", "/community/digest")) as? [String: Any])?["on"] as? Bool ?? false
+    }
+    func setDigest(_ on: Bool) async throws -> Bool {
+        (try JSONSerialization.jsonObject(with: await call("POST", "/community/digest", body: ["on": on, "lang": I18n.shared.lang])) as? [String: Any])?["on"] as? Bool ?? on
+    }
+
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     func nameFree(_ name: String) async -> Bool {
         guard let d = try? await call("POST", "/community/name-check", body: ["name": name]),

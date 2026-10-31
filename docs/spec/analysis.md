@@ -59,3 +59,6 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   to the coach overlay" (`setCoachTurns`: the turns of the plan's first four steps, the module's `turns` on each
   `PlanItem` like the web's `planTurns`, else the fallback's four corners that lose the most, as `ui.coach.turns` with the track as `turnsTrack` in the account's settings.json, only when a PC has
   synced it and never in demo data; an error says its translated text).
+- `node tools/check-analysis.mjs` checks the Android and iOS copies of `pitwall-analysis.js` are the same file as
+  Pitwall-test's `web/dist` and still give its fixture's answers (Pitwall-test's `cloud/test/analysis.test.mjs` run on
+  the phone's copy); `JsAnalysisTest.kt` (`gradle :app:testDebugUnitTest`) checks the Kotlin side reads its answers.

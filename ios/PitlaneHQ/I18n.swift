@@ -21,6 +21,12 @@ func t(_ key: String, _ args: CustomStringConvertible...) -> String {
 
 private let strings: [String: (String, String, String)] = [
     "home": ("Home", "Inicio", "Início"),
+    "sup_logs": ("Send the app's logs", "Enviar los registros de la app", "Enviar os registros do app"),
+    "sup_logs_open": ("Open the logs", "Abrir los registros", "Abrir os registros"),
+    "sup_logs_title": ("Logs", "Registros", "Registros"),
+    "digest_title": ("Weekly email", "Email semanal", "Email semanal"),
+    "share_my_lap": ("Share my lap", "Compartir mi vuelta", "Compartilhar minha volta"),
+    "share_card_of": ("of {0} on the leaderboard", "de {0} en la clasificación", "de {0} na classificação"),
     "analysis": ("Analysis", "Análisis", "Análise"),
     "community": ("Community", "Comunidad", "Comunidade"),
     "live": ("Telemetry", "Telemetría", "Telemetria"),

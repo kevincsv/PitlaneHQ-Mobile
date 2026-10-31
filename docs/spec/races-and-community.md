@@ -29,3 +29,6 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   iRating). The licences: pressing one marks it in amber and opens its card under the list (iRating, class and SR,
   what its last races gave and its iRating line, which follows the finger); Sports Car is open to start.
 - A Le Mans Ultimate race summary shows Start, Finish, Drivers, Contacts, Positions and Best lap (no iRating nor SOF).
+- A leaderboard where the driver has a lap has "Share my lap": the web's 1200×630 picture (the track, the car, the
+  time, "P3 of 42 on the leaderboard", pitlanehq.app) to the phone's share sheet (`ui/ShareCard.kt`, `ShareCard` in
+  Reports.swift). On a Le Mans Ultimate whole-class board the car is the one of the driver's lap.

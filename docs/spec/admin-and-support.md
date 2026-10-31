@@ -49,3 +49,13 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   and "Unlink DRINKS driver …" for each one joined (`guestLinked` in the accounts list, "gid|name,…").
   Its own driver is linked per game: "Unlink iRacing driver" and "Unlink Le Mans Ultimate driver", one for each game
   linked (`driverGames` in the accounts list, "iracing,lmu"; `adminAccount(id, "unlink-driver", game)`).
+- Crashes (`data/Reports.kt`, `Reports.swift`): a crash is written to the app's files as it happens (Android's
+  uncaught-exception handler; iOS's uncaught exception and crash signals) and sent the next time the app opens
+  (POST `/community/crash` {app "android"/"ios", v, os, where, msg, stack}, with the account when signed in), for the
+  Health section of the PC and web admin page.
+- The support chat's "Send the app's logs" (drivers only) sends the end of this run's own log (Android's logcat for its
+  own process, iOS's OSLogStore) with a line naming the app, the version and the phone (POST
+  `/community/support/logs`); the server adds "Logs sent" to the chat. An admin's thread shows "Open the logs" under
+  that line (GET `/community/admin/support/logs/:id`), the log in a window with Copy.
+- Account → Weekly email (under Discord): the switch for Monday's email (GET/POST `/community/digest` {on, lang}), off
+  until the driver turns it on.

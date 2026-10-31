@@ -45,7 +45,7 @@ data class AccountState(
 /** What the server gives to set up two-step sign-in: the key and the otpauth link for the app. */
 data class TwoFactorSetup(val secret: String, val url: String)
 /** One message of the support chat: [driver] the driver's own (else Support's), [rating] the stars of an old feedback. */
-data class SupportMsg(val id: String, val driver: Boolean, val text: String, val created: Long, val rating: Int = 0)
+data class SupportMsg(val id: String, val driver: Boolean, val text: String, val created: Long, val rating: Int = 0, val kind: String = "chat", val view: String = "")
 /** One driver's conversation in the support inbox (admins): the last line, who wrote it, how many unread. */
 data class SupportConv(val accountId: String, val nick: String, val text: String, val created: Long, val fromSupport: Boolean, val unread: Int)
 
@@ -1236,9 +1236,26 @@ class AccountRepository(context: Context) {
         return (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { m ->
             // who wrote it: "support" in an admin's thread, "me" (the driver's own) in the driver's
             val support = if (m.has("support")) m.optBoolean("support") else if (m.has("fromSupport")) m.optBoolean("fromSupport") else !m.optBoolean("me")
-            SupportMsg(m.optString("id"), !support, m.optString("text"), m.optLong("created"), m.optInt("rating"))
+            SupportMsg(m.optString("id"), !support, m.optString("text"), m.optLong("created"), m.optInt("rating"), m.optString("kind").ifBlank { "chat" }, m.optString("view"))
         }.sortedBy { it.created }
     }
+
+    /** The app's own log to the support chat (POST /community/support/logs): "Logs sent, N KB" shows in the chat. */
+    fun sendLogs(text: String) {
+        if (demo) return
+        call("POST", "/community/support/logs", JSONObject().put("text", text).put("device", "android").put("v", CLIENT.substringAfter("/")))
+    }
+    /** A log a driver sent (admins). */
+    fun adminLog(id: String): String = JSONObject(call("GET", "/community/admin/support/logs/" + idPath(id))).optString("text")
+    /** The crash of the last run (POST /community/crash), with the account when signed in. */
+    fun sendCrash(j: JSONObject) {
+        j.put("app", "android").put("v", CLIENT.substringAfter("/")).put("os", ("Android " + android.os.Build.VERSION.RELEASE + " · " + android.os.Build.MODEL).take(60))
+        call("POST", "/community/crash", j, auth = prefs.getString("token", null) != null)
+    }
+
+    // ---------- the weekly email (Me → Weekly email, the server's digest.js) ----------
+    fun digest(): Boolean = !demo && JSONObject(call("GET", "/community/digest")).optBoolean("on")
+    fun setDigest(on: Boolean): Boolean = JSONObject(call("POST", "/community/digest", JSONObject().put("on", on).put("lang", com.pitlanehq.android.ui.I18n.lang))).optBoolean("on")
 
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     fun nameFree(name: String): Boolean = runCatching { JSONObject(call("POST", "/community/name-check", JSONObject().put("name", name))).optBoolean("free", true) }.getOrDefault(true)

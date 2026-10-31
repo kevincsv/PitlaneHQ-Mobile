@@ -404,6 +404,7 @@ private fun ColumnScope.SupportThread(vm: PitlaneViewModel, accountId: String, n
     var busy by remember { mutableStateOf(false) }
     var err by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    var logText by remember { mutableStateOf<String?>(null) }
     val state = androidx.compose.foundation.lazy.rememberLazyListState()
     LaunchedEffect(accountId) { while (true) { vm.supportThread(accountId)?.let { msgs = it }; kotlinx.coroutines.delay(30_000L) } }
     LaunchedEffect(msgs?.size) { msgs?.let { if (it.isNotEmpty()) state.animateScrollToItem(it.size - 1) } }
@@ -426,6 +427,9 @@ private fun ColumnScope.SupportThread(vm: PitlaneViewModel, accountId: String, n
                         if (m.rating in 1..5) Text("★".repeat(m.rating) + "☆".repeat(5 - m.rating), color = Accent, fontSize = 12.sp)
                         Text(m.text, color = Fg, fontSize = 14.sp)
                     }
+                    if (asAdmin && m.kind == "logs" && m.view.startsWith("log:")) TextButton({ scope.launch { logText = vm.adminLog(m.view.removePrefix("log:")) ?: "" } }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                        Text(t("sup_logs_open"), color = Accent, fontSize = 12.sp)
+                    }
                     Text(dayTime(m.created), color = Muted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                 }
             }
@@ -446,6 +450,18 @@ private fun ColumnScope.SupportThread(vm: PitlaneViewModel, accountId: String, n
             },
             enabled = !busy && text.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)
         ) { Text(t("fb_send"), fontWeight = FontWeight.Black) }
+    }
+    if (!asAdmin) TextButton({
+        busy = true; err = null
+        scope.launch { val e = vm.supportLogs(); busy = false; if (e == null) vm.supportThread(accountId)?.let { msgs = it } else err = e }
+    }, enabled = !busy, modifier = Modifier.align(Alignment.End).padding(bottom = 8.dp), contentPadding = PaddingValues(0.dp)) { Text(t("sup_logs"), color = Accent, fontSize = 12.sp) }
+    logText?.let { txt ->
+        val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+        AlertDialog({ logText = null }, confirmButton = { TextButton({ logText = null }) { Text(t("close"), color = Accent) } },
+            dismissButton = { TextButton({ clip.setText(androidx.compose.ui.text.AnnotatedString(txt)) }) { Text(t("copy"), color = Accent) } },
+            title = { Text(t("sup_logs_title")) },
+            text = { androidx.compose.foundation.text.selection.SelectionContainer { Text(txt, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Fg, modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) } },
+            containerColor = Surface2)
     }
 }
 
@@ -2916,6 +2932,11 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     Text(t("you_fastest_sub", all.size, lapTime(all[0].time)), color = Muted, fontSize = 12.sp)
                 } else if (mineAll >= 0) Text(t("your_position", mineAll + 1, all.size, lapTime(all[mineAll].time)), color = Accent, fontWeight = FontWeight.Bold)
                 else Text(t("not_on_board"), color = Muted, fontSize = 12.sp)
+                if (mineAll >= 0 && !vm.demo.collectAsState().value) {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    TextButton({ vm.track("act:share_card"); ShareCard.share(ctx, x.track, if (vm.game == "lmu" && whole) all[mineAll].car?.ifBlank { null } ?: x.car else x.car, all[mineAll].time, mineAll + 1, all.size, vm.game) },
+                        contentPadding = PaddingValues(0.dp)) { Text(t("share_my_lap"), color = Accent, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     GameBadge(vm.game)
                     Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), t("drivers", all.size)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
@@ -3677,6 +3698,7 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
         if ((d.data?.size ?: 0) > 1) item { TextButton({ vm.revoke("others") }) { Text(t("sign_out_others"), color = Bad) } }
         item { Section("DISCORD") }
         item { DiscordPanel(vm) }
+        item { DigestPanel(vm) }
         item { Section("STEAM") }
         item { SteamPanel(vm) }
         item { Section(t("language")) }
@@ -3721,6 +3743,19 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
             ) { Text(t("sign_out").uppercase(), fontWeight = FontWeight.Bold) }
         }
         item { Text(t("version", BuildConfig.VERSION_NAME.replace("-", " ")), color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
+    }
+}
+
+/** Me → Weekly email: the driver's week by email on Monday (the server's digest.js), on or off. */
+@Composable
+private fun DigestPanel(vm: PitlaneViewModel) {
+    val on by vm.digest.collectAsState()
+    LaunchedEffect(Unit) { vm.loadDigest() }
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(t("digest_title"), fontWeight = FontWeight.Bold, color = Fg, modifier = Modifier.weight(1f))
+            Switch(on == true, { vm.setDigest(it) }, enabled = on != null, colors = SwitchDefaults.colors(checkedTrackColor = Accent))
+        }
     }
 }
 

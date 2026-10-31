@@ -76,7 +76,11 @@ changing first, and update it in the same commit when the behaviour changes.
 
 ## Checks before committing (both, every change)
 
-- Android: `gradle :app:assembleDebug` (CI uses Gradle 8.13).
+- `checks.yml` runs the strings check and the unit tests on every push to a working branch and on pull requests
+  (checks only: it never builds an app nor publishes).
+- Android: `gradle :app:assembleDebug :app:testDebugUnitTest` (CI uses Gradle 8.13).
+- Strings and analysis: `node tools/check-strings.mjs` (I18n.kt and I18n.swift have the same keys and texts) and
+  `node tools/check-analysis.mjs` (needs Pitwall-test beside this repository).
 - iOS (on a Mac): `cd ios && xcodegen generate && xcodebuild -project PitlaneHQ.xcodeproj -scheme PitlaneHQ
   -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build`. Without a Mac, the iOS workflow
   on the working branch is the check.

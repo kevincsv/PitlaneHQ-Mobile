@@ -17,5 +17,9 @@
                 <data android:host="discord"/>
             </intent-filter>
         </activity>
+        <!-- "Share my lap": the picture goes to the share sheet from the app's cache (ui/ShareCard.kt) -->
+        <provider android:name="androidx.core.content.FileProvider" android:authorities="com.pitlanehq.android.share" android:exported="false" android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/share_paths"/>
+        </provider>
     </application>
 </manifest>

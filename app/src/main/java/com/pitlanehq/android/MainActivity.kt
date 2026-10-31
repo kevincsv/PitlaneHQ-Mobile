@@ -8,6 +8,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.pitlanehq.android.data.AuthReturns
+import com.pitlanehq.android.data.Reports
 import com.pitlanehq.android.ui.PitlaneApp
 import com.pitlanehq.android.ui.ShotMode
 
@@ -19,6 +20,8 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
         )
         super.onCreate(savedInstanceState)
+        // a crash is kept and sent the next time the app opens (data/Reports)
+        Reports.install(this)
         if (BuildConfig.DEBUG) intent?.getStringExtra("shot")?.let { ShotMode.prepare(this, it, intent.getStringExtra("lang") ?: "es") }
         // opened by pitlanehq://steam or pitlanehq://discord: back from a sign-in or a link in the browser
         if (savedInstanceState == null) AuthReturns.deliver(intent?.data)

@@ -10,6 +10,13 @@ struct PitlaneHQApp: App {
     @StateObject private var inbox = Inbox()
     @StateObject private var live = Live()
     @Environment(\.scenePhase) private var phase
+    /// the crash of the last run, sent once the app is up (Reports.swift)
+    private let lastCrash: [String: Any]?
+
+    init() {
+        lastCrash = Reports.take()
+        Reports.install()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -24,6 +31,7 @@ struct PitlaneHQApp: App {
             .environmentObject(inbox)
             .environmentObject(live)
             .task { await updates.check() }
+            .task { if let c = lastCrash { await account.sendCrash(c) } }
             .task { await inbox.load() }
             // every time the app comes to the screen, the account syncs by itself
             .task { account.startMinuteSync(); account.startUsage(); account.startSupport(); await account.syncIfDue() }

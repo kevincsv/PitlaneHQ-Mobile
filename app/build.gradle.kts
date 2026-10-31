@@ -51,4 +51,7 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     // the lap analysis and the coach of the PC and the web (pitwall-analysis.js), run on the phone
     implementation("androidx.javascriptengine:javascriptengine:1.0.0")
+    // tests on the computer (gradle :app:testDebugUnitTest): org.json is Android's, so the tests bring the real one
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20250517")
 }

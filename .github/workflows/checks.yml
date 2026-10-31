@@ -1,0 +1,27 @@
+# Checks only (never builds an app nor publishes): the Android and iOS strings match, and the Kotlin side of the
+# shared analysis reads its answers.
+name: checks
+on:
+  push:
+    branches-ignore: [master]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Strings
+        run: node tools/check-strings.mjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+      - name: Unit tests
+        run: gradle :app:testDebugUnitTest

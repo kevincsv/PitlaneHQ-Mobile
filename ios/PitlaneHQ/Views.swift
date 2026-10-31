@@ -937,6 +937,23 @@ struct CodeSheet: View {
 /// Account → Discord: link it with Discord's sign-in (the password first), show it on your profile so other drivers can
 /// find you there (off until you say), or unlink it (the password again). A link the bot's /link made never signs in:
 /// "Link it again" does it with Discord's sign-in.
+/// Account → Weekly email: Monday's email with the week's laps and personal bests (the server's digest.js), off until
+/// the driver turns it on.
+struct DigestPanel: View {
+    @EnvironmentObject var account: Account
+    @State private var on: Bool?
+    var body: some View {
+        Panel {
+            Toggle(t("digest_title"), isOn: Binding(get: { on ?? false }, set: { v in
+                on = v
+                Task { on = (try? await account.setDigest(v)) ?? !v }
+            }))
+            .font(.subheadline.bold()).tint(Theme.accent).disabled(on == nil)
+        }
+        .task { on = try? await account.digest() }
+    }
+}
+
 struct DiscordPanel: View {
     @EnvironmentObject var account: Account
     @StateObject private var discord = Loader<DiscordLink>()
@@ -1368,6 +1385,7 @@ struct SupportThread: View {
     @State private var text = ""
     @State private var busy = false
     @State private var err: String?
+    @State private var logText: String?
     private var asAdmin: Bool { !accountId.isEmpty }
     var body: some View {
         VStack(spacing: 0) {
@@ -1406,7 +1424,26 @@ struct SupportThread: View {
                 .disabled(busy || empty)
                 .opacity(busy || empty ? 0.5 : 1)
             }
-            .padding(16)
+            .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, asAdmin ? 16 : 4)
+            if !asAdmin {
+                Button { sendLogs() } label: { Text(t("sup_logs")).font(.caption).foregroundColor(Theme.accent) }
+                    .buttonStyle(.plain).disabled(busy)
+                    .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 16).padding(.bottom, 10)
+            }
+        }
+        .sheet(isPresented: Binding(get: { logText != nil }, set: { if !$0 { logText = nil } })) {
+            NavigationStack {
+                ScrollView {
+                    Text(logText ?? "").font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.fg).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                }
+                .background(Theme.ink)
+                .navigationTitle(t("sup_logs_title")).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button(t("close")) { logText = nil }.tint(Theme.accent) }
+                    ToolbarItem(placement: .confirmationAction) { Button(t("copy")) { UIPasteboard.general.string = logText }.tint(Theme.accent) }
+                }
+            }
         }
         .task {
             while !Task.isCancelled {
@@ -1429,9 +1466,25 @@ struct SupportThread: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(right ? Theme.accent.opacity(0.35) : Theme.line, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .frame(maxWidth: UIScreen.main.bounds.width * 0.78, alignment: right ? .trailing : .leading)
+            if asAdmin && m.kind == "logs" && m.view.hasPrefix("log:") {
+                Button { Task { logText = (try? await account.adminLog(String(m.view.dropFirst(4)))) ?? "" } } label: {
+                    Text(t("sup_logs_open")).font(.caption).foregroundColor(Theme.accent)
+                }.buttonStyle(.plain).padding(.horizontal, 4)
+            }
             Text(dayTime(m.created)).font(.system(size: 10)).foregroundColor(Theme.muted).padding(.horizontal, 4)
         }
         .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
+    }
+
+    private func sendLogs() {
+        busy = true; err = nil
+        Task {
+            do {
+                try await account.sendLogs(Reports.log())
+                if let l = try? await account.supportThread(accountId) { msgs = l }
+            } catch { err = (error as? AppError)?.key ?? "server_down" }
+            busy = false
+        }
     }
 
     private func send() {
@@ -4523,6 +4576,14 @@ struct ComboView: View {
                         GameBadge(game: account.game)
                         Text([catName(account.game, catOf(account.game, combo.cat, combo.cls, combo.car)), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
                     }
+                    if let mine {
+                        // the picture of this lap for the phone's share sheet (ShareCard in Reports.swift)
+                        Button {
+                            let car = whole ? (laps[mine].car.flatMap { $0.isEmpty ? nil : $0 } ?? combo.car) : combo.car
+                            ShareCard.share(track: combo.track, car: car, time: laps[mine].time, pos: mine + 1, of: laps.count, game: account.game)
+                        } label: { Text(t("share_my_lap")).font(.caption.bold()).foregroundColor(Theme.accent) }
+                        .buttonStyle(.plain).padding(.top, 4)
+                    }
                 }
             }
             SectionLabel(text: t("fastest_drivers"))
@@ -5398,6 +5459,7 @@ struct SettingsView: View {
             }
             SectionLabel(text: "DISCORD")
             DiscordPanel()
+            DigestPanel()
             SectionLabel(text: "STEAM")
             SteamPanel()
             SectionLabel(text: t("language"))

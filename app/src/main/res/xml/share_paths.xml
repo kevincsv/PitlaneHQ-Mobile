@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- the pictures "Share my lap" hands to the share sheet (ui/ShareCard.kt) -->
+<paths>
+    <cache-path name="share" path="share/"/>
+</paths>

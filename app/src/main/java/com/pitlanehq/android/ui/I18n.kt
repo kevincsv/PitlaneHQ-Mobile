@@ -21,6 +21,12 @@ fun t(key: String, vararg a: Any): String = a.foldIndexed(t(key)) { i, s, v -> s
 
 private val STRINGS: Map<String, L> = mapOf(
     "home" to L("Home", "Inicio", "Início"),
+    "sup_logs" to L("Send the app's logs", "Enviar los registros de la app", "Enviar os registros do app"),
+    "sup_logs_open" to L("Open the logs", "Abrir los registros", "Abrir os registros"),
+    "sup_logs_title" to L("Logs", "Registros", "Registros"),
+    "digest_title" to L("Weekly email", "Email semanal", "Email semanal"),
+    "share_my_lap" to L("Share my lap", "Compartir mi vuelta", "Compartilhar minha volta"),
+    "share_card_of" to L("of {0} on the leaderboard", "de {0} en la clasificación", "de {0} na classificação"),
     "analysis" to L("Analysis", "Análisis", "Análise"),
     "community" to L("Community", "Comunidad", "Comunidade"),
     "live" to L("Telemetry", "Telemetría", "Telemetria"),

@@ -166,6 +166,8 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch(Dispatchers.Main) { AuthReturns.pending.collect { r -> if (r != null) { AuthReturns.pending.value = null; onReturn(r.first, r.second) } } }
         // another device uploaded the account (the server tells the live room): this phone reads it again at once
         viewModelScope.launch { live.syncNudges.collect { onSyncNudge(it) } }
+        // the crash of the last run, if there was one, goes to the admin page's Health
+        viewModelScope.launch(Dispatchers.IO) { com.pitlanehq.android.data.Reports.take(getApplication())?.let { j -> runCatching { repo.sendCrash(j) } } }
     }
 
     /** A newer version on GitHub: shown as a banner on top. */
@@ -533,6 +535,21 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         if (err == null) { track(if (accountId.isEmpty()) "act:support_sent" else "act:support_reply"); supportCount() }
         if (err is SignedOut) signedOut()
         err?.let { errKey(it) }
+    }
+    /** "Send the app's logs" in the support chat. Null when it went. */
+    suspend fun supportLogs(): String? = withContext(Dispatchers.IO) {
+        val err = runCatching { repo.sendLogs(com.pitlanehq.android.data.Reports.log()) }.exceptionOrNull()
+        if (err == null) track("act:support_logs")
+        if (err is SignedOut) signedOut()
+        err?.let { errKey(it) }
+    }
+    /** A log a driver sent (admins), or null. */
+    suspend fun adminLog(id: String): String? = withContext(Dispatchers.IO) { runCatching { repo.adminLog(id) }.getOrNull() }
+    /** Me → Weekly email: on or off (null while unknown). */
+    val digest = MutableStateFlow<Boolean?>(null)
+    fun loadDigest() { viewModelScope.launch(Dispatchers.IO) { runCatching { repo.digest() }.onSuccess { digest.value = it } } }
+    fun setDigest(on: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.setDigest(on) }.onSuccess { digest.value = it; track(if (it) "act:digest_on" else "act:digest_off") } }
     }
     private var usageJob: Job? = null
     private fun startUsage() {
