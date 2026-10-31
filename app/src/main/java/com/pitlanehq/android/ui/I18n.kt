@@ -81,6 +81,7 @@ private val STRINGS: Map<String, L> = mapOf(
     "recent_races" to L("RECENT RACES", "CARRERAS RECIENTES", "CORRIDAS RECENTES"),
     "your_recent_races" to L("YOUR RECENT RACES", "TUS CARRERAS RECIENTES", "SUAS CORRIDAS RECENTES"),
     "see_all" to L("See all", "Ver todas", "Ver todas"),
+    "back" to L("Back", "Atrás", "Voltar"),
     "no_races" to L("No races yet. Race with Pitlane HQ Agent running and signed in: your races appear here.", "Aún no hay carreras. Corre con Pitlane HQ Agent abierto y con tu cuenta iniciada: tus carreras aparecerán aquí.", "Ainda não há corridas. Corra com o Pitlane HQ Agent aberto e com sua conta conectada. Suas corridas aparecem aqui."),
     "synced" to L("Synced {0}", "Sincronizado {0}", "Sincronizado {0}"),
     "never_synced" to L("Not synced yet: sign in to your account in Pitlane HQ Agent", "Sin sincronizar: inicia sesión con tu cuenta en Pitlane HQ Agent", "Ainda não sincronizado. Entre com sua conta no Pitlane HQ Agent"),

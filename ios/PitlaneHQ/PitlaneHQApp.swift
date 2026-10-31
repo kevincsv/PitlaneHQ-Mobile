@@ -64,6 +64,7 @@ struct PitlaneHQApp: App {
             }
             .preferredColorScheme(.dark)
             .tint(Theme.accent)
+            .font(.ui(15)) // IBM Plex Sans wherever a text names no font (Fonts.swift)
         }
     }
 }
@@ -153,21 +154,25 @@ final class Inbox: ObservableObject {
 }
 
 enum Theme {
-    // the pit wall look: one dark theme with the amber accent, never switched
+    // the pit wall look of Track First (the owner's design 7): one dark theme with the amber accent, never switched
     static let ink = Color(red: 0x0D / 255, green: 0x11 / 255, blue: 0x16 / 255)
-    static let surface = Color(red: 0x16 / 255, green: 0x1C / 255, blue: 0x24 / 255)
+    /// cards
+    static let surface = Color(red: 0x15 / 255, green: 0x1C / 255, blue: 0x25 / 255)
     static let surface2 = Color(red: 0x1E / 255, green: 0x26 / 255, blue: 0x31 / 255)
+    /// the darker well of the switches, the search box and the sub-tabs
+    static let well = Color(red: 0x11 / 255, green: 0x16 / 255, blue: 0x1D / 255)
     static let line = Color(red: 0x26 / 255, green: 0x31 / 255, blue: 0x40 / 255)
-    static let fg = Color(red: 0xE7 / 255, green: 0xEB / 255, blue: 0xF1 / 255)
+    static let fg = Color(red: 0xEE / 255, green: 0xF1 / 255, blue: 0xF5 / 255)
     static let bg = Color(red: 0x0D / 255, green: 0x11 / 255, blue: 0x16 / 255)
-    static let muted = Color(red: 0x9A / 255, green: 0xA6 / 255, blue: 0xB8 / 255)
+    static let muted = Color(red: 0x98 / 255, green: 0xA3 / 255, blue: 0xB2 / 255)
+    static let dim = Color(red: 0x6C / 255, green: 0x77 / 255, blue: 0x87 / 255)
     static let accent = Color(red: 1, green: 0xB0 / 255, blue: 0x2E / 255)
     static let good = Color(red: 0x4F / 255, green: 0xE0 / 255, blue: 0x9A / 255)
-    static let bad = Color(red: 1, green: 0x7A / 255, blue: 0x7A / 255)
-    static let purple = Color(red: 0xC9 / 255, green: 0xA4 / 255, blue: 1)
-    static let blue = Color(red: 0x8C / 255, green: 0xC4 / 255, blue: 1)
+    static let bad = Color(red: 1, green: 0x5A / 255, blue: 0x5A / 255)
+    static let purple = Color(red: 0xC7 / 255, green: 0x9B / 255, blue: 1)
+    static let blue = Color(red: 0x5A / 255, green: 0xA9 / 255, blue: 1)
     /// the floating tab bar and its chosen tab
-    static let navBar = Color(red: 0x1E / 255, green: 0x26 / 255, blue: 0x31 / 255)
-    static let navEdge = Color(red: 0x2E / 255, green: 0x3A / 255, blue: 0x4A / 255)
-    static let navOn = Color(red: 0x2E / 255, green: 0x38 / 255, blue: 0x46 / 255)
+    static let navBar = Color(red: 0x1A / 255, green: 0x21 / 255, blue: 0x2B / 255)
+    static let navEdge = Color(red: 0x2C / 255, green: 0x37 / 255, blue: 0x46 / 255)
+    static let navOn = Color(red: 0x2A / 255, green: 0x34 / 255, blue: 0x42 / 255)
 }
