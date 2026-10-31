@@ -997,6 +997,26 @@ final class Account: ObservableObject {
         error = nil
     }
 
+    /// Account → Delete account (the password again, like the web's): the account and its data go, this phone signs out.
+    /// nil when it is gone, else the error's key.
+    func deleteAccount(password: String) async -> String? {
+        guard !email.isEmpty else { return "sign_in_again" }
+        guard !password.isEmpty else { return "enter_pw" }
+        let em = email
+        do {
+            let keys = try await Task.detached { try PLCrypto.derive(email: em, password: password) }.value
+            _ = try await call("POST", "/account/delete", body: ["auth": keys.auth], pass: true)
+        } catch let e as AppError {
+            return e.key == "the password is wrong" ? "wrong_email_pw" : e.key
+        } catch {
+            return "server_down"
+        }
+        _ = await Notify.setOn(false, plan: [])
+        clear()
+        error = nil
+        return nil
+    }
+
     func devices() async throws -> Got<[Device]> {
         let j = try JSONSerialization.jsonObject(with: await call("GET", "/account/sessions")) as? [String: Any] ?? [:]
         return Got(data: (j["sessions"] as? [[String: Any]] ?? []).map { Device(id: str($0["id"]), device: str($0["device"]), lastSeen: num($0["lastSeen"]) ?? 0, current: $0["current"] as? Bool ?? false) })

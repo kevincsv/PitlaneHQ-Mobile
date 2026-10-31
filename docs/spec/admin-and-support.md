@@ -64,3 +64,16 @@ How this part of the phone apps behaves. Read it before changing this area; keep
   gives the app a background refresh, `com.pitlanehq.ios.alerts`, and each time the app opens): "Your record at Spa was
   beaten" (who, the time, the car and the gap; "Another driver" for an anonymous one) and the week's summary as the
   server wrote it. The Planner's races get a reminder 15 minutes before (`docs/spec/planner.md`). Off stops all of it.
+- Instant notifications on Android (`data/Push.kt`, Firebase Cloud Messaging; the server side is Pitwall-test's
+  `pushlib.js`): turning notifications on sends the phone's token with POST `/community/alerts/on` {push: {token,
+  platform: "android"}} (and again when Firebase gives a new one), off sends it to be forgotten and deletes it. The
+  server's message only says "alerts" and the phone reads them as the background check does (`Notify.check`), which then
+  runs every 4 hours instead of 30 minutes. No token exists until notifications are on (auto-init off, no analytics). A
+  build without `app/google-services.json` (android.yml writes it from the GOOGLE_SERVICES_JSON secret) has no Firebase
+  and works as before. iOS keeps the background refresh until the app is signed with an Apple Developer account (APNs).
+- Account → Delete account (both apps, last, under Sign out; not in demo data): the web's text of what goes and what
+  stays, the password, Delete and "Delete your account?" to confirm; POST `/account/delete` {auth}, then the phone signs
+  out and turns its notifications off. Google Play and the App Store require it in the app; the web's
+  pitlanehq.app/delete-account says how to do it without the app.
+- Installed from Google Play (`Updates.fromPlay`, the installer is com.android.vending), the app never offers the APK
+  download: Play updates it.

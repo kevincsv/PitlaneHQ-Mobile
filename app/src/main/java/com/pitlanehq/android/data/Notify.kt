@@ -26,7 +26,8 @@ import kotlin.concurrent.thread
 
 /** The phone's notifications, only with Account → Notifications on (never by email): a record of yours another driver
  *  beat and the summary of your week (the server's alerts.js, read in the background every 30 minutes by AlertJob), and
- *  a reminder 15 minutes before each race in the Planner's plan (an alarm per race, RaceReminder). */
+ *  a reminder 15 minutes before each race in the Planner's plan (an alarm per race, RaceReminder). With Firebase in the
+ *  build a new alert wakes the phone at once (Push.kt) and the background check runs every 4 hours instead. */
 object Notify {
     private const val CH_ALERTS = "alerts"
     private const val CH_RACES = "races"
@@ -45,7 +46,9 @@ object Notify {
         val js = ctx.getSystemService(JobScheduler::class.java)
         if (on) {
             channels(ctx)
-            js.schedule(JobInfo.Builder(JOB, ComponentName(ctx, AlertJob::class.java)).setPeriodic(30 * 60_000L)
+            // with Firebase (Push.kt) the server wakes the phone itself: the check is only the safety net
+            val every = if (Push.available(ctx)) 4 * 3600_000L else 30 * 60_000L
+            js.schedule(JobInfo.Builder(JOB, ComponentName(ctx, AlertJob::class.java)).setPeriodic(every)
                 .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY).setPersisted(true).build())
         } else js.cancel(JOB)
         plan(ctx, if (on) plan else emptyList())
@@ -71,8 +74,8 @@ object Notify {
         try { NotificationManagerCompat.from(ctx).notify(id, n) } catch (e: SecurityException) {}
     }
 
-    /** The server's alerts since the last check, as notifications. */
-    fun check(ctx: Context) {
+    /** The server's alerts since the last check, as notifications (the background check and Firebase's wake-up). */
+    @Synchronized fun check(ctx: Context) {
         if (!on(ctx)) return
         lang(ctx)
         val repo = AccountRepository(ctx.applicationContext)

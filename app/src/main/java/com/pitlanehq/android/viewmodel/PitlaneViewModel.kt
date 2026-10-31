@@ -172,7 +172,7 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
 
     /** A newer version on GitHub: shown as a banner on top. */
     fun checkUpdate() {
-        viewModelScope.launch(Dispatchers.IO) { Updates.check(com.pitlanehq.android.BuildConfig.VERSION_NAME)?.let { update.value = it } }
+        if (!Updates.fromPlay(getApplication())) viewModelScope.launch(Dispatchers.IO) { Updates.check(com.pitlanehq.android.BuildConfig.VERSION_NAME)?.let { update.value = it } }
         viewModelScope.launch(Dispatchers.IO) { news.value = Updates.news(com.pitlanehq.android.data.SERVER, com.pitlanehq.android.ui.I18n.lang) }
     }
 
@@ -552,7 +552,23 @@ class PitlaneViewModel(app: Application) : AndroidViewModel(app) {
         com.pitlanehq.android.data.Notify.setOn(ctx, on, plannerPlan.value)
         notify.value = on
         track(if (on) "act:notify_on" else "act:notify_off")
-        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.setAlertsOn(on) } }
+        viewModelScope.launch(Dispatchers.IO) {
+            val push = com.pitlanehq.android.data.Push
+            val token = push.token(ctx)
+            runCatching { repo.setAlertsOn(on, token) }
+            if (!on && token != null) push.forget(ctx)
+        }
+    }
+    /** Account → Delete account: null when it is gone (the phone is signed out), else the error's key. */
+    suspend fun deleteAccount(password: String): String? = withContext(Dispatchers.IO) {
+        val err = runCatching { repo.deleteAccount(password) }.exceptionOrNull()
+        if (err == null) {
+            val ctx = getApplication<Application>()
+            com.pitlanehq.android.data.Notify.setOn(ctx, false, emptyList()); notify.value = false
+            com.pitlanehq.android.data.Push.forget(ctx)
+            withContext(Dispatchers.Main) { logout() }
+        }
+        err?.let { errKey(it) }
     }
     private var usageJob: Job? = null
     private fun startUsage() {

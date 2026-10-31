@@ -937,6 +937,36 @@ struct CodeSheet: View {
 /// Account → Discord: link it with Discord's sign-in (the password first), show it on your profile so other drivers can
 /// find you there (off until you say), or unlink it (the password again). A link the bot's /link made never signs in:
 /// "Link it again" does it with Discord's sign-in.
+/// Account → Delete account, as on the web: what goes and what stays, and the password again.
+struct DeleteAccountPanel: View {
+    @EnvironmentObject var account: Account
+    @State private var pw = ""
+    @State private var busy = false
+    @State private var err: String?
+    @State private var sure = false
+    var body: some View {
+        Panel {
+            Text(t("delete_account")).font(.subheadline.bold()).foregroundColor(Theme.bad)
+            Text(t("delete_account_txt")).font(.caption).foregroundColor(Theme.muted)
+            SecureField(t("password"), text: $pw).textContentType(.password).padding(10)
+                .background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
+            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+            Button { sure = true } label: {
+                Text(t("delete").uppercased()).font(.subheadline.bold()).frame(maxWidth: .infinity).padding(10)
+                    .background(Theme.surface2).foregroundColor(Theme.bad).clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+            .disabled(busy || pw.isEmpty)
+        }
+        .alert(t("delete_account_ask"), isPresented: $sure) {
+            Button(t("delete"), role: .destructive) {
+                busy = true
+                Task { err = await account.deleteAccount(password: pw); busy = false; if err == nil { pw = "" } }
+            }
+            Button(t("cancel"), role: .cancel) {}
+        }
+    }
+}
+
 /// Account → Notifications: a record of yours beaten, your week on Monday and a reminder 15 minutes before each planned
 /// race, on this phone only when turned on (iOS asks for the permission first). Never by email.
 struct NotifyPanel: View {
@@ -5504,6 +5534,7 @@ struct SettingsView: View {
                 Text(t("sign_out").uppercased()).font(.headline.bold()).frame(maxWidth: .infinity).padding(12)
                     .background(Theme.surface2).foregroundColor(Theme.bad).clipShape(RoundedRectangle(cornerRadius: 8))
             }
+            if account.signedIn && !account.demo { DeleteAccountPanel() }
             Text(t("version", version)).font(.caption2).foregroundColor(Theme.muted)
         }
         .task { if devices.data == nil { await devices.load { try await account.devices() } } }

@@ -3743,8 +3743,39 @@ private fun Settings(vm: PitlaneViewModel, nav: NavHostController) {
                 colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Bad)
             ) { Text(t("sign_out").uppercase(), fontWeight = FontWeight.Bold) }
         }
+        if (a.signedIn && !demo) item { DeleteAccountPanel(vm) }
         item { Text(t("version", BuildConfig.VERSION_NAME.replace("-", " ")), color = Muted, fontSize = 11.sp, modifier = Modifier.fillMaxWidth()) }
     }
+}
+
+/** Account → Delete account, as on the web: what goes and what stays, and the password again. */
+@Composable
+private fun DeleteAccountPanel(vm: PitlaneViewModel) {
+    var pw by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var err by remember { mutableStateOf<String?>(null) }
+    var sure by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    Panel {
+        Text(t("delete_account"), fontWeight = FontWeight.Bold, color = Bad)
+        Text(t("delete_account_txt"), color = Muted, fontSize = 12.sp)
+        OutlinedTextField(
+            pw, { pw = it; err = null }, label = { Text(t("password")) }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth()
+        )
+        err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
+        Button(
+            onClick = { sure = true }, enabled = !busy && pw.isNotEmpty(), modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Surface2, contentColor = Bad)
+        ) { Text(t("delete").uppercase(), fontWeight = FontWeight.Bold) }
+    }
+    if (sure) AlertDialog(
+        onDismissRequest = { sure = false }, containerColor = Surface,
+        title = { Text(t("delete_account_ask")) },
+        confirmButton = { TextButton({ sure = false; busy = true; scope.launch { err = vm.deleteAccount(pw); busy = false; if (err == null) pw = "" } }) { Text(t("delete"), color = Bad, fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton({ sure = false }) { Text(t("cancel"), color = Muted) } }
+    )
 }
 
 /** Account → Notifications: a record of yours beaten, your week on Monday and a reminder 15 minutes before each planned

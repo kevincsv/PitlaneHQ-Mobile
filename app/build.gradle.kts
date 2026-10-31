@@ -3,6 +3,9 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+// the Firebase project's file (app/google-services.json, never in the repository: android.yml writes it from the
+// GOOGLE_SERVICES_JSON secret). Without it the app builds the same and notifications use the background check only.
+if (file("google-services.json").exists()) apply(plugin = "com.google.gms.google-services")
 
 android {
     namespace="com.pitlanehq.android"
@@ -12,7 +15,7 @@ android {
         minSdk=26
         targetSdk=36
         // one version for Pitlane HQ (PC, web, phones): version.txt; "beta" until 1.0.0
-        versionCode=33
+        versionCode=34
         versionName=rootProject.file("version.txt").readText().trim() + "-beta"
     }
     // release signing from GitHub secrets (never in the repository); without them CI signs with its debug key
@@ -49,6 +52,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("com.squareup.okhttp3:okhttp:5.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    // instant notifications (data/Push.kt): the server wakes the phone when there is a new alert
+    implementation(platform("com.google.firebase:firebase-bom:34.4.0"))
+    implementation("com.google.firebase:firebase-messaging")
     // the lap analysis and the coach of the PC and the web (pitwall-analysis.js), run on the phone
     implementation("androidx.javascriptengine:javascriptengine:1.0.0")
     // tests on the computer (gradle :app:testDebugUnitTest): org.json is Android's, so the tests bring the real one

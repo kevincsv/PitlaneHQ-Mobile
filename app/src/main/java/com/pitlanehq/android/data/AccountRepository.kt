@@ -1256,7 +1256,23 @@ class AccountRepository(context: Context) {
     // ---------- the phone's notifications (Account → Notifications, the server's alerts.js) ----------
     /** The account's alerts after `since` (a beaten record, the week's summary) and the server's time {now, alerts}. */
     fun alerts(since: Long): JSONObject = JSONObject(call("GET", "/community/alerts?since=$since"))
-    fun setAlertsOn(on: Boolean): Boolean = !demo && JSONObject(call("POST", "/community/alerts/on", JSONObject().put("on", on).put("lang", com.pitlanehq.android.ui.I18n.lang))).optBoolean("on")
+    /** Notifications on or off in this phone; [token]: its Firebase token (Push.kt), kept while on, forgotten when off. */
+    fun setAlertsOn(on: Boolean, token: String? = null): Boolean {
+        if (demo) return false
+        val b = JSONObject().put("on", on).put("lang", com.pitlanehq.android.ui.I18n.lang)
+        if (token != null) b.put("push", JSONObject().put("token", token).put("platform", "android"))
+        return JSONObject(call("POST", "/community/alerts/on", b)).optBoolean("on")
+    }
+
+    /** Account → Delete account (the password again, like the web's): the account and its data go, this phone signs out. */
+    fun deleteAccount(password: String) {
+        val email = prefs.getString("email", "")?.ifBlank { null } ?: throw AppError("sign_in_again")
+        if (password.isEmpty()) throw AppError("enter_pw")
+        val k = Crypto.derive(email, password)
+        try { call("POST", "/account/delete", JSONObject().put("auth", k.auth)) }
+        catch (e: AppError) { throw if (e.message == "the password is wrong") AppError("wrong_email_pw") else e }
+        clearAll()
+    }
 
     // a DRINKS driver name: taken by someone else on the platform? (your own names never clash)
     fun nameFree(name: String): Boolean = runCatching { JSONObject(call("POST", "/community/name-check", JSONObject().put("name", name))).optBoolean("free", true) }.getOrDefault(true)

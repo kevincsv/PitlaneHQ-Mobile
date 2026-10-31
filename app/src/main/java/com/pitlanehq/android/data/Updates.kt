@@ -48,6 +48,14 @@ object Updates {
         }
     }.getOrDefault(emptyList())
 
+    /** Installed from Google Play: Play updates the app itself, so the app never offers the APK download then. */
+    fun fromPlay(ctx: android.content.Context): Boolean = runCatching {
+        val pm = ctx.packageManager
+        val by = if (android.os.Build.VERSION.SDK_INT >= 30) pm.getInstallSourceInfo(ctx.packageName).installingPackageName
+            else @Suppress("DEPRECATION") pm.getInstallerPackageName(ctx.packageName)
+        by == "com.android.vending"
+    }.getOrDefault(false)
+
     fun check(current: String): AppUpdate? = runCatching {
         val req = Request.Builder().url(API).header("X-Pitlane-Client", CLIENT).build()
         client.newCall(req).execute().use { r ->
