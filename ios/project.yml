@@ -12,6 +12,11 @@ targets:
       # the web's lap analysis and coach, the copy the app runs until it downloads the newest (tools/sync-analysis.sh)
       - path: Resources/pitwall-analysis.js
         buildPhase: resources
+      # the Track First look's fonts (SIL Open Font License, the licences beside them): Barlow Condensed for titles,
+      # IBM Plex Sans for text, JetBrains Mono for numbers (Fonts.swift)
+      - path: Resources/Fonts
+        buildPhase: resources
+        type: folder
     scheme: {}
     info:
       path: PitlaneHQ/Info.plist
@@ -26,6 +31,18 @@ targets:
             CFBundleURLSchemes:
               - pitlanehq
         UIUserInterfaceStyle: Dark
+        UIAppFonts:
+          - Fonts/BarlowCondensed-SemiBold.ttf
+          - Fonts/BarlowCondensed-Bold.ttf
+          - Fonts/BarlowCondensed-ExtraBold.ttf
+          - Fonts/IBMPlexSans-Regular.ttf
+          - Fonts/IBMPlexSans-Medium.ttf
+          - Fonts/IBMPlexSans-SemiBold.ttf
+          - Fonts/IBMPlexSans-Bold.ttf
+          - Fonts/JetBrainsMono-Regular.ttf
+          - Fonts/JetBrainsMono-Medium.ttf
+          - Fonts/JetBrainsMono-SemiBold.ttf
+          - Fonts/JetBrainsMono-Bold.ttf
         # Account → Notifications (Notify.swift): the background check of the server's alerts
         UIBackgroundModes:
           - fetch

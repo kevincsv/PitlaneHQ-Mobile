@@ -5,19 +5,21 @@ import SwiftUI
 struct Panel<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
+        // Track First's card: 16 rounded corners, a hairline edge
         VStack(alignment: .leading, spacing: 4) { content }
-            .padding(12)
+            .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(Theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
 struct SectionLabel: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11, weight: .semibold)).tracking(1.3).foregroundColor(Theme.muted)
+        // the section titles: condensed capitals, spaced out
+        Text(text.uppercased()).font(.display(14, .bold)).tracking(1.6).foregroundColor(Theme.muted).lineLimit(1)
     }
 }
 
@@ -27,11 +29,17 @@ struct Metric: View {
     var color = Theme.fg
     var sub: String? = nil
     var body: some View {
-        Panel {
-            Text(label.uppercased()).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted).lineLimit(1)
-            Text(value).font(.system(size: 18, weight: .black, design: .monospaced)).foregroundColor(color).lineLimit(1).minimumScaleFactor(0.5)
-            if let sub { Text(sub).font(.system(size: 10)).foregroundColor(Theme.muted).lineLimit(1) }
+        // a tile: the label in small mono capitals, the number big in mono, a grey line under it
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased()).font(.mono(11, .semibold)).tracking(0.6).foregroundColor(Theme.muted).lineLimit(1).minimumScaleFactor(0.8)
+            Text(value).font(.mono(24, .bold)).foregroundColor(color).lineLimit(1).minimumScaleFactor(0.5)
+            if let sub { Text(sub).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1) }
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
@@ -39,7 +47,7 @@ struct StatusPill: View {
     let text: String
     let color: Color
     var body: some View {
-        Text(text).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(color)
+        Text(text).font(.mono(10, .bold)).foregroundColor(color)
             .padding(.horizontal, 9).padding(.vertical, 5)
             .overlay(Capsule().stroke(color, lineWidth: 1))
     }
@@ -51,9 +59,9 @@ struct InfoRow: View {
     var color = Theme.fg
     var body: some View {
         HStack {
-            Text(label).font(.subheadline).foregroundColor(Theme.muted)
+            Text(label).font(.ui(15)).foregroundColor(Theme.muted)
             Spacer()
-            Text(value).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(color)
+            Text(value).font(.mono(15, .bold)).foregroundColor(color)
         }
         .padding(.vertical, 2)
     }
@@ -68,8 +76,8 @@ struct ActionRow: View {
             HStack(spacing: 12) {
                 Image(systemName: icon).foregroundColor(Theme.accent).frame(width: 24)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.headline.weight(.black)).foregroundColor(Theme.fg)
-                    Text(sub).font(.caption).foregroundColor(Theme.muted)
+                    Text(title).font(.ui(17, .black)).foregroundColor(Theme.fg)
+                    Text(sub).font(.ui(12)).foregroundColor(Theme.muted)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").foregroundColor(Theme.muted)
@@ -115,20 +123,21 @@ struct Licences: View {
     var body: some View {
         let all = account.ratings()
         let races = account.races
-        let rows: [[String]] = stride(from: 0, to: DISCS.count, by: 2).map { Array(DISCS[$0..<min($0 + 2, DISCS.count)]) }
-        VStack(alignment: .leading, spacing: 8) {
-            SectionLabel(text: t("licences"))
+        // Track First's grid: three small cards a row
+        let rows: [[String]] = stride(from: 0, to: DISCS.count, by: 3).map { Array(DISCS[$0..<min($0 + 3, DISCS.count)]) }
+        VStack(alignment: .leading, spacing: 6) {
+            SectionLabel(text: t("licences")).padding(.top, 6)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     ForEach(row, id: \.self) { k in
                         Button { sel = k } label: { LicCard(k: k, r: all[k], races: races, on: sel == k) }.buttonStyle(.plain)
                     }
-                    if row.count < 2 { Color.clear.frame(maxWidth: .infinity) }
+                    ForEach(0..<(3 - row.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity) }
                 }
                 .fixedSize(horizontal: false, vertical: true)
             }
             LicDetail(k: sel, r: all[sel], races: races).id(sel)
-            Text(t("lic_note")).font(.caption2).foregroundColor(Theme.muted)
+            Text(t("lic_note")).font(.ui(11)).foregroundColor(Theme.muted)
         }
     }
 }
@@ -151,18 +160,18 @@ struct LicDetail: View {
         Panel {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(discName(k)).font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted)
-                    Text(r.map { "\($0.ir)" } ?? "–").font(.system(size: 26, weight: .black, design: .monospaced)).foregroundColor(r == nil ? Theme.muted : col)
+                    Text(discName(k)).font(.ui(12, .semibold)).foregroundColor(Theme.muted)
+                    Text(r.map { "\($0.ir)" } ?? "–").font(.mono(26, .black)).foregroundColor(r == nil ? Theme.muted : col)
                     if r != nil, let cls { LicBadge(k: cls, sr: sr) }
                     if line.isEmpty {
-                        Text(t("no_races_yet").trimmingCharacters(in: CharacterSet(charactersIn: "."))).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted)
+                        Text(t("no_races_yet").trimmingCharacters(in: CharacterSet(charactersIn: "."))).font(.mono(11)).foregroundColor(Theme.muted)
                     } else {
-                        Text(t("lic_gain", signed(chg), line.count)).font(.system(size: 11, design: .monospaced)).foregroundColor(chg >= 0 ? Theme.good : Theme.bad)
+                        Text(t("lic_gain", signed(chg), line.count)).font(.mono(11)).foregroundColor(chg >= 0 ? Theme.good : Theme.bad)
                     }
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     if line.count >= 2 {
-                        Text(x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)).font(.system(size: 10)).lineLimit(1)
+                        Text(x.map { $0.track + " " + signed($0.irChange) } ?? t("spark_last", line.count)).font(.ui(10)).lineLimit(1)
                             .foregroundColor(x.map { $0.irChange >= 0 ? Theme.good : Theme.bad } ?? Theme.muted)
                         IrLine(vals: irVals(line, r?.ir), col: col, height: 60, sel: $pick, area: true)
                     }
@@ -187,8 +196,8 @@ struct LmuRatings: View {
                         ForEach(Array([("Safety Rating", r.sr), ("Driver Rank", r.dr)].enumerated()), id: \.offset) { _, m in
                             let v = m.1
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(m.0).font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.muted).lineLimit(1)
-                                Text(v.isEmpty ? "–" : v).font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(Theme.fg).lineLimit(1)
+                                Text(m.0).font(.ui(12, .semibold)).foregroundColor(Theme.muted).lineLimit(1)
+                                Text(v.isEmpty ? "–" : v).font(.mono(20, .black)).foregroundColor(Theme.fg).lineLimit(1)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -209,33 +218,23 @@ struct LicCard: View {
     let races: [Race]
     var on = false
     var body: some View {
-        let col = discColor(k)
-        let last = races.filter { raceDisc($0.cat, $0.car) == k && !$0.noIr && $0.ir != 1 }.prefix(5) // races against the AI give no iRating
-        let chg = last.reduce(0) { $0 + $1.irChange }
         let lic = (r?.lic ?? "").trimmingCharacters(in: .whitespaces).uppercased()
         let cls: String? = lic.isEmpty ? nil : (lic.hasPrefix("WC") || lic.hasPrefix("PRO") ? "P" : String(lic.prefix(1)))
         let parts = lic.split(separator: " ")
         let sr: String? = parts.count > 1 ? String(parts[1]) : nil
-        HStack(spacing: 10) {
-            DiscIcon(k: k)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(discName(k)).font(.system(size: 12, weight: .semibold)).foregroundColor(on ? Theme.accent : Theme.muted)
-                HStack(alignment: .lastTextBaseline, spacing: 6) {
-                    Text(r.map { "\($0.ir)" } ?? "–").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(r == nil ? Theme.muted : col)
-                    if r != nil, !last.isEmpty, chg != 0 {
-                        Text(signed(chg)).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(chg > 0 ? Theme.good : Theme.bad)
-                    }
-                }
-                if r != nil, let cls { LicBadge(k: cls, sr: sr) }
-            }
-            Spacer(minLength: 0)
+        // Track First's licence card: the discipline small and grey, the iRating in mono, the licence chip; the chosen
+        // one has an amber edge
+        VStack(alignment: .leading, spacing: 3) {
+            Text(discName(k)).font(.ui(11)).foregroundColor(Theme.muted).lineLimit(1).minimumScaleFactor(0.8)
+            Text(r.map { "\($0.ir)" } ?? "–").font(.mono(18, .bold)).foregroundColor(r == nil ? Theme.muted : Theme.fg).lineLimit(1)
+            if r != nil, let cls { LicBadge(k: cls, sr: sr) }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(on ? Theme.surface2 : Theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(on ? Theme.accent : col.opacity(0.4), lineWidth: on ? 1.5 : 1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .padding(9)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(on ? Theme.accent : Theme.line, lineWidth: on ? 2 : 1))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .contentShape(RoundedRectangle(cornerRadius: 10))
         .opacity(r == nil && !on ? 0.55 : 1)
     }
 }
@@ -295,8 +294,8 @@ private struct CornerBar: View {
                 Color.clear.frame(height: 40)
                 RoundedRectangle(cornerRadius: 3).fill(col).frame(width: 14, height: 6 + 34 * abs(k.lost) / mx)
             }
-            Text("T\(k.n)").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(on ? Theme.accent : Theme.muted)
-            Text((k.lost >= 0 ? "+" : "−") + String(format: "%.2f", abs(k.lost))).font(.system(size: 9, design: .monospaced)).foregroundColor(col)
+            Text("T\(k.n)").font(.mono(10, .bold)).foregroundColor(on ? Theme.accent : Theme.muted)
+            Text((k.lost >= 0 ? "+" : "−") + String(format: "%.2f", abs(k.lost))).font(.mono(9)).foregroundColor(col)
         }
         .frame(width: 36).padding(.vertical, 4)
         .background(on ? Theme.surface2 : Color.clear).cornerRadius(6)
@@ -321,10 +320,10 @@ struct BrakeTable: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 0) {
                         ForEach(Array(heads.enumerated()), id: \.offset) { i, h in
-                            Text(h.uppercased()).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1)
+                            Text(h.uppercased()).font(.ui(9)).foregroundColor(Theme.muted).lineLimit(1)
                                 .frame(width: w[i] - (i == 0 ? 0 : 6), alignment: i == 0 ? .leading : .trailing).padding(.trailing, i == 0 ? 0 : 6)
                         }
-                        Text(t("bt_todo").uppercased()).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1)
+                        Text(t("bt_todo").uppercased()).font(.ui(9)).foregroundColor(Theme.muted).lineLimit(1)
                             .frame(width: 204, alignment: .leading).padding(.leading, 6)
                     }
                     .padding(.bottom, 4)
@@ -360,10 +359,10 @@ private struct BrakeRow: View {
         let tip: String? = k.text != nil ? (k.todo ?? (k.lost > 0.03 ? k.text.map(tipShort) : nil)) : k.lost > 0.03 ? k.tip.map { tipShort(fillArgs(t($0), k.args)) } : nil
         HStack(alignment: .center, spacing: 0) {
             ForEach(Array(cells.enumerated()), id: \.offset) { i, cell in
-                Text(cell.0).font(.system(size: 11, weight: i == 0 ? .bold : .regular, design: .monospaced)).foregroundColor(i == 0 && on ? Theme.accent : cell.1).lineLimit(1)
+                Text(cell.0).font(.mono(11, i == 0 ? .bold : .regular)).foregroundColor(i == 0 && on ? Theme.accent : cell.1).lineLimit(1)
                     .frame(width: w[i] - (i == 0 ? 0 : 6), alignment: i == 0 ? .leading : .trailing).padding(.trailing, i == 0 ? 0 : 6)
             }
-            Text(tip ?? "–").font(.system(size: 11)).foregroundColor(tip == nil ? Theme.muted : Theme.fg).fixedSize(horizontal: false, vertical: true)
+            Text(tip ?? "–").font(.ui(11)).foregroundColor(tip == nil ? Theme.muted : Theme.fg).fixedSize(horizontal: false, vertical: true)
                 .frame(width: 204, alignment: .leading).padding(.leading, 6)
         }
         .padding(.vertical, 5)
@@ -424,11 +423,11 @@ struct CarCardView: View {
     var body: some View {
         let l = lines
         Panel {
-            Text(t("car_card")).font(.subheadline.bold()).foregroundColor(Theme.fg)
-            Text(l.from).font(.caption).foregroundColor(Theme.muted)
-            Text(l.brake).font(.footnote).foregroundColor(Theme.fg).padding(.top, 4)
-            Text(l.shift).font(.footnote).foregroundColor(Theme.fg)
-            Text(l.vmax).font(.footnote).foregroundColor(Theme.fg)
+            Text(t("car_card")).font(.ui(15, .bold)).foregroundColor(Theme.fg)
+            Text(l.from).font(.ui(12)).foregroundColor(Theme.muted)
+            Text(l.brake).font(.ui(13)).foregroundColor(Theme.fg).padding(.top, 4)
+            Text(l.shift).font(.ui(13)).foregroundColor(Theme.fg)
+            Text(l.vmax).font(.ui(13)).foregroundColor(Theme.fg)
         }
     }
 }
@@ -440,8 +439,8 @@ struct WebNote: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "info.circle").foregroundColor(Theme.blue)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(text).font(.caption).foregroundColor(Theme.fg)
-                    Link(t("open_web"), destination: webApp).font(.caption.bold())
+                    Text(text).font(.ui(12)).foregroundColor(Theme.fg)
+                    Link(t("open_web"), destination: webApp).font(.ui(12, .bold))
                 }
             }
         }
@@ -454,33 +453,47 @@ struct ShortNote: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "desktopcomputer").font(.system(size: 13)).foregroundColor(Theme.muted.opacity(0.7))
-            Text(t(key)).font(.system(size: 12)).foregroundColor(Theme.muted).fixedSize(horizontal: false, vertical: true)
+            Text(t(key)).font(.ui(12)).foregroundColor(Theme.muted).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
 
 struct EmptyNote: View {
     let text: String
-    var body: some View { Panel { Text(text).font(.subheadline).foregroundColor(Theme.muted) } }
+    var body: some View { Panel { Text(text).font(.ui(15)).foregroundColor(Theme.muted) } }
 }
 
 struct Tabs: View {
     let labels: [String]
     @Binding var selected: Int
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(labels.enumerated()), id: \.offset) { i, l in
-                    Button { selected = i } label: {
-                        // the sub-tabs: the chosen one amber, the others quiet blocks
-                        Text(l).font(.system(size: 13, weight: .semibold)).lineLimit(1).padding(.horizontal, 12).padding(.vertical, 9)
-                            .background(selected == i ? Theme.accent : Theme.surface)
-                            .foregroundColor(selected == i ? Theme.ink : Theme.muted)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
+        // Track First's sub-tabs: one dark well, the chosen tab a raised card; up to four share the width, more scroll
+        if labels.count <= 4 {
+            HStack(spacing: 2) { ForEach(Array(labels.enumerated()), id: \.offset) { i, l in item(i, l).frame(maxWidth: .infinity) } }
+                .padding(3).background(Theme.well)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) { ForEach(Array(labels.enumerated()), id: \.offset) { i, l in item(i, l) } }
+                    .padding(3).background(Theme.well)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
+    }
+
+    private func item(_ i: Int, _ l: String) -> some View {
+        let on = selected == i
+        return Button { selected = i } label: {
+            Text(l).font(.ui(13, on ? .semibold : .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: labels.count <= 4 ? .infinity : nil)
+                .foregroundColor(on ? Theme.fg : Theme.muted)
+                .background(on ? Theme.surface : Color.clear)
+                .overlay(RoundedRectangle(cornerRadius: 9).stroke(on ? Theme.line : Color.clear, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 9))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
     }
 }
 
@@ -509,7 +522,7 @@ struct Banners: View {
     private func changelog(_ v: String) -> URL { URL(string: changelogURL + "#" + v.replacingOccurrences(of: ".", with: "") + "-beta")! }
 
     private func banner(_ s: String, _ c: Color) -> some View {
-        Text(s).font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(Theme.ink)
+        Text(s).font(.mono(11, .bold)).foregroundColor(Theme.ink)
             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.vertical, 6).background(c)
     }
 }
@@ -517,31 +530,54 @@ struct Banners: View {
 struct Screen<Content: View>: View {
     let title: String
     var sub = ""
-    /// iRacing | LMU under the title (Home, Analysis, Community)
+    /// iRacing | LMU under the title (Home, Tracks, Analysis, Community)
     var gameSeg = false
     @ViewBuilder var content: Content
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.isPresented) private var pushed
     var body: some View {
+        // Track First's frame: the header stays put (Back, the title in condensed capitals, Info, the game), the
+        // screen scrolls under it and ends above the floating tab bar
         VStack(spacing: 0) {
             Banners()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title.uppercased()).font(.system(size: 26, weight: .black)).tracking(1).foregroundColor(Theme.fg).lineLimit(2)
-                        if !sub.isEmpty { Text(sub).font(.caption).foregroundColor(Theme.muted).lineLimit(2) }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    if pushed {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 20, weight: .semibold)).foregroundColor(Theme.fg)
+                                .frame(width: 32, height: 36, alignment: .leading).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).accessibilityLabel(t("back"))
                     }
-                    .padding(.vertical, 4)
-                    if gameSeg { GameSeg() }
-                    content
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title.uppercased()).font(.display(27, .bold)).tracking(0.5).foregroundColor(Theme.fg).lineLimit(1).minimumScaleFactor(0.7)
+                        if !sub.isEmpty { Text(sub).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1) }
+                    }
+                    Spacer(minLength: 4)
+                    InfoButton()
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 20)
+                if gameSeg { GameSeg() }
+            }
+            .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 10)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) { content }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 24)
             }
         }
         .background(Theme.ink.ignoresSafeArea())
-        .toolbarBackground(Theme.ink, for: .navigationBar)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { InfoButton() } }
+        .toolbar(.hidden, for: .navigationBar)
     }
+}
+
+/// The header draws its own Back, so the system bar is hidden; the swipe from the left edge still goes back.
+extension UINavigationController: UIGestureRecognizerDelegate {
+    override open func viewDidLoad() {
+        super.viewDidLoad()
+        interactivePopGestureRecognizer?.delegate = self
+    }
+    public func gestureRecognizerShouldBegin(_ g: UIGestureRecognizer) -> Bool { viewControllers.count > 1 }
 }
 
 /// What a screen loads from the server: data, loading, an error and whether it is the saved copy.
@@ -572,7 +608,7 @@ final class Loader<T>: ObservableObject {
 struct BetaPill: View {
     var on = false
     var body: some View {
-        Text(t("beta")).font(.system(size: 9, weight: .bold)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.accent)
+        Text(t("beta")).font(.ui(9, .bold)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.accent)
             .padding(.horizontal, 5).overlay(Capsule().stroke((on ? Theme.ink : Theme.accent).opacity(0.6), lineWidth: 1))
     }
 }
@@ -580,7 +616,7 @@ struct BetaPill: View {
 /// A session or race of Le Mans Ultimate, like the vs AI and DRINKS pills.
 struct LmuPill: View {
     var body: some View {
-        Text("LMU").font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Theme.purple)
+        Text("LMU").font(.ui(10, .bold)).tracking(0.4).lineLimit(1).foregroundColor(Theme.purple)
             .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.purple.opacity(0.55), lineWidth: 1))
     }
 }
@@ -596,17 +632,21 @@ struct GameSeg: View {
                 let on = account.game == g
                 Button { account.setGame(g) } label: {
                     HStack(spacing: 5) {
-                        Text(gameShort(g) + (live.pcGame == g ? " ●" : "")).font(.system(size: 13, weight: .bold)).lineLimit(1)
-                        if g == "lmu" { BetaPill(on: on) }
+                        Text(gameShort(g) + (live.pcGame == g ? " ●" : "")).font(.ui(13, on ? .semibold : .medium)).lineLimit(1)
+                        if g == "lmu" { BetaPill() }
                     }
-                    .foregroundColor(on ? Theme.ink : Theme.muted)
-                    .frame(maxWidth: .infinity).padding(.vertical, 8)
-                    .background(on ? Theme.accent : Color.clear).clipShape(RoundedRectangle(cornerRadius: 8))
+                    // the chosen game a raised card in the dark well, like the sub-tabs
+                    .foregroundColor(on ? Theme.fg : Theme.muted)
+                    .frame(maxWidth: .infinity).padding(.vertical, 7)
+                    .background(on ? Theme.surface : Color.clear)
+                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(on ? Theme.line : Color.clear, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(3).background(Theme.surface).overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(3).background(Theme.well).overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -615,15 +655,15 @@ struct GameSheet: View {
     @EnvironmentObject var account: Account
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(t("gs_title")).font(.title3.weight(.black)).foregroundColor(Theme.fg)
+            Text(t("gs_title")).font(.ui(20, .black)).foregroundColor(Theme.fg)
             ForEach(games, id: \.self) { g in
                 let st = account.gameStats[g] ?? (n: 0, last: 0)
                 let on = account.game == g
                 Button { account.setGame(g) } label: {
                     VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 4) { Text(gameName(g)).font(.headline.weight(.black)).foregroundColor(Theme.fg); if g == "lmu" { BetaPill() } }
-                        Text([t("gs_sessions", st.n), st.last > 0 ? t("gs_last", day(st.last)) : ""].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
-                        Text(t("gs_see", gameName(g))).font(.subheadline.bold()).padding(.horizontal, 14).padding(.vertical, 8)
+                        HStack(spacing: 4) { Text(gameName(g)).font(.ui(17, .black)).foregroundColor(Theme.fg); if g == "lmu" { BetaPill() } }
+                        Text([t("gs_sessions", st.n), st.last > 0 ? t("gs_last", day(st.last)) : ""].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted)
+                        Text(t("gs_see", gameName(g))).font(.ui(15, .bold)).padding(.horizontal, 14).padding(.vertical, 8)
                             .background(on ? Theme.accent : Theme.surface2).foregroundColor(on ? Theme.ink : Theme.fg).clipShape(RoundedRectangle(cornerRadius: 8)).padding(.top, 4)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(14)
@@ -649,11 +689,11 @@ struct LoadState: View {
         if loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity) }
         if let error {
             Panel {
-                Text(t(error)).font(.subheadline).foregroundColor(Theme.bad)
-                Button(t("retry").uppercased(), action: retry).font(.subheadline.bold())
+                Text(t(error)).font(.ui(15)).foregroundColor(Theme.bad)
+                Button(t("retry").uppercased(), action: retry).font(.ui(15, .bold))
             }
         } else if stale {
-            Text(t("showing_saved")).font(.caption).foregroundColor(Theme.accent)
+            Text(t("showing_saved")).font(.ui(12)).foregroundColor(Theme.accent)
         }
     }
 }
@@ -704,11 +744,11 @@ struct LoginView: View {
         ScrollView {
             VStack(spacing: 12) {
                 Spacer(minLength: 48)
-                Text("PITLANE HQ").font(.system(size: 34, weight: .black)).foregroundColor(Theme.fg)
-                Text(t("companion")).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.accent)
+                Text("PITLANE HQ").font(.ui(34, .black)).foregroundColor(Theme.fg)
+                Text(t("companion")).font(.mono(12, .bold)).foregroundColor(Theme.accent)
                 Panel {
-                    Text(t("sign_in").uppercased()).font(.system(size: 22, weight: .black))
-                    Text(t("same_account")).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("sign_in").uppercased()).font(.ui(22, .black))
+                    Text(t("same_account")).font(.ui(12)).foregroundColor(Theme.muted)
                     SocialSignIn(email: email)
                     TextField(t("email"), text: $email)
                         .textContentType(.username).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -716,19 +756,19 @@ struct LoginView: View {
                     SecureField(t("password"), text: $password)
                         .textContentType(.password)
                         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
-                    if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                    if let e = account.error { Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad) }
                     Button {
                         Task { await account.login(email: email, password: password) }
                     } label: {
-                        Text((account.busy ? t("signing_in") : t("sign_in")).uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
+                        Text((account.busy ? t("signing_in") : t("sign_in")).uppercased()).font(.ui(17, .black)).frame(maxWidth: .infinity).padding(12)
                             .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .disabled(account.busy || email.isEmpty || password.isEmpty)
                     .padding(.top, 6)
                     HStack {
-                        Link(t("create_account"), destination: webApp).font(.caption)
+                        Link(t("create_account"), destination: webApp).font(.ui(12))
                         Spacer()
-                        Link(t("forgot"), destination: URL(string: server.absoluteString + "/account/forgot")!).font(.caption).foregroundColor(Theme.muted)
+                        Link(t("forgot"), destination: URL(string: server.absoluteString + "/account/forgot")!).font(.ui(12)).foregroundColor(Theme.muted)
                     }
                     .padding(.top, 6)
                 }
@@ -757,21 +797,21 @@ struct SocialSignIn: View {
         let dc = account.socialProv == "discord"
         VStack(alignment: .leading, spacing: 6) {
             Button { Task { await account.socialSignIn("steam") } } label: {
-                Text(t("steam_continue")).font(.subheadline.bold()).frame(maxWidth: .infinity).padding(11)
+                Text(t("steam_continue")).font(.ui(15, .bold)).frame(maxWidth: .infinity).padding(11)
                     .foregroundColor(Theme.fg).overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
             }
             .disabled(account.socialBusy)
             Button { Task { await account.socialSignIn("discord") } } label: {
-                Text(t("discord_continue")).font(.subheadline.bold()).frame(maxWidth: .infinity).padding(11)
+                Text(t("discord_continue")).font(.ui(15, .bold)).frame(maxWidth: .infinity).padding(11)
                     .foregroundColor(.white).background(Self.blurple).clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .disabled(account.socialBusy)
             if !account.socialNeedCode && !account.socialNeedKey && account.socialNew == nil, let e = account.socialError {
-                Text(t(e)).font(.caption).foregroundColor(Theme.bad)
+                Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad)
             }
             HStack {
                 Rectangle().fill(Theme.line).frame(height: 1)
-                Text(t("or")).font(.caption2).foregroundColor(Theme.muted)
+                Text(t("or")).font(.ui(11)).foregroundColor(Theme.muted)
                 Rectangle().fill(Theme.line).frame(height: 1)
             }
             .padding(.vertical, 6)
@@ -780,13 +820,13 @@ struct SocialSignIn: View {
         .sheet(isPresented: Binding(get: { account.socialNeedCode || account.socialNeedKey }, set: { if !$0 && (account.socialNeedCode || account.socialNeedKey) { account.socialCancel() } })) {
             form(title: account.socialNeedCode ? t("two_factor") : t(dc ? "discord_sign_in" : "steam_sign_in")) {
                 if account.socialNeedCode {
-                    Text(t("two_factor_code")).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("two_factor_code")).font(.ui(12)).foregroundColor(Theme.muted)
                     TextField("123 456", text: $code).textContentType(.oneTimeCode).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
-                        .font(.system(size: 24, weight: .semibold, design: .monospaced)).multilineTextAlignment(.center)
+                        .font(.mono(24, .semibold)).multilineTextAlignment(.center)
                         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                     go(t("continue"), enabled: !code.isEmpty) { await account.socialLoginCode(code) }
                 } else {
-                    Text(t("steam_pw_once")).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("steam_pw_once")).font(.ui(12)).foregroundColor(Theme.muted)
                     field(t("email"), $em)
                     SecureField(t("password"), text: $pw).textContentType(.password).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                     go(account.socialBusy ? t("signing_in") : t("sign_in"), enabled: !em.isEmpty && !pw.isEmpty) { await account.socialKey(email: em, password: pw) }
@@ -795,10 +835,10 @@ struct SocialSignIn: View {
         }
         .sheet(item: Binding(get: { account.socialNew }, set: { if $0 == nil && account.socialNew != nil { account.socialCancel() } })) { n in
             form(title: t("create_account")) {
-                Text(t(dc ? "discord_no_account" : "steam_no_account")).font(.caption).foregroundColor(Theme.accent)
+                Text(t(dc ? "discord_no_account" : "steam_no_account")).font(.ui(12)).foregroundColor(Theme.accent)
                 field(t("email"), $em)
                 SecureField(t("password"), text: $pw).textContentType(.newPassword).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
-                Text(t("pw_short")).font(.caption2).foregroundColor(Theme.muted)
+                Text(t("pw_short")).font(.ui(11)).foregroundColor(Theme.muted)
                 TextField(t("public_name"), text: $name).autocorrectionDisabled().padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                 go(t("create_account"), enabled: !em.isEmpty && pw.count >= 10 && !name.trimmingCharacters(in: .whitespaces).isEmpty) { await account.register(email: em, password: pw, name: name) }
             }
@@ -814,7 +854,7 @@ struct SocialSignIn: View {
 
     private func go(_ label: String, enabled: Bool, _ run: @escaping () async -> Void) -> some View {
         Button { Task { await run() } } label: {
-            Text(label.uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
+            Text(label.uppercased()).font(.ui(17, .black)).frame(maxWidth: .infinity).padding(12)
                 .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .disabled(account.socialBusy || !enabled)
@@ -825,7 +865,7 @@ struct SocialSignIn: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     c()
-                    if let e = account.socialError { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                    if let e = account.socialError { Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad) }
                 }
                 .padding(20)
             }
@@ -868,24 +908,24 @@ struct SteamPanel: View {
         Panel {
             if let d = steam.data {
                 if !d.linked {
-                    Text(t("steam_intro")).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("steam_intro")).font(.ui(12)).foregroundColor(Theme.muted)
                     Button { ask = "link" } label: {
-                        Text(t("steam_link").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                        Text(t("steam_link").uppercased()).font(.ui(12, .black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .padding(.top, 4)
                 } else {
                     HStack(spacing: 8) {
-                        Text(d.persona.isEmpty ? t("steam_linked") : d.persona).font(.subheadline.bold()).lineLimit(1)
-                        Text(t("discord_linked_pill")).font(.system(size: 10, weight: .bold)).lineLimit(1).foregroundColor(Theme.good)
+                        Text(d.persona.isEmpty ? t("steam_linked") : d.persona).font(.ui(15, .bold)).lineLimit(1)
+                        Text(t("discord_linked_pill")).font(.ui(10, .bold)).lineLimit(1).foregroundColor(Theme.good)
                             .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.good.opacity(0.55), lineWidth: 1))
                     }
-                    Toggle(t("steam_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.steamShow(v) } })).font(.subheadline)
-                    Button(t("unlink")) { ask = "unlink" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+                    Toggle(t("steam_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.steamShow(v) } })).font(.ui(15))
+                    Button(t("unlink")) { ask = "unlink" }.font(.ui(12, .bold)).foregroundColor(Theme.bad).padding(.top, 4)
                 }
             } else if steam.error == nil {
-                Text(t("loading")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("loading")).font(.ui(12)).foregroundColor(Theme.muted)
             }
-            if let e = steam.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+            if let e = steam.error { Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad) }
         }
         .task { await load() }
         .modifier(PassAsk(title: t(ask == "unlink" ? "steam_unlink_ask" : "steam_link"), ask: $ask) { a, p in
@@ -910,15 +950,15 @@ struct CodeSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 12) {
-                Text(t("two_factor_code")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("two_factor_code")).font(.ui(12)).foregroundColor(Theme.muted)
                 TextField("123 456", text: $code).textContentType(.oneTimeCode).keyboardType(.numbersAndPunctuation).autocorrectionDisabled()
-                    .font(.system(size: 24, weight: .semibold, design: .monospaced)).multilineTextAlignment(.center)
+                    .font(.mono(24, .semibold)).multilineTextAlignment(.center)
                     .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
-                if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                if let e = account.error { Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad) }
                 Button {
                     Task { await account.loginCode(code) }
                 } label: {
-                    Text((account.busy ? t("signing_in") : t("sign_in")).uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
+                    Text((account.busy ? t("signing_in") : t("sign_in")).uppercased()).font(.ui(17, .black)).frame(maxWidth: .infinity).padding(12)
                         .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .disabled(account.busy || code.isEmpty)
@@ -952,7 +992,7 @@ struct NotifyPanel: View {
                     await account.setAlertsOn(on)
                 }
             }))
-            .font(.subheadline.bold()).tint(Theme.accent)
+            .font(.ui(15, .bold)).tint(Theme.accent)
         }
     }
 }
@@ -966,33 +1006,33 @@ struct DiscordPanel: View {
         Panel {
             if let d = discord.data {
                 if !d.linked {
-                    Text(t("discord_intro")).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("discord_intro")).font(.ui(12)).foregroundColor(Theme.muted)
                     if d.oauth {
                         Button { ask = "link" } label: {
-                            Text(t("discord_link").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                            Text(t("discord_link").uppercased()).font(.ui(12, .black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                         .padding(.top, 4)
                     } else {
-                        Text(t("discord_no_oauth")).font(.caption).foregroundColor(Theme.muted)
+                        Text(t("discord_no_oauth")).font(.ui(12)).foregroundColor(Theme.muted)
                     }
                 } else {
                     HStack(spacing: 8) {
-                        Text(d.handle.isEmpty ? t("discord_linked") : "@" + d.handle).font(.subheadline.bold()).lineLimit(1)
-                        Text(t("discord_linked_pill")).font(.system(size: 10, weight: .bold)).lineLimit(1).foregroundColor(Theme.good)
+                        Text(d.handle.isEmpty ? t("discord_linked") : "@" + d.handle).font(.ui(15, .bold)).lineLimit(1)
+                        Text(t("discord_linked_pill")).font(.ui(10, .bold)).lineLimit(1).foregroundColor(Theme.good)
                             .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.good.opacity(0.55), lineWidth: 1))
                     }
                     if !d.login && d.oauth {
-                        Text(t("discord_relink_note")).font(.caption).foregroundColor(Theme.accent)
-                        Button(t("discord_relink")) { ask = "link" }.font(.caption.bold()).foregroundColor(Theme.accent)
+                        Text(t("discord_relink_note")).font(.ui(12)).foregroundColor(Theme.accent)
+                        Button(t("discord_relink")) { ask = "link" }.font(.ui(12, .bold)).foregroundColor(Theme.accent)
                     }
-                    Toggle(t("discord_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.discordShow(v) } })).font(.subheadline)
-                    Text(t("discord_show_note")).font(.caption).foregroundColor(Theme.muted)
-                    Button(t("discord_unlink")) { ask = "unlink" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+                    Toggle(t("discord_show"), isOn: Binding(get: { d.shown }, set: { v in act { try await account.discordShow(v) } })).font(.ui(15))
+                    Text(t("discord_show_note")).font(.ui(12)).foregroundColor(Theme.muted)
+                    Button(t("discord_unlink")) { ask = "unlink" }.font(.ui(12, .bold)).foregroundColor(Theme.bad).padding(.top, 4)
                 }
             } else if discord.error == nil {
-                Text(t("loading")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("loading")).font(.ui(12)).foregroundColor(Theme.muted)
             }
-            if let e = discord.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+            if let e = discord.error { Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad) }
         }
         .task { await load() }
         .modifier(PassAsk(title: t(ask == "unlink" ? "discord_unlink_ask" : "discord_link"), ask: $ask) { a, p in
@@ -1023,16 +1063,16 @@ struct TwoFactorPanel: View {
     var body: some View {
         Panel {
             HStack {
-                Text(t("two_factor")).font(.subheadline.bold())
+                Text(t("two_factor")).font(.ui(15, .bold))
                 Spacer()
-                Text((account.twoFactor ? t("two_factor_on") : t("recommended")).uppercased()).font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(account.twoFactor ? Theme.good : Theme.accent)
+                Text((account.twoFactor ? t("two_factor_on") : t("recommended")).uppercased()).font(.mono(10, .black)).foregroundColor(account.twoFactor ? Theme.good : Theme.accent)
             }
-            Text(account.twoFactor ? t("two_factor_is_on", account.recoveryLeft) : t("two_factor_rec")).font(.caption).foregroundColor(Theme.muted)
+            Text(account.twoFactor ? t("two_factor_is_on", account.recoveryLeft) : t("two_factor_rec")).font(.ui(12)).foregroundColor(Theme.muted)
             if account.twoFactor {
-                Button(t("turn_off").uppercased()) { pw = ""; code = ""; err = nil; step = "off" }.font(.caption.bold()).foregroundColor(Theme.bad).padding(.top, 4)
+                Button(t("turn_off").uppercased()) { pw = ""; code = ""; err = nil; step = "off" }.font(.ui(12, .bold)).foregroundColor(Theme.bad).padding(.top, 4)
             } else {
                 Button { pw = ""; code = ""; err = nil; step = "pw" } label: {
-                    Text(t("turn_on").uppercased()).font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                    Text(t("turn_on").uppercased()).font(.ui(12, .black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .padding(.top, 4)
             }
@@ -1052,33 +1092,33 @@ struct TwoFactorPanel: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if step == "pw" {
-                        Text(t("two_factor_pw")).font(.caption).foregroundColor(Theme.muted)
+                        Text(t("two_factor_pw")).font(.ui(12)).foregroundColor(Theme.muted)
                         field(t("password"), $pw, secret: true)
                         action(t("continue"), enabled: !pw.isEmpty) { setup = try await account.setup2fa(password: pw); step = "scan" }
                     } else if step == "scan", let st = setup {
-                        Text(t("two_factor_scan")).font(.caption).foregroundColor(Theme.muted)
+                        Text(t("two_factor_scan")).font(.ui(12)).foregroundColor(Theme.muted)
                         Link(destination: st.url) {
-                            Text(t("open_in_app").uppercased()).font(.caption.weight(.black)).frame(maxWidth: .infinity).padding(12).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
+                            Text(t("open_in_app").uppercased()).font(.ui(12, .black)).frame(maxWidth: .infinity).padding(12).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         Text(t("key") + ": " + st.secret.enumerated().map { $0.offset > 0 && $0.offset % 4 == 0 ? " \($0.element)" : String($0.element) }.joined())
-                            .font(.system(size: 12, design: .monospaced)).textSelection(.enabled)
+                            .font(.mono(12)).textSelection(.enabled)
                         field(t("code"), $code, secret: false)
                         action(t("turn_on"), enabled: code.count >= 6) { codes = try await account.enable2fa(code: code); step = "codes" }
                     } else if step == "codes" {
-                        Text(t("two_factor_codes")).font(.caption).foregroundColor(Theme.muted)
-                        Text(codes.joined(separator: "\n")).font(.system(size: 15, design: .monospaced)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
+                        Text(t("two_factor_codes")).font(.ui(12)).foregroundColor(Theme.muted)
+                        Text(codes.joined(separator: "\n")).font(.mono(15)).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
                         HStack {
                             Button(t("copy")) { UIPasteboard.general.string = codes.joined(separator: "\n") }.foregroundColor(Theme.muted)
                             Spacer()
-                            Button(t("saved_them").uppercased()) { step = "" }.font(.caption.weight(.black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
+                            Button(t("saved_them").uppercased()) { step = "" }.font(.ui(12, .black)).padding(.horizontal, 14).padding(.vertical, 8).background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                     } else if step == "off" {
-                        Text(t("two_factor_off")).font(.caption).foregroundColor(Theme.muted)
+                        Text(t("two_factor_off")).font(.ui(12)).foregroundColor(Theme.muted)
                         field(t("password"), $pw, secret: true)
                         field(t("code"), $code, secret: false)
                         action(t("turn_off"), enabled: !pw.isEmpty && !code.isEmpty, danger: true) { try await account.disable2fa(password: pw, code: code); step = "" }
                     }
-                    if let e = err { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+                    if let e = err { Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad) }
                 }
                 .padding(20)
             }
@@ -1098,7 +1138,7 @@ struct TwoFactorPanel: View {
                 busy = false
             }
         } label: {
-            Text(label.uppercased()).font(.headline.weight(.black)).frame(maxWidth: .infinity).padding(12)
+            Text(label.uppercased()).font(.ui(17, .black)).frame(maxWidth: .infinity).padding(12)
                 .background(danger ? Theme.bad : Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .disabled(busy || !enabled)
@@ -1146,7 +1186,7 @@ struct MainView: View {
         }
         .overlay(alignment: .bottom) {
             if let toast {
-                Text(toast).font(.subheadline.weight(.semibold)).foregroundColor(Theme.fg).multilineTextAlignment(.center)
+                Text(toast).font(.ui(15, .semibold)).foregroundColor(Theme.fg).multilineTextAlignment(.center)
                     .padding(.horizontal, 16).padding(.vertical, 10).background(Theme.navBar).clipShape(Capsule())
                     .overlay(Capsule().stroke(Theme.navEdge, lineWidth: 1)).padding(.horizontal, 16).padding(.bottom, 64)
                     .transition(.opacity)
@@ -1184,7 +1224,7 @@ struct MainView: View {
             .overlay(Circle().stroke(Theme.navEdge, lineWidth: 1))
             .overlay(alignment: .topTrailing) {
                 if account.supportUnread > 0 {
-                    Text(unreadText).font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(Theme.ink)
+                    Text(unreadText).font(.mono(10, .black)).foregroundColor(Theme.ink)
                         .padding(.horizontal, 4).frame(minWidth: 18, minHeight: 18).background(Theme.accent).clipShape(Capsule()).offset(x: 4, y: -4)
                 }
             }
@@ -1210,25 +1250,26 @@ struct MainView: View {
             item(2, t("community"), "person.3")
             item(4, t("account_tab"), "person")
         }
-        .padding(6)
+        // Track First's bar: a floating rounded bar, the chosen tab a lighter pill with the amber icon
+        .padding(5)
         .background(Theme.navBar)
-        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.navEdge, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 22))
-        .padding(.horizontal, 16).padding(.top, 6).padding(.bottom, 4)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.navEdge, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 4)
         .background(Theme.ink.ignoresSafeArea())
     }
 
     private func item(_ i: Int, _ label: String, _ icon: String) -> some View {
         let on = tab == i
         return Button { tab = i } label: {
-            VStack(spacing: 3) {
-                Image(systemName: icon).font(.system(size: 18, weight: .medium))
-                Text(label).font(.system(size: 10, weight: on ? .semibold : .regular)).lineLimit(1).minimumScaleFactor(0.8)
+            VStack(spacing: 2) {
+                Image(systemName: icon).font(.system(size: 19, weight: .regular)).foregroundColor(on ? Theme.accent : Theme.muted)
+                Text(label).font(.ui(10, on ? .medium : .regular)).lineLimit(1).minimumScaleFactor(0.8).foregroundColor(on ? Theme.fg : Theme.muted)
             }
-            .foregroundColor(on ? Theme.accent : Theme.muted)
-            .frame(maxWidth: .infinity, minHeight: 52)
+            .frame(maxWidth: .infinity, minHeight: 50)
             .background(on ? Theme.navOn : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: 13))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(on ? .isSelected : [])
@@ -1248,12 +1289,12 @@ struct FeedbackSheet: View {
     @State private var err: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(t("fb_title")).font(.title3.weight(.black)).foregroundColor(Theme.fg)
-            Text(t("fb_text")).font(.subheadline).foregroundColor(Theme.muted)
+            Text(t("fb_title")).font(.ui(20, .black)).foregroundColor(Theme.fg)
+            Text(t("fb_text")).font(.ui(15)).foregroundColor(Theme.muted)
             HStack(spacing: 4) {
                 ForEach(1...5, id: \.self) { k in
                     Button { stars = stars == k ? 0 : k } label: {
-                        Text("★").font(.system(size: 28)).foregroundColor(k <= stars ? Theme.accent : Theme.muted.opacity(0.45)).padding(4)
+                        Text("★").font(.ui(28)).foregroundColor(k <= stars ? Theme.accent : Theme.muted.opacity(0.45)).padding(4)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1267,7 +1308,7 @@ struct FeedbackSheet: View {
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .onChange(of: text) { v in if v.count > 4000 { text = String(v.prefix(4000)) } }
-            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+            if let err { Text(t(err)).font(.ui(12)).foregroundColor(Theme.bad) }
             HStack(spacing: 8) {
                 Spacer()
                 Button(t("cancel")) { dismiss() }.foregroundColor(Theme.muted).disabled(busy)
@@ -1285,7 +1326,7 @@ struct FeedbackSheet: View {
                         }
                     }
                 } label: {
-                    Text(t("fb_send")).font(.subheadline.weight(.black)).padding(.horizontal, 16).padding(.vertical, 8)
+                    Text(t("fb_send")).font(.ui(15, .black)).padding(.horizontal, 16).padding(.vertical, 8)
                         .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
@@ -1338,7 +1379,7 @@ struct SupportInbox: View {
     var body: some View {
         Group {
             if let list = convs {
-                if list.isEmpty { VStack { Text(t("sup_none")).font(.subheadline).foregroundColor(Theme.muted).padding(16); Spacer() } }
+                if list.isEmpty { VStack { Text(t("sup_none")).font(.ui(15)).foregroundColor(Theme.muted).padding(16); Spacer() } }
                 else {
                     ScrollView {
                         LazyVStack(spacing: 6) {
@@ -1347,14 +1388,14 @@ struct SupportInbox: View {
                                     HStack(spacing: 8) {
                                         VStack(alignment: .leading, spacing: 2) {
                                             HStack {
-                                                Text(c.nick.isEmpty ? "—" : c.nick).font(.subheadline.bold()).foregroundColor(Theme.fg).lineLimit(1)
+                                                Text(c.nick.isEmpty ? "—" : c.nick).font(.ui(15, .bold)).foregroundColor(Theme.fg).lineLimit(1)
                                                 Spacer()
-                                                Text(dayTime(c.created)).font(.caption2).foregroundColor(Theme.muted)
+                                                Text(dayTime(c.created)).font(.ui(11)).foregroundColor(Theme.muted)
                                             }
-                                            Text((c.fromSupport ? "↩ " : "") + c.text).font(.caption).foregroundColor(c.unread > 0 ? Theme.fg : Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
+                                            Text((c.fromSupport ? "↩ " : "") + c.text).font(.ui(12)).foregroundColor(c.unread > 0 ? Theme.fg : Theme.muted).lineLimit(2).multilineTextAlignment(.leading)
                                         }
                                         if c.unread > 0 {
-                                            Text(c.unread > 9 ? "9+" : "\(c.unread)").font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(Theme.ink)
+                                            Text(c.unread > 9 ? "9+" : "\(c.unread)").font(.mono(10, .black)).foregroundColor(Theme.ink)
                                                 .padding(.horizontal, 4).frame(minWidth: 18, minHeight: 18).background(Theme.accent).clipShape(Capsule())
                                         }
                                     }
@@ -1394,7 +1435,7 @@ struct SupportThread: View {
         VStack(spacing: 0) {
             if let list = msgs {
                 if list.isEmpty {
-                    VStack { Spacer(); if !asAdmin { Text(t("sup_empty")).font(.subheadline).foregroundColor(Theme.muted).multilineTextAlignment(.center) }; Spacer() }.frame(maxWidth: .infinity)
+                    VStack { Spacer(); if !asAdmin { Text(t("sup_empty")).font(.ui(15)).foregroundColor(Theme.muted).multilineTextAlignment(.center) }; Spacer() }.frame(maxWidth: .infinity)
                 } else {
                     ScrollViewReader { proxy in
                         ScrollView {
@@ -1408,7 +1449,7 @@ struct SupportThread: View {
                     }
                 }
             } else { VStack { Spacer(); ProgressView().tint(Theme.accent); Spacer() }.frame(maxWidth: .infinity) }
-            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad).padding(.horizontal, 16) }
+            if let err { Text(t(err)).font(.ui(12)).foregroundColor(Theme.bad).padding(.horizontal, 16) }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("", text: $text, axis: .vertical)
                     .lineLimit(1...5)
@@ -1420,7 +1461,7 @@ struct SupportThread: View {
                     .onChange(of: text) { v in if v.count > 4000 { text = String(v.prefix(4000)) } }
                 let empty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 Button { send() } label: {
-                    Text(t("fb_send")).font(.subheadline.weight(.black)).padding(.horizontal, 16).padding(.vertical, 10)
+                    Text(t("fb_send")).font(.ui(15, .black)).padding(.horizontal, 16).padding(.vertical, 10)
                         .background(Theme.accent).foregroundColor(Theme.ink).clipShape(RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
@@ -1429,7 +1470,7 @@ struct SupportThread: View {
             }
             .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, asAdmin ? 16 : 4)
             if !asAdmin {
-                Button { sendLogs() } label: { Text(t("sup_logs")).font(.caption).foregroundColor(Theme.accent) }
+                Button { sendLogs() } label: { Text(t("sup_logs")).font(.ui(12)).foregroundColor(Theme.accent) }
                     .buttonStyle(.plain).disabled(busy)
                     .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 16).padding(.bottom, 10)
             }
@@ -1437,7 +1478,7 @@ struct SupportThread: View {
         .sheet(isPresented: Binding(get: { logText != nil }, set: { if !$0 { logText = nil } })) {
             NavigationStack {
                 ScrollView {
-                    Text(logText ?? "").font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.fg).textSelection(.enabled)
+                    Text(logText ?? "").font(.mono(10)).foregroundColor(Theme.fg).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(16)
                 }
                 .background(Theme.ink)
@@ -1459,10 +1500,10 @@ struct SupportThread: View {
     @ViewBuilder private func bubble(_ m: SupportMsg) -> some View {
         let right = asAdmin ? !m.driver : m.driver
         VStack(alignment: right ? .trailing : .leading, spacing: 2) {
-            if !right { Text(asAdmin ? (nick.isEmpty ? "—" : nick) : t("sup_name")).font(.caption2.bold()).foregroundColor(Theme.accent).padding(.horizontal, 4) }
+            if !right { Text(asAdmin ? (nick.isEmpty ? "—" : nick) : t("sup_name")).font(.ui(11, .bold)).foregroundColor(Theme.accent).padding(.horizontal, 4) }
             VStack(alignment: .leading, spacing: 2) {
-                if (1...5).contains(m.rating) { Text(String(repeating: "★", count: m.rating) + String(repeating: "☆", count: 5 - m.rating)).font(.caption).foregroundColor(Theme.accent) }
-                Text(m.text).font(.subheadline).foregroundColor(Theme.fg).textSelection(.enabled)
+                if (1...5).contains(m.rating) { Text(String(repeating: "★", count: m.rating) + String(repeating: "☆", count: 5 - m.rating)).font(.ui(12)).foregroundColor(Theme.accent) }
+                Text(m.text).font(.ui(15)).foregroundColor(Theme.fg).textSelection(.enabled)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             .background(right ? Theme.accent.opacity(0.16) : Theme.surface2)
@@ -1471,10 +1512,10 @@ struct SupportThread: View {
             .frame(maxWidth: UIScreen.main.bounds.width * 0.78, alignment: right ? .trailing : .leading)
             if asAdmin && m.kind == "logs" && m.view.hasPrefix("log:") {
                 Button { Task { logText = (try? await account.adminLog(String(m.view.dropFirst(4)))) ?? "" } } label: {
-                    Text(t("sup_logs_open")).font(.caption).foregroundColor(Theme.accent)
+                    Text(t("sup_logs_open")).font(.ui(12)).foregroundColor(Theme.accent)
                 }.buttonStyle(.plain).padding(.horizontal, 4)
             }
-            Text(dayTime(m.created)).font(.system(size: 10)).foregroundColor(Theme.muted).padding(.horizontal, 4)
+            Text(dayTime(m.created)).font(.ui(10)).foregroundColor(Theme.muted).padding(.horizontal, 4)
         }
         .frame(maxWidth: .infinity, alignment: right ? .trailing : .leading)
     }
@@ -1556,7 +1597,7 @@ struct InfoButton: View {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "info.circle").font(.system(size: 17)).foregroundColor(Theme.muted).frame(width: 32, height: 32)
                 if fresh > 0 {
-                    Text("\(fresh)").font(.system(size: 10, weight: .black, design: .monospaced)).foregroundColor(Theme.ink).padding(.horizontal, 5).frame(minWidth: 16, minHeight: 16).background(Theme.accent).clipShape(Capsule()).offset(x: 4, y: -2)
+                    Text("\(fresh)").font(.mono(10, .black)).foregroundColor(Theme.ink).padding(.horizontal, 5).frame(minWidth: 16, minHeight: 16).background(Theme.accent).clipShape(Capsule()).offset(x: 4, y: -2)
                 }
             }
         }
@@ -1564,10 +1605,10 @@ struct InfoButton: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(t("alerts").uppercased()).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted)
-                        if list.isEmpty { Text(t("nothing_new")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 10) }
+                        Text(t("alerts").uppercased()).font(.mono(12, .bold)).foregroundColor(Theme.muted)
+                        if list.isEmpty { Text(t("nothing_new")).font(.ui(15)).foregroundColor(Theme.muted).padding(.vertical, 10) }
                         ForEach(list) { it in row(it, dismissable: true) }
-                        Text("PITLANE HQ").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted).padding(.top, 8)
+                        Text("PITLANE HQ").font(.mono(12, .bold)).foregroundColor(Theme.muted).padding(.top, 8)
                         ForEach(always) { it in row(it, dismissable: false) }
                     }
                     .padding(16)
@@ -1585,12 +1626,12 @@ struct InfoButton: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: it.icon).foregroundColor(Theme.accent).frame(width: 24)
             VStack(alignment: .leading, spacing: 4) {
-                Text(it.title).font(.subheadline.bold()).foregroundColor(Theme.fg)
-                Text(it.text).font(.caption).foregroundColor(Theme.muted)
+                Text(it.title).font(.ui(15, .bold)).foregroundColor(Theme.fg)
+                Text(it.text).font(.ui(12)).foregroundColor(Theme.muted)
                 HStack(spacing: 6) {
                     ForEach(Array(it.acts.enumerated()), id: \.offset) { i, act in
                         Button { open = false; act.1() } label: {
-                            Text(act.0.uppercased()).font(.system(size: 11, weight: .black)).padding(.horizontal, 12).padding(.vertical, 6)
+                            Text(act.0.uppercased()).font(.ui(11, .black)).padding(.horizontal, 12).padding(.vertical, 6)
                                 .background(i == 0 ? Theme.accent : Theme.surface2).foregroundColor(i == 0 ? Theme.ink : Theme.fg).clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                     }
@@ -1598,7 +1639,7 @@ struct InfoButton: View {
                 .padding(.top, 2)
             }
             Spacer(minLength: 0)
-            if dismissable && !it.keep { Button { inbox.mark([it.id]) } label: { Image(systemName: "xmark").font(.caption).foregroundColor(Theme.muted) } }
+            if dismissable && !it.keep { Button { inbox.mark([it.id]) } label: { Image(systemName: "xmark").font(.system(size: 12)).foregroundColor(Theme.muted) } }
         }
         .padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 10))
     }
@@ -1612,19 +1653,19 @@ struct LastRaceCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(t("last_race")).font(.system(size: 11, weight: .bold)).tracking(1.3).foregroundColor(Theme.accent)
+                Text(t("last_race")).font(.ui(11, .bold)).tracking(1.3).foregroundColor(Theme.accent)
                 Spacer()
-                Text(day(race.when)).font(.caption2).foregroundColor(Theme.muted)
+                Text(day(race.when)).font(.ui(11)).foregroundColor(Theme.muted)
             }
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(race.track).font(.system(size: 20, weight: .black)).foregroundColor(Theme.fg).lineLimit(1)
-                    Text([race.car, discName(raceDisc(race.cat, race.car))].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                    Text(race.track).font(.ui(20, .black)).foregroundColor(Theme.fg).lineLimit(1)
+                    Text([race.car, discName(raceDisc(race.cat, race.car))].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
                     HStack(spacing: 6) { DrinksBadge(race: race); AiBadge(race: race) }
                 }
                 Spacer()
-                Text(race.dnf ? t("dnf") : "P" + String(race.finish)).font(.system(size: 34, weight: .black)).foregroundColor(placeTint)
-                if !race.dnf { Text("/\(race.field)").font(.system(size: 14)).foregroundColor(Theme.muted).padding(.top, 12) }
+                Text(race.dnf ? t("dnf") : "P" + String(race.finish)).font(.ui(34, .black)).foregroundColor(placeTint)
+                if !race.dnf { Text("/\(race.field)").font(.ui(14)).foregroundColor(Theme.muted).padding(.top, 12) }
             }
             HStack(spacing: 8) {
                 // a race against the AI has no iRating; Le Mans Ultimate none at all, and contacts instead of incident points
@@ -1633,7 +1674,7 @@ struct LastRaceCard: View {
                 stat(race.incLabel.uppercased(), race.incText, race.inc >= 8 ? Theme.bad : Theme.fg)
             }
             .fixedSize(horizontal: false, vertical: true)
-            Text(t("see_summary")).font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.accent)
+            Text(t("see_summary")).font(.ui(13, .semibold)).foregroundColor(Theme.accent)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1650,8 +1691,8 @@ struct LastRaceCard: View {
 
     private func stat(_ l: String, _ v: String, _ c: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(l).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundColor(Theme.muted).lineLimit(1)
-            Text(v).font(.system(size: 16, weight: .bold, design: .monospaced)).foregroundColor(c).lineLimit(1).minimumScaleFactor(0.7)
+            Text(l).font(.ui(10, .semibold)).tracking(1).foregroundColor(Theme.muted).lineLimit(1)
+            Text(v).font(.mono(16, .bold)).foregroundColor(c).lineLimit(1).minimumScaleFactor(0.7)
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -1772,7 +1813,7 @@ struct IrTrend: View {
             HStack(spacing: 6) {
                 ForEach(ds, id: \.self) { x in
                     Button { k = x; sel = nil } label: {
-                        Text(discName(x)).font(.system(size: 11, weight: .bold)).padding(.horizontal, 10).padding(.vertical, 5)
+                        Text(discName(x)).font(.ui(11, .bold)).padding(.horizontal, 10).padding(.vertical, 5)
                             .background(x == d ? Theme.accent : Theme.surface2).foregroundColor(x == d ? Theme.ink : Theme.muted).clipShape(Capsule())
                     }
                 }
@@ -1788,14 +1829,14 @@ struct IrTrend: View {
         HStack {
             SectionLabel(text: t("ir_trend", discName(d).uppercased()))
             Spacer()
-            Text(String(vals[i])).font(.system(size: 18, weight: .bold, design: .monospaced))
-            Text(signed(x.irChange)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(x.irChange >= 0 ? Theme.good : Theme.bad)
+            Text(String(vals[i])).font(.mono(18, .bold))
+            Text(signed(x.irChange)).font(.mono(12, .bold)).foregroundColor(x.irChange >= 0 ? Theme.good : Theme.bad)
         }
         if sel == nil {
-            Text(t("spark_last", rs.count) + " · " + signed(total)).font(.caption).foregroundColor(Theme.muted)
+            Text(t("spark_last", rs.count) + " · " + signed(total)).font(.ui(12)).foregroundColor(Theme.muted)
         } else {
             NavigationLink(value: Route.race(x)) {
-                Text(raceLine(x)).font(.caption).foregroundColor(Theme.accent).lineLimit(1)
+                Text(raceLine(x)).font(.ui(12)).foregroundColor(Theme.accent).lineLimit(1)
             }.buttonStyle(.plain)
         }
     }
@@ -1812,21 +1853,21 @@ struct RaceRow: View {
         Panel {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(race.track).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                    Text(race.track).font(.ui(17, .black)).foregroundColor(Theme.fg).lineLimit(1)
                     HStack(spacing: 6) { DrinksBadge(race: race); AiBadge(race: race) }
-                    Text(race.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                    Text(race.car).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
                     Text([day(race.when), race.official ? t("official") : t("unofficial"), race.sof > 0 ? "SOF \(race.sof)" : ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.caption2).foregroundColor(Theme.muted)
+                        .font(.ui(11)).foregroundColor(Theme.muted)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(race.dnf ? t("dnf") : "P\(race.finish)/\(race.field)").font(.system(.headline, design: .monospaced).weight(.black)).foregroundColor(race.finish == 1 ? Theme.purple : Theme.fg)
+                    Text(race.dnf ? t("dnf") : "P\(race.finish)/\(race.field)").font(.mono(17, .semibold).weight(.black)).foregroundColor(race.finish == 1 ? Theme.purple : Theme.fg)
                     // a race against the AI has no iRating
                     if !race.noIr {
-                        Text("iR " + signed(race.irChange)).font(.system(.caption, design: .monospaced).bold())
+                        Text("iR " + signed(race.irChange)).font(.mono(12, .bold))
                             .foregroundColor(race.irChange > 0 ? Theme.good : race.irChange < 0 ? Theme.bad : Theme.muted)
                     }
-                    Text(race.incText).font(.system(.caption2, design: .monospaced)).foregroundColor(race.inc >= 8 ? Theme.bad : Theme.muted)
+                    Text(race.incText).font(.mono(11)).foregroundColor(race.inc >= 8 ? Theme.bad : Theme.muted)
                 }
             }
         }
@@ -1849,11 +1890,11 @@ struct DrinksBadge: View {
             let many = race.drinks.count > 1
             VStack(alignment: .leading, spacing: 4) {
                 Text("DRINKS · " + (many ? t("drinks_multiple") + " ▾" : race.drinks[0]))
-                    .font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659))
+                    .font(.ui(10, .bold)).tracking(0.4).lineLimit(1).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659))
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Capsule().fill(Theme.accent.opacity(0.22))).overlay(Capsule().stroke(Theme.accent.opacity(0.6), lineWidth: 1))
                     .onTapGesture { if many { open = true } }
-                if names && many { Text(t("drinks_by", race.drinks.joined(separator: ", "))).font(.caption).foregroundColor(Theme.muted) }
+                if names && many { Text(t("drinks_by", race.drinks.joined(separator: ", "))).font(.ui(12)).foregroundColor(Theme.muted) }
             }
             .alert("DRINKS · " + t("drinks_who"), isPresented: $open) {
                 Button("OK", role: .cancel) {}
@@ -1870,7 +1911,7 @@ struct AiBadge: View {
     var body: some View {
         if race.game == "lmu" { LmuPill() }
         if race.ai {
-            Text(t("vs_ai")).font(.system(size: 10, weight: .bold)).tracking(0.4).lineLimit(1).foregroundColor(Theme.blue)
+            Text(t("vs_ai")).font(.ui(10, .bold)).tracking(0.4).lineLimit(1).foregroundColor(Theme.blue)
                 .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.blue.opacity(0.55), lineWidth: 1))
         }
     }
@@ -1909,8 +1950,8 @@ struct HomeView: View {
         Screen(title: account.display.isEmpty ? hi : hi + ", " + account.display, gameSeg: true) {
             HStack(spacing: 8) {
                 if account.admin || (account.supporter && !account.supporterHidden) { MyBadges() }
-                Text("●").font(.caption).foregroundColor(live.pcOnline ? Theme.good : Theme.muted)
-                Text(t(live.pcOnline ? "hm_pc_on" : "hm_pc_off")).font(.caption).foregroundColor(Theme.muted)
+                Text("●").font(.ui(12)).foregroundColor(live.pcOnline ? Theme.good : Theme.muted)
+                Text(t(live.pcOnline ? "hm_pc_on" : "hm_pc_off")).font(.ui(12)).foregroundColor(Theme.muted)
                 Spacer()
             }
             if live.pcOnline && live.simConnected {
@@ -1918,11 +1959,11 @@ struct HomeView: View {
                     Panel {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(t("hm_on_track")).font(.headline.weight(.black)).foregroundColor(Theme.fg)
-                                Text(t("hm_open_live")).font(.caption).foregroundColor(Theme.muted)
+                                Text(t("hm_on_track")).font(.ui(17, .black)).foregroundColor(Theme.fg)
+                                Text(t("hm_open_live")).font(.ui(12)).foregroundColor(Theme.muted)
                             }
                             Spacer()
-                            Text("›").font(.title2).foregroundColor(Theme.muted)
+                            Text("›").font(.ui(22)).foregroundColor(Theme.muted)
                         }
                     }
                 }.buttonStyle(.plain)
@@ -1940,7 +1981,7 @@ struct HomeView: View {
             if account.game == "iracing" { Licences() } else if account.game == "lmu" { LmuRatings() }
             DaysDriven(races: races)
             // no sync card (the sync is automatic): only what went wrong, when something did
-            if let e = account.error { Text(t(e)).font(.caption).foregroundColor(Theme.bad) }
+            if let e = account.error { Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad) }
         }
         .task(id: "\(account.game)|\(account.refreshTick)") { await reload() }
         .refreshable {
@@ -1968,8 +2009,9 @@ struct KindTag: View {
         let x = kind.lowercased()
         let (l, c): (String, Color) = x.contains("race") ? (t("kind_race"), Theme.accent) : x.contains("qual") ? (t("kind_qual"), Theme.purple)
             : (x.contains("test") || x.contains("offline")) ? (t("kind_test"), Theme.muted) : (t("kind_prac"), Theme.blue)
-        Text(l).font(.system(size: 10, weight: .bold)).foregroundColor(c).lineLimit(1)
-            .padding(.horizontal, 7).padding(.vertical, 1).overlay(Capsule().stroke(c.opacity(0.5), lineWidth: 1))
+        // Track First's tag: small capitals in a thin capsule of its colour
+        Text(l.uppercased()).font(.ui(10, .semibold)).tracking(0.4).foregroundColor(c).lineLimit(1).fixedSize()
+            .padding(.horizontal, 7).padding(.vertical, 1).overlay(Capsule().stroke(c, lineWidth: 1))
     }
 }
 
@@ -2006,64 +2048,73 @@ struct HomeLastRace: View {
         let gain = x.start > 0 && x.finish > 0 && !x.dnf ? x.start - x.finish : 0
         let pos = x.laps.map { $0.pos }.filter { $0 > 0 }
         let ir: Int? = x.noIr || x.irChange == 0 ? nil : x.irChange
-        Panel {
-            HStack {
-                SectionLabel(text: t("hm_last_race"))
+        // like the web's Home and Track First: a titled card (the amber mark, when), the place out of the field, the
+        // track and car with the position lap by lap, then iRating, incidents and best lap in a row, and two links
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 2).fill(Theme.accent).frame(width: 3, height: 14)
+                Text(t("hm_last_race").uppercased()).font(.display(15, .semibold)).tracking(1.7).foregroundColor(Theme.fg).lineLimit(1)
                 Spacer()
-                Text(agoText(x.when)).font(.caption2).foregroundColor(Theme.muted)
+                Text(agoText(x.when)).font(.ui(12)).foregroundColor(Theme.muted)
             }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            Rectangle().fill(Theme.line).frame(height: 1)
             NavigationLink(value: Route.race(x)) {
-                HStack(alignment: .center, spacing: 10) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(alignment: .lastTextBaseline, spacing: 0) {
-                            Text(x.dnf ? t("dnf") : "P\(x.finish)").font(.system(size: 30, weight: .black)).foregroundColor(x.dnf ? Theme.bad : Theme.fg)
-                            Text("/\(x.field)").font(.caption).foregroundColor(Theme.muted)
-                        }
-                        if gain != 0 { Text((gain > 0 ? "▲ " : "▼ ") + "\(abs(gain)) " + t("hm_from") + " P\(x.start)").font(.system(size: 11, weight: .bold)).foregroundColor(gain > 0 ? Theme.good : Theme.bad) }
-                    }
-                    .frame(width: 92, alignment: .leading)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) { Text(x.track).font(.subheadline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: "race") }
-                        HStack(spacing: 6) { DrinksBadge(race: x); AiBadge(race: x) }
-                        HStack(spacing: 4) { Circle().fill(discColor(raceDisc(x.cat, x.car))).frame(width: 7, height: 7); Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1) }
-                        if pos.count > 1 {
-                            let lo = pos.min()!, hi = max(pos.max()!, lo + 1)
-                            Canvas { ctx, size in
-                                var p = Path()
-                                for (k, v) in pos.enumerated() {
-                                    let pt = CGPoint(x: CGFloat(k) / CGFloat(pos.count - 1) * size.width, y: CGFloat(v - lo) / CGFloat(hi - lo) * size.height)
-                                    if k == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-                                }
-                                ctx.stroke(p, with: .color(Theme.accent), style: StrokeStyle(lineWidth: 1.6, lineJoin: .round))
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .center, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .lastTextBaseline, spacing: 0) {
+                                Text(x.dnf ? t("dnf") : "P\(x.finish)").font(.mono(40, .semibold)).foregroundColor(x.dnf ? Theme.bad : Theme.fg).lineLimit(1).minimumScaleFactor(0.6)
+                                Text("/\(x.field)").font(.mono(15)).foregroundColor(Theme.fg)
                             }
-                            .frame(height: 30)
+                            if gain != 0 { Text((gain > 0 ? "▲ " : "▼ ") + "\(abs(gain)) " + t("hm_from") + " P\(x.start)").font(.ui(12)).foregroundColor(gain > 0 ? Theme.good : Theme.bad) }
                         }
+                        .frame(width: 96, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 6) { Text(x.track).font(.ui(15)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: "race") }
+                            HStack(spacing: 6) { DrinksBadge(race: x); AiBadge(race: x) }
+                            HStack(spacing: 6) { Circle().fill(discColor(raceDisc(x.cat, x.car))).frame(width: 7, height: 7); Text(x.car).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1) }
+                            if pos.count > 1 {
+                                let lo = pos.min()!, hi = max(pos.max()!, lo + 1)
+                                Canvas { ctx, size in
+                                    var p = Path()
+                                    for (k, v) in pos.enumerated() {
+                                        let pt = CGPoint(x: CGFloat(k) / CGFloat(pos.count - 1) * size.width, y: 2 + CGFloat(v - lo) / CGFloat(hi - lo) * (size.height - 4))
+                                        if k == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
+                                    }
+                                    ctx.stroke(p, with: .color(Theme.accent), style: StrokeStyle(lineWidth: 1.6, lineJoin: .round))
+                                }
+                                .frame(height: 34).padding(.top, 4)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    HStack(alignment: .top, spacing: 18) {
+                        // Le Mans Ultimate: no iRating, and contacts instead of incident points
+                        if !x.contacts { stat(t("lr_ir"), ir.map { signed($0) } ?? "–", ir == nil ? Theme.fg : ir! > 0 ? Theme.good : Theme.bad) }
+                        stat(x.incLabel, x.incText, x.inc >= 8 ? Theme.bad : Theme.fg)
+                        stat(t("lr_best"), lapTime(x.best), Theme.fg)
                     }
                 }
+                .padding(14).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            HStack(spacing: 8) {
-                // Le Mans Ultimate: no iRating, and contacts instead of incident points
-                if !x.contacts { stat(t("lr_ir"), ir.map { signed($0) } ?? "–", ir == nil ? Theme.muted : ir! > 0 ? Theme.good : Theme.bad) }
-                stat(x.incLabel.uppercased(), x.incText, x.inc >= 8 ? Theme.bad : Theme.fg)
-                stat(t("lr_best"), lapTime(x.best), Theme.purple)
+            HStack(spacing: 20) {
+                NavigationLink(value: Route.race(x)) { Text(t("hm_race_summary")).font(.ui(13, .semibold)).foregroundColor(Theme.accent) }
+                NavigationLink(value: Route.analysis(0, nil)) { Text(t("hm_analyse_laps")).font(.ui(13, .semibold)).foregroundColor(Theme.accent) }
             }
-            .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 16) {
-                NavigationLink(value: Route.race(x)) { Text(t("hm_race_summary")).font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent) }
-                NavigationLink(value: Route.analysis(0, nil)) { Text(t("hm_analyse_laps")).font(.subheadline.weight(.semibold)).foregroundColor(Theme.accent) }
-            }
-            .padding(.top, 4)
+            .padding(.horizontal, 14).padding(.bottom, 14)
         }
+        .background(Theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.line, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     private func stat(_ l: String, _ v: String, _ c: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(l).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundColor(Theme.muted).lineLimit(1)
-            Text(v).font(.system(size: 16, weight: .bold, design: .monospaced)).foregroundColor(c).lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(l).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+            Text(v).font(.mono(15, .semibold)).foregroundColor(c).lineLimit(1)
         }
-        .padding(.horizontal, 10).padding(.vertical, 8).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .background(Theme.bg).clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -2076,14 +2127,16 @@ struct HomeRecent: View {
         let items: [(Double, Item)] = (races.map { ($0.when, Item.race($0)) } + sessions.filter { !$0.kind.lowercased().contains("race") }.map { ($0.started, Item.ses($0)) })
             .sorted { $0.0 > $1.0 }.prefix(6).map { $0 }
         if !items.isEmpty {
-            Panel {
-                HStack {
+            // a section title with See all, then the rows on the page itself, a hairline between them
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline) {
                     SectionLabel(text: t("hm_recent"))
                     Spacer()
-                    NavigationLink(value: Route.analysis(2, nil)) { Text(t("see_all")).font(.caption).foregroundColor(Theme.accent) }
+                    NavigationLink(value: Route.analysis(2, nil)) { Text(t("see_all")).font(.ui(12, .medium)).foregroundColor(Theme.accent) }
                 }
+                .padding(.top, 6).padding(.bottom, 2)
                 ForEach(Array(items.enumerated()), id: \.offset) { k, e in
-                    if k > 0 { Divider().background(Theme.line) }
+                    if k > 0 { Rectangle().fill(Theme.line).frame(height: 1) }
                     switch e.1 {
                     case .race(let r):
                         NavigationLink(value: Route.race(r)) {
@@ -2105,28 +2158,27 @@ struct HomeRecent: View {
 /// One row of the recent sessions (and of a track's sessions and races): the place, the track or car with the kind of
 /// session, the car's discipline and when, the laps and the fastest lap.
 func homeRow<B: View>(_ place: String, _ pc: Color, _ track: String, _ kind: String, _ disc: String, _ sub: String, _ laps: Int, _ best: Double?, _ placeSub: String = "", @ViewBuilder _ badges: () -> B) -> some View {
-    HStack(spacing: 8) {
+    // Track First's row: the place in mono, the track with its tag over the car and when, then the laps and the time
+    HStack(spacing: 10) {
         // the place ("P3", a session's "P3/20"), with "class" under it when it counts within your class
         VStack(alignment: .leading, spacing: 0) {
-            Text(place).font(.system(size: place.count > 4 ? 12 : 14, weight: .black, design: .monospaced)).foregroundColor(pc).lineLimit(1).minimumScaleFactor(0.7)
-            if !placeSub.isEmpty { Text(placeSub).font(.system(size: 9)).foregroundColor(Theme.muted).lineLimit(1) }
+            Text(place).font(.mono(14, .semibold)).foregroundColor(pc).lineLimit(1).minimumScaleFactor(0.6)
+            if !placeSub.isEmpty { Text(placeSub).font(.ui(9)).foregroundColor(Theme.muted).lineLimit(1) }
         }
-        .frame(width: 54, alignment: .leading)
+        .frame(width: 44, alignment: .leading)
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) { Text(track).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: kind) }
+            HStack(spacing: 6) { Text(track).font(.ui(13)).foregroundColor(Theme.fg).lineLimit(1); KindTag(kind: kind) }
             badges()
-            HStack(spacing: 4) {
-                Circle().fill(disc.isEmpty ? Theme.muted : discColor(disc)).frame(width: 6, height: 6)
-                Text(sub).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+            HStack(spacing: 6) {
+                Circle().fill(disc.isEmpty ? Theme.muted : discColor(disc)).frame(width: 7, height: 7)
+                Text(sub).font(.ui(11)).foregroundColor(Theme.muted).lineLimit(1)
             }
         }
-        Spacer(minLength: 4)
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(t("laps_n", laps)).font(.system(size: 11)).foregroundColor(Theme.muted)
-            Text(lapTime(best)).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.fg)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Text(t("laps_n", laps)).font(.mono(12, .medium)).foregroundColor(Theme.muted).lineLimit(1).fixedSize()
+        Text(lapTime(best)).font(.mono(13, .semibold)).foregroundColor(Theme.fg).lineLimit(1).frame(minWidth: 64, alignment: .trailing)
     }
-    .padding(.vertical, 8).contentShape(Rectangle())
+    .padding(.vertical, 10).contentShape(Rectangle())
 }
 
 /// The days you drove, like the web and the PC: the last 26 weeks in squares, brighter the more races and sessions that day.
@@ -2158,7 +2210,7 @@ struct DaysDriven: View {
             HStack {
                 SectionLabel(text: t("days_driven"))
                 Spacer()
-                Text(t("days_in_6m", driven)).font(.caption2).foregroundColor(Theme.muted)
+                Text(t("days_in_6m", driven)).font(.ui(11)).foregroundColor(Theme.muted)
             }
             Panel {
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -2236,21 +2288,21 @@ struct RaceView: View {
                         HStack {
                             Text("L\(l.n)").foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
                             // DRINKS mode: who drove each lap
-                            if drk { Text(x.driverOf(l)).font(.system(size: 12)).lineLimit(1).frame(width: 78, alignment: .leading) }
+                            if drk { Text(x.driverOf(l)).font(.ui(12)).lineLimit(1).frame(width: 78, alignment: .leading) }
                             Text(lapTime(l.time)).foregroundColor(l.cut ? Theme.muted : l.time == best ? Theme.purple : Theme.fg).strikethrough(l.cut).opacity(l.cut ? 0.6 : 1)
                             Spacer()
                             Text("P\(l.pos)").foregroundColor(Theme.muted).strikethrough(l.cut).frame(width: 44, alignment: .leading)
                             Text([l.cut ? t("invalid").lowercased() : nil, l.pit ? t("pit") : nil, l.inc > 0 ? (x.contacts ? "\(l.inc)" : "\(l.inc)x") : nil].compactMap { $0 }.joined(separator: " · "))
-                                .font(.system(size: 11, design: .monospaced)).foregroundColor(l.pit && !l.cut ? Theme.blue : Theme.bad).frame(minWidth: 40, alignment: .leading)
+                                .font(.mono(11)).foregroundColor(l.pit && !l.cut ? Theme.blue : Theme.bad).frame(minWidth: 40, alignment: .leading)
                         }
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.mono(12))
                     }
                 }
             }
             if !x.results.isEmpty {
                 SectionLabel(text: t("results"))
                 Panel {
-                    Text(t("tap_driver_note")).font(.system(size: 11)).foregroundColor(Theme.muted)
+                    Text(t("tap_driver_note")).font(.ui(11)).foregroundColor(Theme.muted)
                     ForEach(x.results, id: \.pos) { p in
                         let me = x.results.contains(where: { $0.me }) ? p.me : p.pos == x.finish
                         let note = me ? nil : account.noteFor(p.k, p.name)
@@ -2260,17 +2312,17 @@ struct RaceView: View {
                             if let n = note, !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 14, height: 14) }
                             // your car in a DRINKS race: who drove it
                             Text((me && !x.drivers.isEmpty ? x.drivers.map { $0.name }.joined(separator: ", ") : p.name) + ((note?.note.isEmpty ?? true) ? "" : " ✎")).fontWeight(me ? .black : .regular).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1)
-                            if p.ai { Text(t("ai_driver")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.blue) }
+                            if p.ai { Text(t("ai_driver")).font(.ui(10, .bold)).foregroundColor(Theme.blue) }
                             // laps more (red) or less (blue) than you, like the relative
                             let myLaps = x.results.first(where: { x.results.contains(where: { $0.me }) ? $0.me : $0.pos == x.finish })?.laps ?? 0
                             let dl = !me && p.laps > 0 && myLaps > 0 ? p.laps - myLaps : 0
-                            if dl != 0 { Text((dl > 0 ? "+" : "−") + "\(abs(dl))L").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(dl > 0 ? Theme.bad : Theme.blue) }
+                            if dl != 0 { Text((dl > 0 ? "+" : "−") + "\(abs(dl))L").font(.mono(10, .bold)).foregroundColor(dl > 0 ? Theme.bad : Theme.blue) }
                             Spacer()
                             Text(p.ir > 0 && !x.noIr ? "\(p.ir)" : "").foregroundColor(Theme.muted).frame(width: 44, alignment: .trailing)
                             Text(lapTime(p.best)).frame(width: 66, alignment: .trailing)
                             Text(x.contacts ? "\(p.inc)" : "\(p.inc)x").foregroundColor(Theme.muted).frame(width: 30, alignment: .trailing)
                         }
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.mono(12))
                         .contentShape(Rectangle())
                         .onTapGesture { if !me && !p.ai { editing = p } }
                     }
@@ -2345,7 +2397,7 @@ struct DriverNoteSheet: View {
                                 TagIcon(tag: tg).frame(width: 18, height: 18)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(t("tag_" + tg)).fontWeight(.bold).foregroundColor(Theme.fg)
-                                    Text(t("tag_" + tg + "_hint")).font(.system(size: 12)).foregroundColor(Theme.muted)
+                                    Text(t("tag_" + tg + "_hint")).font(.ui(12)).foregroundColor(Theme.muted)
                                 }
                                 Spacer()
                             }
@@ -2356,7 +2408,7 @@ struct DriverNoteSheet: View {
                         }.buttonStyle(.plain)
                     }
                     TextField(t("driver_note_hint"), text: $note, axis: .vertical).lineLimit(2...5).textFieldStyle(.roundedBorder)
-                    if let err { Text(t(err)).foregroundColor(Theme.bad).font(.system(size: 12)) }
+                    if let err { Text(t(err)).foregroundColor(Theme.bad).font(.ui(12)) }
                     if cur != nil { Button(t("remove"), role: .destructive) { save("", "") }.disabled(busy).padding(.top, 4) }
                 }
                 .padding(16)
@@ -2497,10 +2549,10 @@ struct AnalysisView: View {
                 FilterMenu(all: t("every_track"), total: forTrack.count, items: tracks, value: $fTrack)
             }
             HStack {
-                Button(dayLabel) { showDays.toggle() }.font(.caption.bold()).foregroundColor(Theme.accent)
+                Button(dayLabel) { showDays.toggle() }.font(.ui(12, .bold)).foregroundColor(Theme.accent)
                 Spacer()
                 if !(fCat + fCar + fTrack + fKind + fDay).isEmpty {
-                    Button(t("clear_filters") + " · \(shown)/\(all.count)") { fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }.font(.caption.bold()).foregroundColor(Theme.accent)
+                    Button(t("clear_filters") + " · \(shown)/\(all.count)") { fCat = ""; fCar = ""; fTrack = ""; fKind = ""; fDay = "" }.font(.ui(12, .bold)).foregroundColor(Theme.accent)
                 }
             }
             if showDays {
@@ -2532,7 +2584,7 @@ struct AnalysisView: View {
     @ViewBuilder private var mySessions: some View {
         HStack {
             Button { onlyBest.toggle() } label: {
-                Text(t("only_fastest")).font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
+                Text(t("only_fastest")).font(.ui(12, .bold)).padding(.horizontal, 10).padding(.vertical, 5)
                     .background(onlyBest ? Theme.accent : Theme.surface2).foregroundColor(onlyBest ? Theme.ink : Theme.muted).clipShape(Capsule())
             }
             Spacer()
@@ -2544,12 +2596,12 @@ struct AnalysisView: View {
                 let s = x.bestSessionId.map { CloudSession(id: $0, started: x.last, track: x.track, trackConfig: x.trackConfig, car: x.car, kind: "", laps: x.laps, best: x.best, game: x.game) }
                 Button { if let s { Task { await open(s) } } } label: {
                     Panel {
-                        Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                        Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                        Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.ui(17, .black)).foregroundColor(Theme.fg).lineLimit(1)
+                        Text(fixText(x.car)).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
                         HStack {
-                            Text([day(x.last), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                            Text([day(x.last), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted)
                             Spacer()
-                            Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                            Text(lapTime(x.best)).font(.mono(15, .bold)).foregroundColor(Theme.purple)
                         }
                         .padding(.top, 4)
                     }
@@ -2621,7 +2673,7 @@ struct SessionView: View {
             ShortNote(key: "an_short")
             LoadState(loading: laps.loading, error: laps.error, stale: laps.stale) { Task { await laps.load { try await account.laps(session.id) } } }
             if !sessCat(session).isEmpty {
-                HStack(spacing: 6) { Text(t("viewing", session.car, sessCat(session))).font(.caption).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
+                HStack(spacing: 6) { Text(t("viewing", session.car, sessCat(session))).font(.ui(12)).foregroundColor(Theme.muted); LicBadge(k: session.lic); Spacer() }
             }
             SessionBadges(x: session)
             if let ls = laps.data { SessionLaps(session: session, laps: ls) }
@@ -2684,7 +2736,7 @@ struct LapView: View {
         Screen(title: t("lap_analysis") + " · L\(lap.n)", sub: session.track + " · " + session.car) {
             ShortNote(key: "an_short")
             HStack(spacing: 8) {
-                Text(t("compare_with")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("compare_with")).font(.ui(12)).foregroundColor(Theme.muted)
                 Tabs(labels: [t("my_best"), "▲ " + t("next_level"), "★ " + t("record")], selected: Binding(get: { kind == .myBest ? 0 : kind == .level ? 1 : 2 }, set: { kind = $0 == 0 ? .myBest : $0 == 1 ? .level : .record }))
             }
             LoadState(loading: loading, error: error) { Task { await load() } }
@@ -2705,7 +2757,7 @@ struct LapView: View {
             if !loading {
                 if let trace {
                     let c = compare(trace, ref)
-                    if ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
+                    if ref == nil { Text(t("no_reference")).font(.ui(12)).foregroundColor(Theme.muted) }
                     let refName = refLabel.isEmpty ? t("ref") : refLabel
                     let card: (Int) -> AnyView = { i in AnyView(PointCard(c: c, i: i, refName: refName, sec: lap.sectors, refSec: refSectors)) }
                     if trace.hasShape || layout != nil { TrackMapView(c: c, trace: trace, pick: $pick, turns: turns, road: layout, cs: jsNow?.corners) }
@@ -2892,7 +2944,7 @@ struct TrackMapView: View {
                 map(g.size)
             }
             .frame(height: 230)
-            Text(readout).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted)
+            Text(readout).font(.mono(11)).foregroundColor(Theme.muted)
             // the same switches as the web and the race summary: braking, incidents, coach
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
@@ -2901,11 +2953,11 @@ struct TrackMapView: View {
                     if !rings.isEmpty { chip("Coach", $showCoach) }
                 }
             }
-            if !incidents.isEmpty { Text(incSummary).font(.caption).foregroundColor(Theme.bad) }
+            if !incidents.isEmpty { Text(incSummary).font(.ui(12)).foregroundColor(Theme.bad) }
             if showInc, let s = selected {
                 let d: Double = Double(s) * c.step
                 ForEach(Array(incidents.filter { abs($0.d - d) < 60 }.enumerated()), id: \.offset) { _, e in
-                    Text(incName(e.kind) + " (\(e.pts)x)").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad)
+                    Text(incName(e.kind) + " (\(e.pts)x)").font(.mono(11)).foregroundColor(Theme.bad)
                 }
             }
         }
@@ -2951,7 +3003,7 @@ struct TrackMapView: View {
             ForEach(Array(incidents.enumerated()), id: \.offset) { _, e in
                 let q = point(row(e.d), size)
                 cross(q).stroke(Theme.bad, style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-                Text("\(e.pts)x").font(.system(size: 9, weight: .black, design: .monospaced)).foregroundColor(Theme.bad).position(x: q.x + 14, y: q.y - 10)
+                Text("\(e.pts)x").font(.mono(9, .black)).foregroundColor(Theme.bad).position(x: q.x + 14, y: q.y - 10)
             }
         }
     }
@@ -2977,7 +3029,7 @@ struct TrackMapView: View {
 
     private func chip(_ label: String, _ on: Binding<Bool>) -> some View {
         Button { on.wrappedValue.toggle() } label: {
-            Text(label).font(.system(size: 11, weight: .bold)).foregroundColor(on.wrappedValue ? Theme.bg : Theme.muted)
+            Text(label).font(.ui(11, .bold)).foregroundColor(on.wrappedValue ? Theme.bg : Theme.muted)
                 .padding(.horizontal, 10).padding(.vertical, 5).background(on.wrappedValue ? Theme.accent : Theme.surface2).clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -3016,7 +3068,7 @@ struct TrackMapView: View {
         bar((n - 1) / 3, 8, size).stroke(Theme.fg.opacity(0.8), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
         bar(2 * (n - 1) / 3, 8, size).stroke(Theme.fg.opacity(0.8), style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
         ForEach(0..<3, id: \.self) { k in
-            Text("S\(k + 1)").font(.system(size: 11, weight: .black, design: .monospaced)).foregroundColor(Theme.accent).position(secLabel(k, size))
+            Text("S\(k + 1)").font(.mono(11, .black)).foregroundColor(Theme.accent).position(secLabel(k, size))
         }
         if let i = selectedRow {
             Circle().fill(Theme.fg).frame(width: 18, height: 18).position(point(i, size))
@@ -3054,11 +3106,11 @@ struct PhaseCoach: View {
         ForEach(ls, id: \.self) { lo in
             Panel {
                 HStack {
-                    Text(t("at_m", lo.fromM)).font(.headline.weight(.black))
+                    Text(t("at_m", lo.fromM)).font(.ui(17, .black))
                     Spacer()
-                    Text(t("lost", String(format: "%.3f", lo.lost))).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
+                    Text(t("lost", String(format: "%.3f", lo.lost))).font(.mono(15, .bold)).foregroundColor(Theme.bad)
                 }
-                Text(t("min_speed", String(format: "%.0f", lo.minA), String(format: "%.0f", lo.minB))).font(.caption).foregroundColor(Theme.muted)
+                Text(t("min_speed", String(format: "%.0f", lo.minA), String(format: "%.0f", lo.minB))).font(.ui(12)).foregroundColor(Theme.muted)
             }
         }
     }
@@ -3072,21 +3124,21 @@ struct PhaseCoach: View {
         let top = Array(cs.filter { $0.tip != nil }.sorted { $0.lost > $1.lost }.prefix(5))
         SectionLabel(text: t("by_phase"))
         MetricGrid(items: totals.map { kv in MetricData(label: t("phase_" + kv.0), value: (kv.1 > 0 ? "+" : "") + String(format: "%.2f", kv.1), color: kv.1 > 0.03 ? Theme.bad : Theme.muted) }, columns: 4)
-        if let w = worst, w.1 > 0.05 { Text(t("most_phase", t("phase_" + w.0).lowercased())).font(.caption).foregroundColor(Theme.muted) }
-        else { Text(t("no_phase")).font(.caption).foregroundColor(Theme.muted) }
+        if let w = worst, w.1 > 0.05 { Text(t("most_phase", t("phase_" + w.0).lowercased())).font(.ui(12)).foregroundColor(Theme.muted) }
+        else { Text(t("no_phase")).font(.ui(12)).foregroundColor(Theme.muted) }
         Panel { InfoRow(label: t("coasting"), value: "\(Int(ca)) m · " + t("ref") + " \(Int(cb)) m", color: ca - cb > 20 ? Theme.bad : Theme.fg) }
         SectionLabel(text: t("where_time"))
         if top.isEmpty { EmptyNote(text: t("all_clean")) }
         ForEach(top, id: \.self) { k in
             Panel {
                 HStack {
-                    Text(t("corner_n", k.n)).font(.subheadline.weight(.black)).foregroundColor(Theme.accent)
-                    Text(t("at_m", k.atM) + " · " + t("phase_" + (k.phase ?? ""))).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("corner_n", k.n)).font(.ui(15, .black)).foregroundColor(Theme.accent)
+                    Text(t("at_m", k.atM) + " · " + t("phase_" + (k.phase ?? ""))).font(.ui(12)).foregroundColor(Theme.muted)
                     Spacer()
-                    Text(String(format: "+%.2f", k.lost)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
+                    Text(String(format: "+%.2f", k.lost)).font(.mono(15, .bold)).foregroundColor(Theme.bad)
                 }
-                Text(tipText(k)).font(.subheadline)
-                if let lt = k.lineTip { Text(fill(t(lt), k.lineArgs)).font(.footnote).foregroundColor(Theme.accent) }
+                Text(tipText(k)).font(.ui(15))
+                if let lt = k.lineTip { Text(fill(t(lt), k.lineArgs)).font(.ui(13)).foregroundColor(Theme.accent) }
             }
         }
     }
@@ -3127,7 +3179,7 @@ struct PointCard: View {
                 Text(vals[k]).frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
-        .font(.system(size: 12, design: .monospaced))
+        .font(.mono(12))
     }
 
     var body: some View {
@@ -3140,10 +3192,10 @@ struct PointCard: View {
         let heads: [String] = ["km/h", t("throttle"), t("brake"), t("gear")]
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text("\(Int((Double(i) * c.step).rounded())) m · S\(s)").font(.system(size: 13, weight: .black, design: .monospaced))
+                Text("\(Int((Double(i) * c.step).rounded())) m · S\(s)").font(.mono(13, .black))
                 Spacer()
                 if let d {
-                    Text(String(format: "%+.3f s", d)).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(d <= 0 ? Theme.good : Theme.bad)
+                    Text(String(format: "%+.3f s", d)).font(.mono(13, .bold)).foregroundColor(d <= 0 ? Theme.good : Theme.bad)
                 }
             }
             HStack(spacing: 4) {
@@ -3152,7 +3204,7 @@ struct PointCard: View {
                     Text(heads[k]).lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .font(.system(size: 10)).foregroundColor(Theme.muted)
+            .font(.ui(10)).foregroundColor(Theme.muted)
             row(t("you"), Theme.accent, at(c.speedA), at(c.thrA), at(c.brkA), at(c.gearA))
             if c.speedB != nil {
                 row(refName, Theme.blue, at(c.speedB), at(c.thrB), at(c.brkB), at(c.gearB))
@@ -3166,7 +3218,7 @@ struct PointCard: View {
                         Text(String(format: "%+.3f", a - b)).bold().foregroundColor(a <= b ? Theme.good : Theme.bad)
                     }
                 }
-                .font(.system(size: 12, design: .monospaced))
+                .font(.mono(12))
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
@@ -3229,7 +3281,7 @@ struct Chart: View {
                 if let i = index(1) {
                     card(i)
                 } else {
-                    Text(t("hold_hint")).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("hold_hint")).font(.ui(12)).foregroundColor(Theme.muted)
                         .frame(maxWidth: .infinity, minHeight: 108)
                         .background(Theme.surface2)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -3289,7 +3341,7 @@ struct Chart: View {
                 Spacer()
                 Text(fixedMax == 1 ? "100%" : fmt(hi))
             }
-            .font(.system(size: 10)).foregroundColor(Theme.muted)
+            .font(.ui(10)).foregroundColor(Theme.muted)
         }
     }
 
@@ -3303,10 +3355,10 @@ struct Chart: View {
                         if idx < s.values.count { Text(s.label + " " + fmt(s.values[idx])).foregroundColor(s.color).bold() }
                     }
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(.mono(11))
             }
         } else {
-            Text(" ").font(.system(size: 11))
+            Text(" ").font(.ui(11))
         }
     }
 
@@ -3509,8 +3561,10 @@ struct LicBadge: View {
     var sr: String? = nil  // the safety rating too ("B 3.21"), when known
     var body: some View {
         if let k, LICS.contains(k) {
-            Text((k == "P" ? "Pro" : k) + (sr.map { " " + $0 } ?? "")).font(.system(size: 10, weight: .black)).foregroundColor(Theme.fg).padding(.horizontal, 5).padding(.vertical, 1)
-                .background(licColor(k).opacity(0.55)).overlay(RoundedRectangle(cornerRadius: 4).stroke(licColor(k), lineWidth: 1.5)).clipShape(RoundedRectangle(cornerRadius: 4))
+            // Track First's chip: the class and safety rating in mono, in the licence's colour on a faint wash of it
+            Text((k == "P" ? "Pro" : k) + (sr.map { " " + $0 } ?? "")).font(.mono(11, .bold)).foregroundColor(licColor(k)).lineLimit(1).fixedSize()
+                .padding(.horizontal, 5).padding(.vertical, 1)
+                .background(licColor(k).opacity(0.14)).clipShape(RoundedRectangle(cornerRadius: 4))
         }
     }
 }
@@ -3539,7 +3593,7 @@ struct WetBadges: View {
         }
     }
     private func badge(_ label: String, _ fg: Color, _ bg: Double) -> some View {
-        Text(label).font(.system(size: 9, weight: .bold)).foregroundColor(fg).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 1)
+        Text(label).font(.ui(9, .bold)).foregroundColor(fg).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 1)
             .background(Color(red: 0x4F / 255, green: 0x9C / 255, blue: 1).opacity(bg)).clipShape(Capsule())
     }
 }
@@ -3550,7 +3604,7 @@ struct GameBadge: View {
     var body: some View {
         let lmu = game == "lmu"
         let c = lmu ? Color(red: 0x7F / 255, green: 0xD3 / 255, blue: 0xC4 / 255) : Color(red: 0xB9 / 255, green: 0xC4 / 255, blue: 0xD2 / 255)
-        Text(lmu ? "LMU" : "iRacing").font(.system(size: 9, weight: .bold)).foregroundColor(c).lineLimit(1).fixedSize()
+        Text(lmu ? "LMU" : "iRacing").font(.ui(9, .bold)).foregroundColor(c).lineLimit(1).fixedSize()
             .padding(.horizontal, 5).padding(.vertical, 1)
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(c.opacity(0.5), lineWidth: 1))
     }
@@ -3562,7 +3616,7 @@ struct CountryFlag: View {
     var size: CGFloat = 12
     var body: some View {
         let f = countryFlag(cc)
-        if !f.isEmpty { Text(f).font(.system(size: size)).lineLimit(1).fixedSize() }
+        if !f.isEmpty { Text(f).font(.ui(size)).lineLimit(1).fixedSize() }
     }
 }
 
@@ -3577,7 +3631,7 @@ struct PenaltyClock: View {
 /// The supporter badge: people who donate, given by hand by the owner of Pitlane HQ.
 struct SupBadge: View {
     var body: some View {
-        Text("♥ SUPPORTER").font(.system(size: 9, weight: .black)).foregroundColor(Color(red: 1, green: 0.84, blue: 0.9)).padding(.horizontal, 6).padding(.vertical, 1)
+        Text("♥ SUPPORTER").font(.ui(9, .black)).foregroundColor(Color(red: 1, green: 0.84, blue: 0.9)).padding(.horizontal, 6).padding(.vertical, 1)
             .background(Color(red: 0.91, green: 0.24, blue: 0.55).opacity(0.33)).overlay(Capsule().stroke(Color(red: 0.91, green: 0.24, blue: 0.55).opacity(0.65), lineWidth: 1)).clipShape(Capsule())
     }
 }
@@ -3599,9 +3653,9 @@ struct FilterMenu: View {
             ForEach(items, id: \.0) { it in Button("\(it.1) (\(it.2))") { value = it.0 } }
         } label: {
             HStack(spacing: 4) {
-                Text(label).font(.footnote).lineLimit(1).foregroundColor(value.isEmpty ? Theme.fg : Theme.accent)
+                Text(label).font(.ui(13)).lineLimit(1).foregroundColor(value.isEmpty ? Theme.fg : Theme.accent)
                 Spacer(minLength: 0)
-                Text("▾").font(.caption2).foregroundColor(Theme.muted)
+                Text("▾").font(.ui(11)).foregroundColor(Theme.muted)
             }
             .padding(.horizontal, 10).padding(.vertical, 7)
             .frame(maxWidth: .infinity)
@@ -3618,7 +3672,7 @@ struct Pills: View {
             HStack(spacing: 6) {
                 ForEach(items, id: \.0) { it in
                     Button { selected = selected == it.0 && !it.0.isEmpty ? "" : it.0 } label: {
-                        Text(it.1).font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
+                        Text(it.1).font(.ui(12, .bold)).padding(.horizontal, 10).padding(.vertical, 5)
                             .background(selected == it.0 ? Theme.accent : Theme.surface2).foregroundColor(selected == it.0 ? Theme.ink : Theme.muted).clipShape(Capsule())
                     }
                 }
@@ -3681,14 +3735,14 @@ struct LeagueHub: View {
         VStack(alignment: .leading, spacing: 10) {
             if closed {
                 Panel {
-                    HStack { Text(t("leagues")).font(.headline.weight(.black)).foregroundColor(Theme.fg); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
-                    Text(closed ? t("leagues_wip") : t("leagues_admin_hub")).font(.subheadline).foregroundColor(Theme.muted).padding(.top, 4)
+                    HStack { Text(t("leagues")).font(.ui(17, .black)).foregroundColor(Theme.fg); Spacer(); StatusPill(text: t("in_development"), color: Theme.accent) }
+                    Text(closed ? t("leagues_wip") : t("leagues_admin_hub")).font(.ui(15)).foregroundColor(Theme.muted).padding(.top, 4)
                 }
             }
             if !closed {
-                Text(t("leagues_hub_sub")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("leagues_hub_sub")).font(.ui(12)).foregroundColor(Theme.muted)
                 Tabs(labels: [t("leagues_explore"), edit != nil ? t("leagues_edit") : t("leagues_post"), t("leagues_mine")], selected: $tab)
-                if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+                if let err { Text(t(err)).font(.ui(12)).foregroundColor(Theme.bad) }
                 if tab == 1 {
                     LeagueForm(edit: edit, mine: (list ?? []).filter { $0.mine }.count) { edit = nil; tab = 2; Task { await load() } }
                 } else {
@@ -3710,7 +3764,7 @@ struct LeagueHub: View {
                     }
                     if list != nil && shown.isEmpty { EmptyNote(text: t(tab == 2 ? "leagues_none_mine" : "leagues_none")) }
                     ForEach(shown) { x in LeagueCard(x: x).onTapGesture { openId = x.id } }
-                    if tab == 2 && !shown.isEmpty { Text(t("league_stats_note")).font(.caption2).foregroundColor(Theme.muted) }
+                    if tab == 2 && !shown.isEmpty { Text(t("league_stats_note")).font(.ui(11)).foregroundColor(Theme.muted) }
                 }
             }
         }
@@ -3731,7 +3785,7 @@ struct TogglePill: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(text).font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
+            Text(text).font(.ui(12, .bold)).padding(.horizontal, 10).padding(.vertical, 5)
                 .background(on ? Theme.accent : Theme.surface2).foregroundColor(on ? Theme.ink : Theme.muted).clipShape(Capsule())
         }
     }
@@ -3744,7 +3798,7 @@ struct WeekStrip: View {
         HStack(spacing: 3) {
             ForEach(0..<7, id: \.self) { d in
                 let on = days.contains(d)
-                Text(String(t("wd_\(d)").prefix(2))).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(on ? Theme.ink : Theme.muted)
+                Text(String(t("wd_\(d)").prefix(2))).font(.mono(9, .bold)).foregroundColor(on ? Theme.ink : Theme.muted)
                     .frame(width: 22, height: 20).background(on ? Theme.accent : Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 5))
             }
         }
@@ -3789,20 +3843,20 @@ struct LeagueCard: View {
             HStack(spacing: 8) {
                 ForEach(cs, id: \.self) { DiscIcon(k: $0, size: 26) }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(x.name).font(.headline.weight(.black)).foregroundColor(Theme.fg)
-                    Text([lmu ? gameName(x.game) : cs.count > 1 ? t("league_mixed") : "", x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                    Text(x.name).font(.ui(17, .black)).foregroundColor(Theme.fg)
+                    Text([lmu ? gameName(x.game) : cs.count > 1 ? t("league_mixed") : "", x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted)
                 }
                 Spacer(minLength: 0)
             }
             if x.open { StatusPill(text: t("league_open"), color: Theme.good) }
             HStack(spacing: 8) {
                 WeekStrip(days: x.days)
-                Text(leagueTimeText(x) ?? t("league_no_schedule")).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.muted)
+                Text(leagueTimeText(x) ?? t("league_no_schedule")).font(.mono(12)).foregroundColor(Theme.muted)
             }
-            if let n = leagueNextText(x) { Text(n.0).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(n.1 ? Theme.good : Theme.muted) }
-            if !x.about.isEmpty { Text(x.about).font(.subheadline).foregroundColor(Theme.fg).lineLimit(3) }
-            if !x.cars.isEmpty { Text("🏁 " + x.cars).font(.caption).foregroundColor(Theme.muted) }
-            if x.views >= 0 { Text("👁 \(x.views) · ↗ \(x.clicks)").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted) }
+            if let n = leagueNextText(x) { Text(n.0).font(.mono(12, .bold)).foregroundColor(n.1 ? Theme.good : Theme.muted) }
+            if !x.about.isEmpty { Text(x.about).font(.ui(15)).foregroundColor(Theme.fg).lineLimit(3) }
+            if !x.cars.isEmpty { Text("🏁 " + x.cars).font(.ui(12)).foregroundColor(Theme.muted) }
+            if x.views >= 0 { Text("👁 \(x.views) · ↗ \(x.clicks)").font(.mono(12, .bold)).foregroundColor(Theme.muted) }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(Theme.surface)
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(x.open ? Theme.good.opacity(0.5) : Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 8))
@@ -3830,35 +3884,35 @@ struct LeagueDetail: View {
                     Group {
                         HStack(spacing: 6) {
                             ForEach(cs, id: \.self) { DiscIcon(k: $0, size: 24) }
-                            Text([lmu ? gameName(x.game) : cs.map { discName($0) }.joined(separator: " + "), x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                            Text([lmu ? gameName(x.game) : cs.map { discName($0) }.joined(separator: " + "), x.lang, t("by_name", x.by)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted)
                         }
                         if x.open { StatusPill(text: t("league_open"), color: Theme.good) }
                         HStack(spacing: 8) {
                             WeekStrip(days: x.days)
-                            Text(leagueTimeText(x) ?? t("league_no_schedule")).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.muted)
+                            Text(leagueTimeText(x) ?? t("league_no_schedule")).font(.mono(12)).foregroundColor(Theme.muted)
                         }
-                        if let n = leagueNextText(x) { Text(n.0).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundColor(n.1 ? Theme.good : Theme.muted) }
-                        if !x.about.isEmpty { Text(x.about).font(.subheadline).foregroundColor(Theme.fg) }
-                        if !x.cars.isEmpty { Text("🏁 " + x.cars).font(.caption).foregroundColor(Theme.muted) }
+                        if let n = leagueNextText(x) { Text(n.0).font(.mono(12, .bold)).foregroundColor(n.1 ? Theme.good : Theme.muted) }
+                        if !x.about.isEmpty { Text(x.about).font(.ui(15)).foregroundColor(Theme.fg) }
+                        if !x.cars.isEmpty { Text("🏁 " + x.cars).font(.ui(12)).foregroundColor(Theme.muted) }
                     }
                     HStack(spacing: 10) {
                         if let u = URL(string: x.discord), !x.discord.isEmpty { Button(t("join_discord")) { account.leagueHit(x.id, "discord", mine: x.mine); openURL(u) }.buttonStyle(.borderedProminent).tint(Theme.accent) }
                         if let u = URL(string: x.web), !x.web.isEmpty { Button(t("league_site")) { account.leagueHit(x.id, "web", mine: x.mine); openURL(u) }.foregroundColor(Theme.accent) }
                     }
                     Button(copied ? t("league_link_copied") : t("league_copy_link")) { UIPasteboard.general.string = "https://pitlanehq.app/app?league=" + x.id; copied = true }
-                        .font(.caption.bold()).foregroundColor(Theme.accent)
+                        .font(.ui(12, .bold)).foregroundColor(Theme.accent)
                     if x.views >= 0 {
                         SectionLabel(text: t("league_your_numbers"))
-                        Text("👁 \(x.views) \(t("league_views")) · ↗ \(x.clicks) \(t("league_clicks"))").font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.fg)
+                        Text("👁 \(x.views) \(t("league_views")) · ↗ \(x.clicks) \(t("league_clicks"))").font(.mono(15, .bold)).foregroundColor(Theme.fg)
                         LeagueBars(days: days)
-                        Text(t("league_last14")).font(.caption2).foregroundColor(Theme.muted)
+                        Text(t("league_last14")).font(.ui(11)).foregroundColor(Theme.muted)
                     }
                     if x.mine || account.admin {
                         HStack(spacing: 14) {
                             Button(t("edit")) { onEdit() }.foregroundColor(Theme.accent)
                             Button(t("remove")) { Task { try? await account.deleteLeague(x.id); onChanged() } }.foregroundColor(Theme.bad)
                         }
-                        .font(.caption.bold())
+                        .font(.ui(12, .bold))
                     }
                 }
                 .padding(16)
@@ -3944,11 +3998,11 @@ struct LeagueForm: View {
     @ViewBuilder private var limitNote: some View {
         let lim = account.leagueLimit, used = t("league_used", mine, lim.limit)
         if lim.supporter {
-            HStack(spacing: 6) { Text(used).font(.caption2).foregroundColor(Theme.muted); Text("♥ Supporter").font(.caption2.bold()).foregroundColor(Color(red: 1, green: 0.56, blue: 0.75)) }
+            HStack(spacing: 6) { Text(used).font(.ui(11)).foregroundColor(Theme.muted); Text("♥ Supporter").font(.ui(11, .bold)).foregroundColor(Color(red: 1, green: 0.56, blue: 0.75)) }
         } else {
-            Text(used + ". " + t("league_more", lim.supporterLimit)).font(.caption2).foregroundColor(Theme.muted)
+            Text(used + ". " + t("league_more", lim.supporterLimit)).font(.ui(11)).foregroundColor(Theme.muted)
             if let u = URL(string: patreonURL), !patreonURL.isEmpty {
-                Button("♥ " + t("league_donate")) { UIApplication.shared.open(u) }.font(.caption.bold()).foregroundColor(Theme.accent).buttonStyle(.plain)
+                Button("♥ " + t("league_donate")) { UIApplication.shared.open(u) }.font(.ui(12, .bold)).foregroundColor(Theme.accent).buttonStyle(.plain)
             }
         }
     }
@@ -3957,14 +4011,14 @@ struct LeagueForm: View {
             Group {
                 field(t("league_name"), $name)
                 if gm != "lmu" {
-                    Text(t("league_discs")).font(.caption2).foregroundColor(Theme.muted)
+                    Text(t("league_discs")).font(.ui(11)).foregroundColor(Theme.muted)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(DISCS, id: \.self) { k in TogglePill(text: discName(k), on: cats.contains(k)) { if let i = cats.firstIndex(of: k) { cats.remove(at: i) } else { cats.append(k) } } }
                         }
                     }
                 }
-                Text(t("league_days")).font(.caption2).foregroundColor(Theme.muted)
+                Text(t("league_days")).font(.ui(11)).foregroundColor(Theme.muted)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(0..<7, id: \.self) { d in TogglePill(text: t("wd_\(d)"), on: days.contains(d)) { if let i = days.firstIndex(of: d) { days.remove(at: i) } else { days.append(d); days.sort() } } }
@@ -3973,23 +4027,23 @@ struct LeagueForm: View {
                 HStack(spacing: 8) {
                     field(t("league_time") + " (20:30)", $time)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(t("league_tz")).font(.caption2).foregroundColor(Theme.muted)
-                        Text(tz.replacingOccurrences(of: "_", with: " ")).font(.caption).foregroundColor(Theme.fg)
+                        Text(t("league_tz")).font(.ui(11)).foregroundColor(Theme.muted)
+                        Text(tz.replacingOccurrences(of: "_", with: " ")).font(.ui(12)).foregroundColor(Theme.fg)
                     }
                 }
             }
             Group {
                 field(t("league_discord"), $discord)
                 field(t("league_web"), $web)
-                Text(t("league_need_link_note")).font(.caption2).foregroundColor(Theme.muted)
+                Text(t("league_need_link_note")).font(.ui(11)).foregroundColor(Theme.muted)
                 field(t("league_cars"), $cars)
                 field(t("league_lang"), $lang)
-                Toggle(t("league_open_f"), isOn: $open).font(.subheadline).tint(Theme.accent)
+                Toggle(t("league_open_f"), isOn: $open).font(.ui(15)).tint(Theme.accent)
                 field(t("league_about"), $about)
             }
-            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+            if let err { Text(t(err)).font(.ui(12)).foregroundColor(Theme.bad) }
             Button(edit != nil ? t("save") : t("league_publish")) { save() }.buttonStyle(.borderedProminent).tint(Theme.accent).disabled(busy)
-            Text(t("league_note")).font(.caption2).foregroundColor(Theme.muted)
+            Text(t("league_note")).font(.ui(11)).foregroundColor(Theme.muted)
             limitNote
         }
         .onAppear {
@@ -4050,12 +4104,12 @@ struct CommunityView: View {
                 ForEach(list) { x in
                     NavigationLink(value: Route.combo(x)) {
                         Panel {
-                            Text(x.track).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
-                            Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                            Text(x.track).font(.ui(17, .black)).foregroundColor(Theme.fg).lineLimit(1)
+                            Text(x.car).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
                             HStack {
-                                Text([catName(gm, catOf(gm, x.cat, x.cls, x.car)), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted)
+                                Text([catName(gm, catOf(gm, x.cat, x.cls, x.car)), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted)
                                 Spacer()
-                                Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                                Text(lapTime(x.best)).font(.mono(15, .bold)).foregroundColor(Theme.purple)
                             }
                             .padding(.top, 4)
                         }
@@ -4070,14 +4124,14 @@ struct CommunityView: View {
                     Panel {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(x.track).font(.headline.weight(.black)).lineLimit(1)
-                                Text(x.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
-                                Text((x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : "") + " · " + day(x.created)).font(.caption2).foregroundColor(x.mine ? Theme.accent : Theme.muted)
+                                Text(x.track).font(.ui(17, .black)).lineLimit(1)
+                                Text(x.car).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                                Text((x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : "") + " · " + day(x.created)).font(.ui(11)).foregroundColor(x.mine ? Theme.accent : Theme.muted)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 2) {
-                                Text(x.finish > 0 ? "P\(x.finish)/\(x.field)" : "—").font(.system(.headline, design: .monospaced).weight(.black))
-                                Text(lapTime(x.best)).font(.system(.caption, design: .monospaced)).foregroundColor(Theme.purple)
+                                Text(x.finish > 0 ? "P\(x.finish)/\(x.field)" : "—").font(.mono(17, .semibold).weight(.black))
+                                Text(lapTime(x.best)).font(.mono(12)).foregroundColor(Theme.purple)
                             }
                         }
                     }
@@ -4088,10 +4142,10 @@ struct CommunityView: View {
                 if setups.data != nil && list.isEmpty { EmptyNote(text: t("nothing_found")) }
                 ForEach(list) { x in
                     Panel {
-                        Text(x.name).font(.headline.weight(.black)).lineLimit(1)
-                        Text([x.car, x.track].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
-                        if !x.notes.isEmpty { Text(x.notes).font(.caption).lineLimit(3) }
-                        Text(x.alias + " · " + t("downloads", x.downloads) + " · " + day(x.created)).font(.caption2).foregroundColor(Theme.muted)
+                        Text(x.name).font(.ui(17, .black)).lineLimit(1)
+                        Text([x.car, x.track].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(2)
+                        if !x.notes.isEmpty { Text(x.notes).font(.ui(12)).lineLimit(3) }
+                        Text(x.alias + " · " + t("downloads", x.downloads) + " · " + day(x.created)).font(.ui(11)).foregroundColor(Theme.muted)
                     }
                 }
             }
@@ -4123,24 +4177,24 @@ struct RecentRecords: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
                     SectionLabel(text: t("recent_records"))
-                    Text(t("recent_records_sub")).font(.caption).foregroundColor(Theme.muted)
+                    Text(t("recent_records_sub")).font(.ui(12)).foregroundColor(Theme.muted)
                 }
                 Spacer()
-                if !list.isEmpty { Text(t("records_n", list.count)).font(.caption).foregroundColor(Theme.muted) }
+                if !list.isEmpty { Text(t("records_n", list.count)).font(.ui(12)).foregroundColor(Theme.muted) }
             }
             if recs.loading && recs.data == nil {
                 Text("…").foregroundColor(Theme.muted)
             } else if let e = recs.error, recs.data == nil {
-                Text(t(e)).font(.caption).foregroundColor(Theme.bad)
+                Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad)
             } else if list.isEmpty {
-                Text(t("no_records")).font(.subheadline).foregroundColor(Theme.muted)
+                Text(t("no_records")).font(.ui(15)).foregroundColor(Theme.muted)
             }
             // each record a card: its discipline's stripe, the car and track, the time and who set it, the lap it beat as a
             // bar (longer the bigger the margin); touched, its leaderboard, its track page and its driver's profile
             let most = max(0.001, list.compactMap { x in x.prevTime.map { $0 - x.time } }.max() ?? 1)
             ForEach(all ? list : Array(list.prefix(6))) { x in RecordCard(x: x, most: most, open: $open) }
             if list.count > 6 {
-                Button(all ? t("fewer") : t("show_all_n", list.count)) { all.toggle() }.font(.subheadline.bold()).foregroundColor(Theme.accent)
+                Button(all ? t("fewer") : t("show_all_n", list.count)) { all.toggle() }.font(.ui(15, .bold)).foregroundColor(Theme.accent)
             }
         }
         .task(id: "\(account.demo)-\(account.game)") { await recs.load { try await account.records() } }
@@ -4178,16 +4232,16 @@ struct RecordCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     GameBadge(game: x.game)
-                    Text([day(x.created), catName(gm, k)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+                    Text([day(x.created), catName(gm, k)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(11)).foregroundColor(Theme.muted).lineLimit(1)
                 }
-                Text(x.car).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1)
-                Text(x.track).font(.system(size: 12)).foregroundColor(Theme.muted).lineLimit(1)
+                Text(x.car).font(.ui(14, .bold)).foregroundColor(Theme.fg).lineLimit(1)
+                Text(x.track).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
             }
             Spacer(minLength: 4)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(lapTime(x.time)).font(.system(size: 15, weight: .bold, design: .monospaced)).foregroundColor(Theme.purple)
+                Text(lapTime(x.time)).font(.mono(15, .bold)).foregroundColor(Theme.purple)
                 WetBadges(w: x.wet)
-                Text(name(x.alias) + (x.mine ? " · " + t("you_badge") : "")).font(.system(size: 12, weight: .semibold)).foregroundColor(x.mine ? Theme.accent : Theme.fg).lineLimit(1)
+                Text(name(x.alias) + (x.mine ? " · " + t("you_badge") : "")).font(.ui(12, .semibold)).foregroundColor(x.mine ? Theme.accent : Theme.fg).lineLimit(1)
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -4206,7 +4260,7 @@ struct RecordCard: View {
                 }
             }
             .frame(height: 6)
-            Text(text).font(.system(size: 12)).foregroundColor(Theme.muted).lineLimit(1)
+            Text(text).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
         }
     }
 
@@ -4219,7 +4273,7 @@ struct RecordCard: View {
     }
 
     private func pill(_ s: String, _ main: Bool) -> some View {
-        Text(s).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+        Text(s).font(.ui(12, .semibold)).lineLimit(1)
             .frame(maxWidth: .infinity, minHeight: 36)
             .foregroundColor(main ? Theme.ink : Theme.fg)
             .background(main ? Theme.accent : Color.clear)
@@ -4265,7 +4319,7 @@ struct TrackPageView: View {
             if let lay = d?.layout, lay.0.count >= 20 {
                 Canvas { ctx, size in drawTrackRoad(ctx, size, lay.0, lay.1, d?.turns ?? []) }.frame(height: 240)
             } else {
-                Text(t("track_no_map")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("track_no_map")).font(.ui(12)).foregroundColor(Theme.muted)
             }
         }
         let bestS = mine?.sessions.filter { ($0.best ?? 0) > 0 }.min { ($0.best ?? 0) < ($1.best ?? 0) }
@@ -4304,7 +4358,7 @@ struct TrackPageView: View {
         // the coach opens on your newest session here
         if let x = mine?.sessions.max(by: { $0.started < $1.started }) {
             NavigationLink(value: Route.analysis(1, x)) {
-                Text(t("coach_for", name)).font(.system(size: 15, weight: .bold)).lineLimit(1).foregroundColor(Theme.ink)
+                Text(t("coach_for", name)).font(.ui(15, .bold)).lineLimit(1).foregroundColor(Theme.ink)
                     .frame(maxWidth: .infinity, minHeight: 48).background(Theme.accent).clipShape(RoundedRectangle(cornerRadius: 14))
             }.buttonStyle(.plain)
         }
@@ -4315,7 +4369,7 @@ struct TrackPageView: View {
         if let d {
             HStack(spacing: 6) {
                 GameBadge(game: d.game)
-                Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.caption).foregroundColor(Theme.muted)
+                Text(t("track_counts", d.drivers, d.laps, d.cars.count)).font(.ui(12)).foregroundColor(Theme.muted)
             }
             SectionLabel(text: t("records_per_car"))
             if d.cars.isEmpty { EmptyNote(text: t("no_records")) }
@@ -4325,14 +4379,14 @@ struct TrackPageView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 HStack(spacing: 6) {
-                                    Text(x.car).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+                                    Text(x.car).font(.ui(17, .black)).foregroundColor(Theme.fg).lineLimit(1)
                                     GameBadge(game: x.game)
                                 }
-                                Text([catName(account.game, catOf(account.game, x.cat, x.cls, x.car)), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                                Text([catName(account.game, catOf(account.game, x.cat, x.cls, x.car)), (x.alias == "Anonymous" ? t("anonymous") : x.alias) + (x.mine ? " · " + t("you_badge") : ""), t("drivers", x.n), day(x.created)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(2)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 2) {
-                                Text(lapTime(x.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
+                                Text(lapTime(x.time)).font(.mono(15, .bold)).foregroundColor(Theme.purple)
                                 WetBadges(w: x.wet)
                             }
                         }
@@ -4427,7 +4481,7 @@ struct TracksView: View {
                 Image(systemName: "magnifyingglass").foregroundColor(Theme.muted)
                 TextField(t("find_track"), text: $q).foregroundColor(Theme.fg).autocorrectionDisabled()
             }
-            .padding(.horizontal, 12).padding(.vertical, 10).background(Theme.surface2)
+            .padding(.horizontal, 12).padding(.vertical, 10).background(Theme.well)
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
             ShortNote(key: "an_short")
             LoadState(loading: sessions == nil && err == nil, error: err) { Task { await reload() } }
@@ -4462,9 +4516,9 @@ struct TrackHero: View {
                 Canvas { ctx, size in drawTrackRoad(ctx, size, lay.0, lay.1, [], edge: Theme.accent) }.frame(height: 170)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(t("most_driven")).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundColor(Theme.accent)
-                Text(x.name.uppercased()).font(.system(size: 22, weight: .black)).foregroundColor(Theme.fg).lineLimit(2)
-                Text(t("trk_counts", x.count, x.laps) + (x.best.map { " · " + t("trk_best", lapTime($0)) } ?? "")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("most_driven")).font(.mono(11, .semibold)).foregroundColor(Theme.accent)
+                Text(x.name.uppercased()).font(.display(22, .bold)).foregroundColor(Theme.fg).lineLimit(2)
+                Text(t("trk_counts", x.count, x.laps) + (x.best.map { " · " + t("trk_best", lapTime($0)) } ?? "")).font(.ui(12)).foregroundColor(Theme.muted)
             }
             .padding(.horizontal, 6).padding(.bottom, 6).padding(.top, 4)
         }
@@ -4483,14 +4537,14 @@ struct TrackTile: View {
     var body: some View {
         let mono = x.name.split(whereSeparator: { $0 == " " || $0 == "-" }).prefix(2).map { String($0.prefix(1)) }.joined().uppercased()
         VStack(alignment: .leading, spacing: 2) {
-            Text(mono).font(.system(size: 17, weight: .black)).foregroundColor(Theme.accent)
-                .frame(width: 40, height: 40).background(Theme.surface2)
+            Text(mono).font(.display(17, .heavy)).foregroundColor(Theme.accent)
+                .frame(width: 40, height: 40).background(Theme.well)
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.bottom, 6)
-            Text(x.name).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.fg).lineLimit(2).multilineTextAlignment(.leading)
-            Text(t("trk_counts", x.count, x.laps)).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1)
+            Text(x.name).font(.ui(14, .semibold)).foregroundColor(Theme.fg).lineLimit(2).multilineTextAlignment(.leading)
+            Text(t("trk_counts", x.count, x.laps)).font(.ui(11)).foregroundColor(Theme.muted).lineLimit(1)
             Spacer(minLength: 0)
-            Text(lapTime(x.best)).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(Theme.fg).padding(.top, 4)
+            Text(lapTime(x.best)).font(.mono(13, .bold)).foregroundColor(Theme.fg).padding(.top, 4)
         }
         .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -4536,7 +4590,7 @@ func drawTrackRoad(_ ctx: GraphicsContext, _ size: CGSize, _ xs: [Double], _ ys:
         let tmx = q1.x - q0.x, tmy = q1.y - q0.y, tm = max(1e-3, hypot(tmx, tmy))
         var qx = -tmy / tm, qy = tmx / tm
         if (q.x - size.width / 2) * qx + (q.y - size.height / 2) * qy < 0 { qx = -qx; qy = -qy }
-        ctx.draw(Text("T\(ti + 1)").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted), at: CGPoint(x: q.x + qx * (w / 2 + 9), y: q.y + qy * (w / 2 + 9)))
+        ctx.draw(Text("T\(ti + 1)").font(.ui(9, .bold)).foregroundColor(Theme.muted), at: CGPoint(x: q.x + qx * (w / 2 + 9), y: q.y + qy * (w / 2 + 9)))
     }
 }
 
@@ -4564,27 +4618,27 @@ struct ComboView: View {
                     }
                 }
                 Spacer()
-                NavigationLink(value: Route.track(TrackRef(id: combo.trackId, name: combo.track))) { Text(t("track_page")).font(.caption.bold()).foregroundColor(Theme.accent) }
+                NavigationLink(value: Route.track(TrackRef(id: combo.trackId, name: combo.track))) { Text(t("track_page")).font(.ui(12, .bold)).foregroundColor(Theme.accent) }
                     .buttonStyle(.plain)
             }
             LoadState(loading: board.loading, error: board.error, stale: board.stale) { Task { await load() } }
             if board.data != nil {
                 Panel {
                     if mine == 0 && laps.count > 1 {
-                        Text("🏆 " + t("you_fastest")).font(.subheadline.weight(.black)).foregroundColor(Theme.purple)
-                        Text(t("you_fastest_sub", laps.count, lapTime(laps[0].time))).font(.caption).foregroundColor(Theme.muted)
-                    } else if let mine { Text(t("your_position", mine + 1, laps.count, lapTime(laps[mine].time))).font(.subheadline.bold()).foregroundColor(Theme.accent) }
-                    else { Text(t("not_on_board")).font(.caption).foregroundColor(Theme.muted) }
+                        Text("🏆 " + t("you_fastest")).font(.ui(15, .black)).foregroundColor(Theme.purple)
+                        Text(t("you_fastest_sub", laps.count, lapTime(laps[0].time))).font(.ui(12)).foregroundColor(Theme.muted)
+                    } else if let mine { Text(t("your_position", mine + 1, laps.count, lapTime(laps[mine].time))).font(.ui(15, .bold)).foregroundColor(Theme.accent) }
+                    else { Text(t("not_on_board")).font(.ui(12)).foregroundColor(Theme.muted) }
                     HStack(spacing: 6) {
                         GameBadge(game: account.game)
-                        Text([catName(account.game, catOf(account.game, combo.cat, combo.cls, combo.car)), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
+                        Text([catName(account.game, catOf(account.game, combo.cat, combo.cls, combo.car)), t("drivers", laps.count)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(11)).foregroundColor(Theme.muted)
                     }
                     if let mine {
                         // the picture of this lap for the phone's share sheet (ShareCard in Reports.swift)
                         Button {
                             let car = whole ? (laps[mine].car.flatMap { $0.isEmpty ? nil : $0 } ?? combo.car) : combo.car
                             ShareCard.share(track: combo.track, car: car, time: laps[mine].time, pos: mine + 1, of: laps.count, game: account.game)
-                        } label: { Text(t("share_my_lap")).font(.caption.bold()).foregroundColor(Theme.accent) }
+                        } label: { Text(t("share_my_lap")).font(.ui(12, .bold)).foregroundColor(Theme.accent) }
                         .buttonStyle(.plain).padding(.top, 4)
                     }
                 }
@@ -4596,22 +4650,22 @@ struct ComboView: View {
                 NavigationLink(value: Route.profile(lap.id)) {
                 Panel {
                     HStack {
-                        Text("\(i + 1)").font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(i == 0 ? Theme.purple : me ? Theme.accent : Theme.muted).frame(width: 32, alignment: .leading)
+                        Text("\(i + 1)").font(.mono(15, .bold)).foregroundColor(i == 0 ? Theme.purple : me ? Theme.accent : Theme.muted).frame(width: 32, alignment: .leading)
                         VStack(alignment: .leading, spacing: 1) {
                             HStack(spacing: 6) {
-                                Text(lap.alias == "Anonymous" ? t("anonymous") : lap.alias).font(.subheadline.bold()).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1).underline(lap.prof)
+                                Text(lap.alias == "Anonymous" ? t("anonymous") : lap.alias).font(.ui(15, .bold)).foregroundColor(me ? Theme.accent : Theme.fg).lineLimit(1).underline(lap.prof)
                                 if lap.sup { SupBadge() }
-                                if lap.mine { Text(t("you_badge")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.accent) }
+                                if lap.mine { Text(t("you_badge")).font(.ui(10, .bold)).foregroundColor(Theme.accent) }
                             }
-                            if whole, let car = lap.car { Text(car).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1) }
-                            if !lap.sectors.isEmpty { Text(lap.sectors.map { String(format: "%.3f", $0) }.joined(separator: "  ")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted) }
-                            if !lap.hasTrace { Text(t("trace_not_shared")).font(.system(size: 10)).foregroundColor(Theme.muted) }
+                            if whole, let car = lap.car { Text(car).font(.ui(11)).foregroundColor(Theme.muted).lineLimit(1) }
+                            if !lap.sectors.isEmpty { Text(lap.sectors.map { String(format: "%.3f", $0) }.joined(separator: "  ")).font(.mono(10)).foregroundColor(Theme.muted) }
+                            if !lap.hasTrace { Text(t("trace_not_shared")).font(.ui(10)).foregroundColor(Theme.muted) }
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 0) {
-                            Text(lapTime(lap.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(i == 0 ? Theme.purple : Theme.fg)
+                            Text(lapTime(lap.time)).font(.mono(15, .bold)).foregroundColor(i == 0 ? Theme.purple : Theme.fg)
                             WetBadges(w: lap.wet)
-                            if let top, i > 0 { Text(String(format: "+%.3f", lap.time - top)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
+                            if let top, i > 0 { Text(String(format: "+%.3f", lap.time - top)).font(.mono(11)).foregroundColor(Theme.muted) }
                         }
                     }
                 }
@@ -4632,7 +4686,7 @@ struct ComboView: View {
             account.boardWhole = on
             Task { await load() }
         } label: {
-            Text(label).font(.system(size: 11, weight: .bold)).foregroundColor(sel ? Theme.bg : Theme.muted)
+            Text(label).font(.ui(11, .bold)).foregroundColor(sel ? Theme.bg : Theme.muted)
                 .padding(.horizontal, 10).padding(.vertical, 5).background(sel ? Theme.accent : Theme.surface2).clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -4688,29 +4742,29 @@ struct ProfileView: View {
             if let p {
                 Panel {
                     HStack(spacing: 8) {
-                        Text(p.name).font(.title3.weight(.black)).lineLimit(2)
+                        Text(p.name).font(.ui(20, .black)).lineLimit(2)
                         if p.supporter && !(p.mine && p.supporterHidden) { SupBadge() }
                         Spacer()
                     }
-                    if p.anonymous { Text("🔒 " + t(p.mine ? "anon_mine" : "anon_admins_only")).font(.caption).foregroundColor(Theme.muted) }
-                    if p.mine && p.supporter && p.supporterHidden { Text(t("badge_hidden")).font(.caption).foregroundColor(Theme.muted) }
+                    if p.anonymous { Text("🔒 " + t(p.mine ? "anon_mine" : "anon_admins_only")).font(.ui(12)).foregroundColor(Theme.muted) }
+                    if p.mine && p.supporter && p.supporterHidden { Text(t("badge_hidden")).font(.ui(12)).foregroundColor(Theme.muted) }
                     // their Discord, when they chose to show it
                     if !p.discordId.isEmpty, p.discordId.allSatisfy({ $0.isASCII && $0.isNumber }), let u = URL(string: "https://discord.com/users/" + p.discordId) {
                         HStack(spacing: 0) {
-                            Text("Discord: ").font(.caption).foregroundColor(Theme.muted)
-                            Link(p.discordHandle.isEmpty ? t("discord_open") : "@" + p.discordHandle, destination: u).font(.caption.bold()).foregroundColor(Theme.accent)
+                            Text("Discord: ").font(.ui(12)).foregroundColor(Theme.muted)
+                            Link(p.discordHandle.isEmpty ? t("discord_open") : "@" + p.discordHandle, destination: u).font(.ui(12, .bold)).foregroundColor(Theme.accent)
                         }
                         .padding(.top, 2)
                     }
                     let ls = DISCS.filter { p.lics[$0] != nil }
                     if !ls.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) { ForEach(ls, id: \.self) { k in HStack(spacing: 4) { LicBadge(k: p.lics[k]); Text(discName(k)).font(.caption) } } }
+                            HStack(spacing: 10) { ForEach(ls, id: \.self) { k in HStack(spacing: 4) { LicBadge(k: p.lics[k]); Text(discName(k)).font(.ui(12)) } } }
                         }.padding(.top, 6)
                     }
                     if p.mine && p.supporter {
                         Button(t(p.supporterHidden ? "show_badge" : "hide_badge")) { Task { try? await account.setBadgeHidden(!p.supporterHidden); await load() } }
-                            .font(.caption.bold()).foregroundColor(Theme.accent).padding(.top, 6)
+                            .font(.ui(12, .bold)).foregroundColor(Theme.accent).padding(.top, 6)
                     }
                 }
                 let recs = p.laps.filter { $0.pos == 1 }.count, pods = p.laps.filter { $0.pos > 0 && $0.pos <= 3 }.count
@@ -4728,20 +4782,20 @@ struct ProfileView: View {
                 ForEach(p.races) { r in
                     Panel {
                         HStack(spacing: 6) {
-                            Text([day(r.when), r.official ? t("official") : "", discName(r.cat)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption2).foregroundColor(Theme.muted)
+                            Text([day(r.when), r.official ? t("official") : "", discName(r.cat)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(11)).foregroundColor(Theme.muted)
                             LicBadge(k: r.lic)
                         }
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(r.track).font(.subheadline.bold()).lineLimit(1)
-                                Text(r.car).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
+                                Text(r.track).font(.ui(15, .bold)).lineLimit(1)
+                                Text(r.car).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
                             }
                             Spacer()
-                            Text(r.dnf ? "DNF" : r.finish > 0 ? "P\(r.finish)/\(r.field)" : "—").font(.system(.headline, design: .monospaced).weight(.black))
+                            Text(r.dnf ? "DNF" : r.finish > 0 ? "P\(r.finish)/\(r.field)" : "—").font(.mono(17, .semibold).weight(.black))
                         }
                         let dif = r.start > 0 && r.finish > 0 ? r.start - r.finish : 0
                         Text([dif != 0 ? (dif > 0 ? "+" : "") + "\(dif) " + t("places") : "", "\(r.inc)x", r.irChange != 0 ? "iR " + (r.irChange > 0 ? "+" : "") + "\(r.irChange)" : "", r.best.map { t("best_short") + " " + lapTime($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
-                            .font(.caption2).foregroundColor(Theme.muted)
+                            .font(.ui(11)).foregroundColor(Theme.muted)
                     }
                 }
                 SectionLabel(text: t("on_leaderboards").uppercased())
@@ -4752,13 +4806,13 @@ struct ProfileView: View {
                         HStack(spacing: 6) {
                             LicBadge(k: l.lic)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(l.track).font(.subheadline.bold()).lineLimit(1)
-                                Text([l.car, discName(l.cat)].filter { !$0.isEmpty }.joined(separator: " · ") + (l.anon ? " · 🔒 " + t(p.mine ? "anon_lap_mine" : "anon_lap_admins") : "")).font(.caption2).foregroundColor(Theme.muted).lineLimit(2)
+                                Text(l.track).font(.ui(15, .bold)).lineLimit(1)
+                                Text([l.car, discName(l.cat)].filter { !$0.isEmpty }.joined(separator: " · ") + (l.anon ? " · 🔒 " + t(p.mine ? "anon_lap_mine" : "anon_lap_admins") : "")).font(.ui(11)).foregroundColor(Theme.muted).lineLimit(2)
                             }
                             Spacer()
                             VStack(alignment: .trailing, spacing: 1) {
-                                Text(lapTime(l.time)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.fg)
-                                if l.pos > 0 { Text("P\(l.pos)" + (l.of > 0 ? "/\(l.of)" : "")).font(.system(size: 11, design: .monospaced)).foregroundColor(l.pos == 1 ? Theme.purple : Theme.muted) }
+                                Text(lapTime(l.time)).font(.mono(15, .bold)).foregroundColor(Theme.fg)
+                                if l.pos > 0 { Text("P\(l.pos)" + (l.of > 0 ? "/\(l.of)" : "")).font(.mono(11)).foregroundColor(l.pos == 1 ? Theme.purple : Theme.muted) }
                             }
                         }
                     }
@@ -4802,59 +4856,59 @@ struct LiveView: View {
             ShortNote(key: "live_short")
             // your PC, from anywhere: Connect when it is online, Disconnect to stop the live data on this phone
             Panel {
-                Text(t("your_pc_anywhere")).font(.headline.weight(.black))
+                Text(t("your_pc_anywhere")).font(.ui(17, .black))
                 switch live.mode {
                 case .own where live.pcOnline && live.ask == "wait":
                     // your PC asks you there: Accept / Decline
                     TimelineView(.periodic(from: .now, by: 5)) { tl in
                         let late = tl.date.timeIntervalSince(live.askAt) >= 60
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(late ? t("pc_no_answer") : t("accept_on_pc")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 4)
+                            Text(late ? t("pc_no_answer") : t("accept_on_pc")).font(.ui(15)).foregroundColor(Theme.muted).padding(.vertical, 4)
                             HStack(spacing: 14) {
                                 if late { Button(t("try_again")) { live.askAgain() }.buttonStyle(.borderedProminent).tint(Theme.accent) }
-                                Button(t("cancel")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
+                                Button(t("cancel")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.ui(15, .bold))
                             }
                         }
                     }
                 case .own:
-                    Text(live.pcOnline ? t("watching_pc") : t("waiting_pc")).font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
-                    Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
+                    Text(live.pcOnline ? t("watching_pc") : t("waiting_pc")).font(.ui(15)).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
+                    Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.ui(15, .bold))
                     if live.pcOnline && live.ask == "ok" {
                         Divider().padding(.vertical, 6)
-                        Text(t("your_code")).font(.subheadline.bold())
+                        Text(t("your_code")).font(.ui(15, .bold))
                         if !live.myCode.isEmpty {
-                            Text(live.myCode).font(.system(size: 22, weight: .black, design: .monospaced)).foregroundColor(Theme.accent).padding(.vertical, 2)
-                            Text(t("your_code_sub")).font(.caption).foregroundColor(Theme.muted)
+                            Text(live.myCode).font(.mono(22, .black)).foregroundColor(Theme.accent).padding(.vertical, 2)
+                            Text(t("your_code_sub")).font(.ui(12)).foregroundColor(Theme.muted)
                             HStack(spacing: 14) {
                                 Button(t("new_code")) { live.share(on: true, new: true) }.foregroundColor(Theme.accent)
                                 Button(t("stop_sharing")) { live.share(on: false) }.foregroundColor(Theme.bad)
-                            }.font(.caption.bold()).padding(.top, 4)
+                            }.font(.ui(12, .bold)).padding(.top, 4)
                         } else {
-                            Text(t("get_code_sub")).font(.caption).foregroundColor(Theme.muted)
-                            Button(t("get_code")) { live.share(on: true) }.foregroundColor(Theme.accent).font(.caption.bold()).padding(.top, 4)
+                            Text(t("get_code_sub")).font(.ui(12)).foregroundColor(Theme.muted)
+                            Button(t("get_code")) { live.share(on: true) }.foregroundColor(Theme.accent).font(.ui(12, .bold)).padding(.top, 4)
                         }
                     }
                 case .code:
-                    Text(t("watching_other_back")).font(.subheadline).foregroundColor(Theme.muted).padding(.vertical, 4)
+                    Text(t("watching_other_back")).font(.ui(15)).foregroundColor(Theme.muted).padding(.vertical, 4)
                     Button(t("connect")) { live.watch(.own) }.buttonStyle(.borderedProminent).tint(Theme.accent)
                 case .idle:
-                    Text(live.pcOnline ? t("pc_is_online") : t("open_pc")).font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
+                    Text(live.pcOnline ? t("pc_is_online") : t("open_pc")).font(.ui(15)).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
                     Button(t("connect")) { live.watch(.own) }.buttonStyle(.borderedProminent).tint(Theme.accent).disabled(!live.pcOnline)
-                    if Date().timeIntervalSince(live.declinedAt) < 60 { Text(t("declined_on_pc")).font(.caption).foregroundColor(Theme.bad).padding(.top, 4) }
+                    if Date().timeIntervalSince(live.declinedAt) < 60 { Text(t("declined_on_pc")).font(.ui(12)).foregroundColor(Theme.bad).padding(.top, 4) }
                 }
             }
             // the PC app, right under it: it is what sends the telemetry
             Link(destination: URL(string: "https://pitlanehq.app/dl/PitlaneHQ-Setup.exe")!) { ActionRow(title: t("download_pc").uppercased(), sub: t("download_pc_sub"), icon: "desktopcomputer") }
             // someone else's telemetry with the code they give you
             Panel {
-                Text(t("watch_other")).font(.headline.weight(.black))
+                Text(t("watch_other")).font(.ui(17, .black))
                 if live.mode == .code {
                     Text((live.pcOnline ? t("watching") : t("waiting_their_pc")) + " · " + stride(from: 0, to: live.code.count, by: 4).map { i in String(Array(live.code)[i..<min(i + 4, live.code.count)]) }.joined(separator: "-"))
-                        .font(.subheadline).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
-                    Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.subheadline.bold())
+                        .font(.ui(15)).foregroundColor(live.pcOnline ? Theme.good : Theme.muted).padding(.vertical, 4)
+                    Button(t("disconnect")) { live.watch(.idle) }.foregroundColor(Theme.bad).font(.ui(15, .bold))
                 } else {
                     TextField("ABCD-EFGH-JK", text: $codeIn).textInputAutocapitalization(.characters).autocorrectionDisabled().padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
-                    if codeErr { Text(t("code_bad")).font(.caption).foregroundColor(Theme.bad) }
+                    if codeErr { Text(t("code_bad")).font(.ui(12)).foregroundColor(Theme.bad) }
                     Button(t("watch")) {
                         let c = PLCrypto.codeNorm(codeIn)
                         if PLCrypto.codeOk(c) { codeErr = false; live.watch(.code, code: c) } else { codeErr = true }
@@ -4863,7 +4917,7 @@ struct LiveView: View {
             }
             if live.mode == .code || (live.mode == .own && live.ask == "ok") {
             StatusPill(text: status.0, color: status.1)
-            if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
+            if let m = live.message { Text(t(m)).font(.ui(12)).foregroundColor(Theme.bad) }
             // the same three tabs as the PC's Telemetry: what matters while driving, the standings, the tyres
             LiveTabsView(live: live)
             }
@@ -4875,7 +4929,7 @@ struct LiveView: View {
 
     private func bar(_ label: String, _ v: Double?, _ c: Color) -> some View {
         HStack {
-            Text(label).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted).frame(width: 90, alignment: .leading)
+            Text(label).font(.mono(11)).foregroundColor(Theme.muted).frame(width: 90, alignment: .leading)
             GeometryReader { g in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Theme.surface2)
@@ -4923,18 +4977,18 @@ struct AdminView: View {
         Screen(title: t("admin_profile")) {
             Panel {
                 // admin mode switched off here: back to the app as everyone sees it
-                Toggle(t("admin_mode"), isOn: Binding(get: { account.adminMode }, set: { on in account.adminMode = on; if !on { dismiss() } })).font(.subheadline.bold())
-                Text(t("admin_mode_sub")).font(.caption).foregroundColor(Theme.muted)
+                Toggle(t("admin_mode"), isOn: Binding(get: { account.adminMode }, set: { on in account.adminMode = on; if !on { dismiss() } })).font(.ui(15, .bold))
+                Text(t("admin_mode_sub")).font(.ui(12)).foregroundColor(Theme.muted)
             }
             ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
                 ForEach(adminSections, id: \.self) { k in
                     Button { kind = k; Task { await load() } } label: {
-                        Text(t("admin_sec_" + k)).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
+                        Text(t("admin_sec_" + k)).font(.ui(15)).padding(.horizontal, 12).padding(.vertical, 6)
                             .background(kind == k ? Theme.accent : Theme.surface2).foregroundColor(kind == k ? Theme.ink : Theme.fg).clipShape(Capsule())
                     }
                 }
             } }
-            Text(t("admin_sec_" + kind + "_sub")).font(.caption).foregroundColor(Theme.muted)
+            Text(t("admin_sec_" + kind + "_sub")).font(.ui(12)).foregroundColor(Theme.muted)
             if let e = error {
                 EmptyNote(text: t(e))
             } else if let rows = rows {
@@ -5033,11 +5087,11 @@ struct AdminView: View {
         let c = x["counts"] as? [String: Any] ?? [:], g = x["config"] as? [String: Any] ?? [:]
         let n = { (k: String) in "\((c[k] as? NSNumber)?.intValue ?? 0)" }
         Panel {
-            Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.caption.bold()).foregroundColor(Theme.fg)
-            Text(t("admin_activity", n("new7"), n("drivers7"), n("sessions1"), n("sessions7"))).font(.caption).foregroundColor(Theme.muted)
-            Text(t("admin_community", n("boards"), n("leagues"), (g["leaguesOpen"] as? Bool ?? false) ? t("admin_open") : t("admin_only"))).font(.caption).foregroundColor(Theme.muted)
-            Text(t("admin_sup", n("supporters"), n("supportersPatreon"), n("patrons"))).font(.caption).foregroundColor(Theme.muted)
-            Text(t("admin_model", n("learnt"), n("models")) + " · " + t("admin_dirty", n("modelsDirty"))).font(.caption).foregroundColor(Theme.muted)
+            Text(t("admin_counts", n("accounts"), n("verified"), n("sessions"), n("shared"))).font(.ui(12, .bold)).foregroundColor(Theme.fg)
+            Text(t("admin_activity", n("new7"), n("drivers7"), n("sessions1"), n("sessions7"))).font(.ui(12)).foregroundColor(Theme.muted)
+            Text(t("admin_community", n("boards"), n("leagues"), (g["leaguesOpen"] as? Bool ?? false) ? t("admin_open") : t("admin_only"))).font(.ui(12)).foregroundColor(Theme.muted)
+            Text(t("admin_sup", n("supporters"), n("supportersPatreon"), n("patrons"))).font(.ui(12)).foregroundColor(Theme.muted)
+            Text(t("admin_model", n("learnt"), n("models")) + " · " + t("admin_dirty", n("modelsDirty"))).font(.ui(12)).foregroundColor(Theme.muted)
         }
         HStack(spacing: 6) {
             ForEach([7, 14, 30], id: \.self) { d in LiveChip(label: t("admin_days", "\(d)"), on: days == d) { days = d; Task { await load() } } }
@@ -5045,42 +5099,42 @@ struct AdminView: View {
         if let an {
             analyticsView(an)
         } else {
-            Panel { Text(t("admin_no_analytics")).font(.caption).foregroundColor(Theme.muted) }
+            Panel { Text(t("admin_no_analytics")).font(.ui(12)).foregroundColor(Theme.muted) }
         }
     }
 
     @ViewBuilder private func analyticsView(_ an: [String: Any]) -> some View {
         let list = { (k: String) in an[k] as? [[String: Any]] ?? [] }
         Panel {
-            Text(t("admin_active")).font(.subheadline.bold()).foregroundColor(Theme.fg)
-            if list("active").isEmpty { Text(t("admin_nothing")).font(.caption).foregroundColor(Theme.muted) } else { AdminActiveChart(days: list("active")) }
+            Text(t("admin_active")).font(.ui(15, .bold)).foregroundColor(Theme.fg)
+            if list("active").isEmpty { Text(t("admin_nothing")).font(.ui(12)).foregroundColor(Theme.muted) } else { AdminActiveChart(days: list("active")) }
         }
         Panel {
-            Text(t("admin_devices")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            Text(t("admin_devices")).font(.ui(15, .bold)).foregroundColor(Theme.fg)
             ForEach(Array(list("byDevice").enumerated()), id: \.offset) { _, d in useRow(d["device"] as? String ?? "", t("admin_use_n", "\(iv(d["n"]))", "\(iv(d["users"]))")) }
         }
         Panel {
-            Text(t("admin_top")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            Text(t("admin_top")).font(.ui(15, .bold)).foregroundColor(Theme.fg)
             ForEach(Array(list("top").prefix(20).enumerated()), id: \.offset) { _, d in useRow(d["key"] as? String ?? "", t("admin_use_n", "\(iv(d["n"]))", "\(iv(d["users"]))")) }
         }
         Panel {
-            Text(t("admin_games")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            Text(t("admin_games")).font(.ui(15, .bold)).foregroundColor(Theme.fg)
             ForEach(Array(list("games").enumerated()), id: \.offset) { _, d in
                 let gm = d["game"] as? String ?? ""
                 useRow(gm == "lmu" ? "Le Mans Ultimate" : gm == "iracing" ? "iRacing" : gm, t("admin_use_n", "\(iv(d["n"]))", "\(iv(d["users"]))"))
             }
         }
         Panel {
-            Text(t("admin_versions")).font(.subheadline.bold()).foregroundColor(Theme.fg)
+            Text(t("admin_versions")).font(.ui(15, .bold)).foregroundColor(Theme.fg)
             ForEach(Array(list("versions").enumerated()), id: \.offset) { _, d in useRow(d["v"] as? String ?? "", t("admin_devices_n", "\(iv(d["devices"]))")) }
         }
     }
 
     private func useRow(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).font(.caption.monospaced()).foregroundColor(Theme.fg).lineLimit(1)
+            Text(label).font(.mono(12)).foregroundColor(Theme.fg).lineLimit(1)
             Spacer()
-            Text(value).font(.caption).foregroundColor(Theme.muted)
+            Text(value).font(.ui(12)).foregroundColor(Theme.muted)
         }
     }
 
@@ -5090,22 +5144,22 @@ struct AdminView: View {
         let ready = m["ready"] as? Bool ?? false
         let g = x["config"] as? [String: Any] ?? [:]
         let pat = g["patreon"] as? Bool ?? false
-        Text(t("admin_mail") + " · " + (ready ? t("admin_mail_ok") + " (" + (m["via"] as? String ?? "") + ")" : t("admin_mail_off"))).font(.subheadline.bold()).foregroundColor(ready ? Theme.good : Theme.bad)
-        Text(t("admin_mail_sub")).font(.caption).foregroundColor(Theme.muted)
-        Text(m["from"] as? String ?? "").font(.caption).foregroundColor(Theme.muted)
-        Text(t("admin_mail_last", dayTime((m["lastOk"] as? NSNumber)?.doubleValue ?? 0))).font(.caption).foregroundColor(Theme.muted)
+        Text(t("admin_mail") + " · " + (ready ? t("admin_mail_ok") + " (" + (m["via"] as? String ?? "") + ")" : t("admin_mail_off"))).font(.ui(15, .bold)).foregroundColor(ready ? Theme.good : Theme.bad)
+        Text(t("admin_mail_sub")).font(.ui(12)).foregroundColor(Theme.muted)
+        Text(m["from"] as? String ?? "").font(.ui(12)).foregroundColor(Theme.muted)
+        Text(t("admin_mail_last", dayTime((m["lastOk"] as? NSNumber)?.doubleValue ?? 0))).font(.ui(12)).foregroundColor(Theme.muted)
         if let e = m["lastError"] as? [String: Any] {
-            Text(t("admin_mail_err") + " · " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.bad)
+            Text(t("admin_mail_err") + " · " + ["message", "reply", "status", "body"].compactMap { e[$0].map { "\($0)" } }.filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.bad)
         }
-        Text(pat ? t("admin_patreon_ok") : t("admin_patreon_off")).font(.caption).foregroundColor(pat ? Theme.good : Theme.bad)
+        Text(pat ? t("admin_patreon_ok") : t("admin_patreon_off")).font(.ui(12)).foregroundColor(pat ? Theme.good : Theme.bad)
         // the tools: the coach models learn again, the blocked sign-ins open again
         Group {
             Divider().padding(.vertical, 4)
-            Text(t("admin_tools_t")).font(.subheadline.bold())
-            Button(t("admin_rebuild")) { Task { try? await account.adminTool("models"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
-            Text(t("admin_rebuild_sub")).font(.caption).foregroundColor(Theme.muted)
-            Button(t("admin_unlock", "\(iv(c["authFails"]))")) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.caption.bold()).padding(.top, 4)
-            Text(t("admin_unlock_sub")).font(.caption).foregroundColor(Theme.muted)
+            Text(t("admin_tools_t")).font(.ui(15, .bold))
+            Button(t("admin_rebuild")) { Task { try? await account.adminTool("models"); await load() } }.foregroundColor(Theme.accent).font(.ui(12, .bold))
+            Text(t("admin_rebuild_sub")).font(.ui(12)).foregroundColor(Theme.muted)
+            Button(t("admin_unlock", "\(iv(c["authFails"]))")) { Task { try? await account.adminTool("unlock"); await load() } }.foregroundColor(Theme.accent).font(.ui(12, .bold)).padding(.top, 4)
+            Text(t("admin_unlock_sub")).font(.ui(12)).foregroundColor(Theme.muted)
         }
     }
 
@@ -5113,10 +5167,10 @@ struct AdminView: View {
     @ViewBuilder private func coachHead(_ x: [String: Any]) -> some View {
         let tot = x["totals"] as? [String: Any] ?? [:]
         let conf = x["confidence"] as? Bool ?? false
-        Text(t("admin_coach_totals", "\(iv(tot["tips"]))", "\(iv(tot["scored"]))", "\(iv(tot["rated"]))", "\(iv(tot["drivers"]))", "\(iv(tot["week"]))")).font(.caption.bold()).foregroundColor(Theme.fg)
-        Toggle(t("admin_coach_conf"), isOn: Binding(get: { conf }, set: { on in Task { try? await account.adminCoachConfidence(on); await load() } })).font(.subheadline)
-        Text(t("admin_coach_conf_sub")).font(.caption).foregroundColor(Theme.muted)
-        Text(t("admin_coach_off_sub")).font(.caption).foregroundColor(Theme.muted).padding(.top, 4)
+        Text(t("admin_coach_totals", "\(iv(tot["tips"]))", "\(iv(tot["scored"]))", "\(iv(tot["rated"]))", "\(iv(tot["drivers"]))", "\(iv(tot["week"]))")).font(.ui(12, .bold)).foregroundColor(Theme.fg)
+        Toggle(t("admin_coach_conf"), isOn: Binding(get: { conf }, set: { on in Task { try? await account.adminCoachConfidence(on); await load() } })).font(.ui(15))
+        Text(t("admin_coach_conf_sub")).font(.ui(12)).foregroundColor(Theme.muted)
+        Text(t("admin_coach_off_sub")).font(.ui(12)).foregroundColor(Theme.muted).padding(.top, 4)
     }
 
     /// one bucket: a kind of tip on corners of one speed, its cases, gains and losses, the thumbs, and its off switch
@@ -5130,13 +5184,13 @@ struct AdminView: View {
         let thumbs: String = th.map { " · 👍 \(iv($0["up"])) 👎 \(iv($0["down"]))" } ?? ""
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.bold()).foregroundColor(isOff ? Theme.bad : Theme.fg)
-                Text(t("admin_coach_line", "\(iv(b["n"]))", "\(iv(b["win"]))", "\(iv(b["loss"]))") + thumbs + String(format: " · w %.2f", w)).font(.caption).foregroundColor(Theme.muted)
+                Text(title).font(.ui(15, .bold)).foregroundColor(isOff ? Theme.bad : Theme.fg)
+                Text(t("admin_coach_line", "\(iv(b["n"]))", "\(iv(b["win"]))", "\(iv(b["loss"]))") + thumbs + String(format: " · w %.2f", w)).font(.ui(12)).foregroundColor(Theme.muted)
             }
             Spacer()
             if !cls.isEmpty {
                 Button(t(isOff ? "admin_coach_on" : "admin_coach_off")) { Task { try? await account.adminCoachOff(kind, cls, !isOff); await load() } }
-                    .foregroundColor(isOff ? Theme.accent : Theme.bad).font(.caption.bold())
+                    .foregroundColor(isOff ? Theme.accent : Theme.bad).font(.ui(12, .bold))
             }
         }
     }
@@ -5147,21 +5201,21 @@ struct AdminView: View {
         let who: String = ["nick", "display", "email"].compactMap { x[$0] as? String }.first { !$0.isEmpty } ?? "—"
         let at = (x["at"] as? NSNumber)?.doubleValue ?? (x["created"] as? NSNumber)?.doubleValue ?? 0
         let meta: String = ([who] + ["device", "v", "view"].compactMap { x[$0] as? String }.filter { !$0.isEmpty }).joined(separator: " · ") + " · " + dayTime(at)
-        if (1...5).contains(r) { Text(String(repeating: "★", count: r) + String(repeating: "☆", count: 5 - r)).font(.subheadline).foregroundColor(Theme.accent) }
-        Text(x["text"] as? String ?? "").font(.subheadline).foregroundColor(Theme.fg).textSelection(.enabled)
-        Text(meta).font(.caption2).foregroundColor(Theme.muted)
+        if (1...5).contains(r) { Text(String(repeating: "★", count: r) + String(repeating: "☆", count: 5 - r)).font(.ui(15)).foregroundColor(Theme.accent) }
+        Text(x["text"] as? String ?? "").font(.ui(15)).foregroundColor(Theme.fg).textSelection(.enabled)
+        Text(meta).font(.ui(11)).foregroundColor(Theme.muted)
         // the driver's thread with Support, to answer them there
         if let acc = x["accountId"] as? String, !acc.isEmpty {
-            Button(t("sup_open_chat")) { account.openSupport(acc, nick: who) }.font(.caption.bold()).foregroundColor(Theme.accent)
+            Button(t("sup_open_chat")) { account.openSupport(acc, nick: who) }.font(.ui(12, .bold)).foregroundColor(Theme.accent)
         }
     }
 
     @ViewBuilder private func sessionRow(_ x: [String: Any]) -> some View {
         let str = { (k: String) in x[k] as? String ?? "" }
         let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
-        Text(str("track") + (str("trackConfig").isEmpty ? "" : " · " + str("trackConfig"))).font(.subheadline.bold()).foregroundColor(Theme.fg)
-        Text(str("car") + " · " + kindText(str("kind")) + " · " + t("laps_n", int("laps"))).font(.caption).foregroundColor(Theme.muted)
-        Text(day((x["started"] as? NSNumber)?.doubleValue ?? 0) + " · " + str("who")).font(.caption).foregroundColor(Theme.muted)
+        Text(str("track") + (str("trackConfig").isEmpty ? "" : " · " + str("trackConfig"))).font(.ui(15, .bold)).foregroundColor(Theme.fg)
+        Text(str("car") + " · " + kindText(str("kind")) + " · " + t("laps_n", int("laps"))).font(.ui(12)).foregroundColor(Theme.muted)
+        Text(day((x["started"] as? NSNumber)?.doubleValue ?? 0) + " · " + str("who")).font(.ui(12)).foregroundColor(Theme.muted)
     }
 
     @ViewBuilder private func blockedRow(_ x: [String: Any]) -> some View {
@@ -5170,9 +5224,9 @@ struct AdminView: View {
         let a = x["account"] as? [String: Any], bl = x["blocked"] as? Bool ?? false
         let who: String = (a?["display"] as? String) ?? (x["net"] as? String) ?? "—"
         let title: String = str("kind") + " · " + who + (bl ? " · " + t("admin_is_blocked") : "")
-        Text(title).font(.subheadline.bold()).foregroundColor(bl ? Theme.bad : Theme.fg)
-        Text(t("admin_tries", "\(int("n"))")).font(.caption).foregroundColor(Theme.muted)
-        Button(t("admin_unblock")) { Task { try? await account.adminUnlock("k", str("k")); await load() } }.foregroundColor(Theme.accent).font(.caption.bold())
+        Text(title).font(.ui(15, .bold)).foregroundColor(bl ? Theme.bad : Theme.fg)
+        Text(t("admin_tries", "\(int("n"))")).font(.ui(12)).foregroundColor(Theme.muted)
+        Button(t("admin_unblock")) { Task { try? await account.adminUnlock("k", str("k")); await load() } }.foregroundColor(Theme.accent).font(.ui(12, .bold))
     }
 
     @ViewBuilder private func userRow(_ x: [String: Any]) -> some View {
@@ -5184,17 +5238,17 @@ struct AdminView: View {
         let driverGames: [String] = x["driverGames"] is String ? str("driverGames").split(separator: ",").map(String.init).filter { !$0.isEmpty } : (int("driverLinked") == 1 ? ["iracing"] : [])
         let ms0 = (x["memberSince"] as? NSNumber)?.doubleValue ?? 0, ms = ms0 > 0 ? ms0 : ((x["created"] as? NSNumber)?.doubleValue ?? 0)
         let name: String = str("display") + ((x["admin"] as? Bool ?? false) ? " · Admin" : "")
-        Text(name).font(.subheadline.bold()).foregroundColor(Theme.fg)
-        Text(str("id")).font(.caption2.monospaced()).foregroundColor(Theme.muted).textSelection(.enabled)
-        Text(t("admin_since", day(ms)) + (ms0 > 0 ? " ✎" : "")).font(.caption).foregroundColor(Theme.muted)
-        Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.caption).foregroundColor(Theme.muted)
+        Text(name).font(.ui(15, .bold)).foregroundColor(Theme.fg)
+        Text(str("id")).font(.mono(11)).foregroundColor(Theme.muted).textSelection(.enabled)
+        Text(t("admin_since", day(ms)) + (ms0 > 0 ? " ✎" : "")).font(.ui(12)).foregroundColor(Theme.muted)
+        Text(t("admin_user_line", "\(int("sessions"))", "\(int("laps"))", "\(int("guests"))")).font(.ui(12)).foregroundColor(Theme.muted)
         // what it uses (the analytics): when it was last seen, its devices, its top features
         if let use = x["_use"] as? [String: Any] {
             let devs: String = (use["devices"] as? [String] ?? []).joined(separator: ", ")
             let seen: String = t("admin_last_seen", dayTime((use["lastSeen"] as? NSNumber)?.doubleValue ?? 0)) + (devs.isEmpty ? "" : " · " + devs) + " · " + t("admin_uses", "\(iv(use["n"]))")
             let top: String = (use["top"] as? [[String: Any]] ?? []).prefix(5).map { ($0["key"] as? String ?? "") + " \(iv($0["n"]))" }.joined(separator: " · ")
-            Text(seen).font(.caption).foregroundColor(Theme.accent)
-            if !top.isEmpty { Text(top).font(.caption2.monospaced()).foregroundColor(Theme.muted) }
+            Text(seen).font(.ui(12)).foregroundColor(Theme.accent)
+            if !top.isEmpty { Text(top).font(.mono(11)).foregroundColor(Theme.muted) }
         }
         // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it
         ScrollView(.horizontal, showsIndicators: false) {
@@ -5208,33 +5262,33 @@ struct AdminView: View {
                 Button(t("admin_link_guest")) { linkName = ""; linking = str("id") }
                 ForEach(guestLinks, id: \.self) { g in Button(t("admin_unlink_guest", g)) { Task { try? await account.adminAccount(str("id"), "unlink-guest", name: g); await load() } } }
             }
-            .foregroundColor(Theme.accent).font(.caption.bold())
+            .foregroundColor(Theme.accent).font(.ui(12, .bold))
         }
-        if !guestLinks.isEmpty { Text(t("admin_guest_linked", guestLinks.joined(separator: ", "))).font(.caption).foregroundColor(Theme.accent) }
+        if !guestLinks.isEmpty { Text(t("admin_guest_linked", guestLinks.joined(separator: ", "))).font(.ui(12)).foregroundColor(Theme.accent) }
         HStack(spacing: 14) {
-            NavigationLink(value: Route.profile("acct:" + str("id"))) { Text(t("profile")) }.foregroundColor(Theme.accent).font(.caption.bold())
-            Button(t("admin_set_since")) { since = SinceEdit(id: str("id"), date: Date(timeIntervalSince1970: ms / 1000), custom: ms0 > 0) }.foregroundColor(Theme.accent).font(.caption.bold())
+            NavigationLink(value: Route.profile("acct:" + str("id"))) { Text(t("profile")) }.foregroundColor(Theme.accent).font(.ui(12, .bold))
+            Button(t("admin_set_since")) { since = SinceEdit(id: str("id"), date: Date(timeIntervalSince1970: ms / 1000), custom: ms0 > 0) }.foregroundColor(Theme.accent).font(.ui(12, .bold))
         }
         let sup = int("supporter") == 1
         let supLabel: String = (sup ? "♥ " + t("supporter_remove") : t("supporter_give")) + (sup && int("supporterHidden") == 1 ? " · " + t("supporter_hidden_by") : "")
         Button(supLabel) {
             Task { try? await account.adminSupporter(str("id"), !sup); await load() }
-        }.foregroundColor(sup ? Color(red: 1, green: 0.56, blue: 0.75) : Theme.accent).font(.caption.bold())
+        }.foregroundColor(sup ? Color(red: 1, green: 0.56, blue: 0.75) : Theme.accent).font(.ui(12, .bold))
         if !(x["admin"] as? Bool ?? false) {
-            Button(t("admin_delete_account")) { confirmDelete = (str("id"), str("display")) }.foregroundColor(Theme.bad).font(.caption.bold())
+            Button(t("admin_delete_account")) { confirmDelete = (str("id"), str("display")) }.foregroundColor(Theme.bad).font(.ui(12, .bold))
         }
     }
 
     @ViewBuilder private func itemRow(_ x: [String: Any]) -> some View {
         let str = { (k: String) in x[k] as? String ?? "" }
         let int = { (k: String) in (x[k] as? NSNumber)?.intValue ?? 0 }
-        Text(str("track") + " · " + str("car")).font(.subheadline.bold()).foregroundColor(Theme.fg)
-        Text((str("kind") == "laps" ? t("lap") : t("race")) + " · " + lapTime(x["time"] as? Double)).font(.caption).foregroundColor(Theme.muted)
-        Text(t("admin_shown_as", str("shownAs")) + (int("anon") == 1 ? " 🔒" : "")).font(.caption).foregroundColor(Theme.fg)
-        Text(t("admin_real", str("realUploader"))).font(.caption.bold()).foregroundColor(Theme.fg)
+        Text(str("track") + " · " + str("car")).font(.ui(15, .bold)).foregroundColor(Theme.fg)
+        Text((str("kind") == "laps" ? t("lap") : t("race")) + " · " + lapTime(x["time"] as? Double)).font(.ui(12)).foregroundColor(Theme.muted)
+        Text(t("admin_shown_as", str("shownAs")) + (int("anon") == 1 ? " 🔒" : "")).font(.ui(12)).foregroundColor(Theme.fg)
+        Text(t("admin_real", str("realUploader"))).font(.ui(12, .bold)).foregroundColor(Theme.fg)
         Button(t("delete")) {
             Task { try? await account.adminDelete(str("kind"), str("id")); await load() }
-        }.foregroundColor(Theme.bad).font(.caption.bold())
+        }.foregroundColor(Theme.bad).font(.ui(12, .bold))
     }
 
     private func load() async {
@@ -5297,7 +5351,7 @@ struct AdminActiveChart: View {
                 })
             }
             .frame(height: 110)
-            if n > 0 { Text((days[i]["day"] as? String ?? "") + " · \(users[i])").font(.caption.bold()).foregroundColor(Theme.fg) }
+            if n > 0 { Text((days[i]["day"] as? String ?? "") + " · \(users[i])").font(.ui(12, .bold)).foregroundColor(Theme.fg) }
         }
     }
 }
@@ -5314,8 +5368,8 @@ struct DrinksView: View {
     var body: some View {
         Screen(title: t("drinks")) {
             StatusPill(text: live.pcOnline ? t("pc_online") : live.link == .connecting ? t("connecting") : t("pc_offline"), color: live.pcOnline ? Theme.good : Theme.muted)
-            if let m = live.message { Text(t(m)).font(.caption).foregroundColor(Theme.bad) }
-            Panel { Text(t("drinks_note")).font(.caption).foregroundColor(Theme.muted) }
+            if let m = live.message { Text(t(m)).font(.ui(12)).foregroundColor(Theme.bad) }
+            Panel { Text(t("drinks_note")).font(.ui(12)).foregroundColor(Theme.muted) }
             if account.demo {
                 EmptyNote(text: t("drinks_demo"))
             } else if let d = live.drinks {
@@ -5355,14 +5409,14 @@ struct DrinksView: View {
 
     @ViewBuilder private func controls(_ d: Drinks) -> some View {
         Panel {
-            Toggle(t("drinks_on"), isOn: Binding(get: { d.on }, set: { live.setDrinks(on: $0, guest: d.guest, guestAuto: d.guestAuto) })).font(.subheadline.bold())
-            Text(t("drinks_now", d.driver.isEmpty ? t("you") : d.driver)).font(.subheadline.bold()).foregroundColor(d.on ? Theme.accent : Theme.muted)
+            Toggle(t("drinks_on"), isOn: Binding(get: { d.on }, set: { live.setDrinks(on: $0, guest: d.guest, guestAuto: d.guestAuto) })).font(.ui(15, .bold))
+            Text(t("drinks_now", d.driver.isEmpty ? t("you") : d.driver)).font(.ui(15, .bold)).foregroundColor(d.on ? Theme.accent : Theme.muted)
         }
         if d.on {
             Panel {
-                Toggle(t("drinks_auto"), isOn: Binding(get: { d.guestAuto }, set: { live.setDrinks(on: true, guest: d.guest, guestAuto: $0) })).font(.subheadline)
+                Toggle(t("drinks_auto"), isOn: Binding(get: { d.guestAuto }, set: { live.setDrinks(on: true, guest: d.guest, guestAuto: $0) })).font(.ui(15))
                 if !d.guestAuto {
-                    if let n = taken { Text(t("name_taken_drinks", n)).font(.caption).foregroundColor(Theme.bad) }
+                    if let n = taken { Text(t("name_taken_drinks", n)).font(.ui(12)).foregroundColor(Theme.bad) }
                     TextField(t("drinks_name"), text: $name).padding(10).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 6))
                     HStack(spacing: 8) {
                         Button(t("drinks_set")) {
@@ -5389,7 +5443,7 @@ struct DrinksView: View {
                         ForEach(d.guests, id: \.self) { g in
                             let sel = g.caseInsensitiveCompare(d.guest) == .orderedSame
                             Button { live.setDrinks(on: true, guest: g, guestAuto: false) } label: {
-                                Text(g).font(.subheadline).padding(.horizontal, 12).padding(.vertical, 6)
+                                Text(g).font(.ui(15)).padding(.horizontal, 12).padding(.vertical, 6)
                                     .background(sel ? Theme.accent : Theme.surface2).foregroundColor(sel ? Theme.ink : Theme.fg).clipShape(Capsule())
                             }
                         }
@@ -5398,7 +5452,7 @@ struct DrinksView: View {
                 Panel {
                     ForEach(d.guests, id: \.self) { g in
                         HStack {
-                            Text(g).font(.subheadline.bold())
+                            Text(g).font(.ui(15, .bold))
                             Spacer()
                             Button { editing = g; newName = g } label: { Image(systemName: "pencil") }.accessibilityLabel(t("drinks_rename")).foregroundColor(Theme.muted)
                             Button { forgetting = g } label: { Image(systemName: "xmark") }.accessibilityLabel(t("drinks_forget")).foregroundColor(Theme.muted).padding(.leading, 12)
@@ -5424,12 +5478,12 @@ struct SettingsView: View {
         Screen(title: t("account_tab")) {
             SectionLabel(text: t("account"))
             Panel {
-                HStack(spacing: 6) { Text(account.display.isEmpty ? t("driver") : account.display).font(.title3.weight(.black)).lineLimit(1); MyBadges() }
+                HStack(spacing: 6) { Text(account.display.isEmpty ? t("driver") : account.display).font(.ui(20, .black)).lineLimit(1); MyBadges() }
                 HStack {
-                    Text(showMail ? account.email : String(repeating: "•", count: min(14, max(8, account.email.count)))).font(.caption).foregroundColor(Theme.muted)
-                    Button(t(showMail ? "hide" : "show")) { showMail.toggle() }.font(.caption.bold()).foregroundColor(Theme.accent)
+                    Text(showMail ? account.email : String(repeating: "•", count: min(14, max(8, account.email.count)))).font(.ui(12)).foregroundColor(Theme.muted)
+                    Button(t(showMail ? "hide" : "show")) { showMail.toggle() }.font(.ui(12, .bold)).foregroundColor(Theme.accent)
                 }
-                Text(account.verified ? t("verified") : t("not_verified")).font(.caption2).foregroundColor(account.verified ? Theme.good : Theme.accent)
+                Text(account.verified ? t("verified") : t("not_verified")).font(.ui(11)).foregroundColor(account.verified ? Theme.good : Theme.accent)
             }
             TwoFactorPanel()
             NavigationLink(value: Route.profile(nil)) { ActionRow(title: t("my_profile").uppercased(), sub: t("my_profile_sub"), icon: "person.crop.circle") }
@@ -5447,12 +5501,12 @@ struct SettingsView: View {
                     HStack {
                         Image(systemName: d.device.localizedCaseInsensitiveContains("iphone") || d.device.localizedCaseInsensitiveContains("android") ? "iphone" : "desktopcomputer").foregroundColor(Theme.muted)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(d.current ? t("this_device") : (d.device.isEmpty ? "—" : d.device)).font(.subheadline.bold())
-                            Text(dayTime(d.lastSeen)).font(.caption2).foregroundColor(Theme.muted)
+                            Text(d.current ? t("this_device") : (d.device.isEmpty ? "—" : d.device)).font(.ui(15, .bold))
+                            Text(dayTime(d.lastSeen)).font(.ui(11)).foregroundColor(Theme.muted)
                         }
                         Spacer()
                         if !d.current {
-                            Button(t("sign_out_device")) { revoke(d.id) }.font(.caption).foregroundColor(Theme.bad)
+                            Button(t("sign_out_device")) { revoke(d.id) }.font(.ui(12)).foregroundColor(Theme.bad)
                         }
                     }
                 }
@@ -5483,8 +5537,8 @@ struct SettingsView: View {
             if account.realAdmin {
                 Panel {
                     // admin mode, off by default (the app as everyone sees it); on, what is for admins and in development shows
-                    Toggle(t("admin_mode"), isOn: $account.adminMode).font(.subheadline.bold())
-                    Text(t("admin_mode_sub")).font(.caption).foregroundColor(Theme.muted)
+                    Toggle(t("admin_mode"), isOn: $account.adminMode).font(.ui(15, .bold))
+                    Text(t("admin_mode_sub")).font(.ui(12)).foregroundColor(Theme.muted)
                 }
             }
             if account.admin {
@@ -5494,17 +5548,17 @@ struct SettingsView: View {
                 NavigationLink { DrinksView() } label: { ActionRow(title: t("drinks").uppercased(), sub: t("drinks_sub"), icon: "wineglass") }
                     .buttonStyle(.plain)
                 Panel {
-                    Toggle(t("demo_mode"), isOn: $account.demo).font(.subheadline.bold())
-                    Text(t("demo_note")).font(.caption).foregroundColor(Theme.muted)
+                    Toggle(t("demo_mode"), isOn: $account.demo).font(.ui(15, .bold))
+                    Text(t("demo_note")).font(.ui(12)).foregroundColor(Theme.muted)
                 }
             }
             Button {
                 Task { await account.logout() }
             } label: {
-                Text(t("sign_out").uppercased()).font(.headline.bold()).frame(maxWidth: .infinity).padding(12)
+                Text(t("sign_out").uppercased()).font(.ui(17, .bold)).frame(maxWidth: .infinity).padding(12)
                     .background(Theme.surface2).foregroundColor(Theme.bad).clipShape(RoundedRectangle(cornerRadius: 8))
             }
-            Text(t("version", version)).font(.caption2).foregroundColor(Theme.muted)
+            Text(t("version", version)).font(.ui(11)).foregroundColor(Theme.muted)
         }
         .task { if devices.data == nil { await devices.load { try await account.devices() } } }
     }
@@ -5525,8 +5579,8 @@ struct StatTile: View {
     var body: some View {
         Panel {
             VStack(spacing: 2) {
-                Text(value).font(.system(.title3, design: .monospaced).weight(.black)).foregroundColor(tint)
-                Text(label).font(.caption2).foregroundColor(Theme.muted).multilineTextAlignment(.center).lineLimit(2)
+                Text(value).font(.mono(20, .black)).foregroundColor(tint)
+                Text(label).font(.ui(11)).foregroundColor(Theme.muted).multilineTextAlignment(.center).lineLimit(2)
             }.frame(maxWidth: .infinity)
         }
     }
@@ -5547,25 +5601,25 @@ struct TrackNotesPanel: View {
         let n = account.trackNotes[trackId]
         SectionLabel(text: t("my_notes"))
         Panel {
-            if let n, !n.general.isEmpty { Text(n.general).font(.subheadline).fixedSize(horizontal: false, vertical: true) }
-            else if n == nil || n!.corners.isEmpty { Text(t("no_track_notes")).font(.caption).foregroundColor(Theme.muted) }
+            if let n, !n.general.isEmpty { Text(n.general).font(.ui(15)).fixedSize(horizontal: false, vertical: true) }
+            else if n == nil || n!.corners.isEmpty { Text(t("no_track_notes")).font(.ui(12)).foregroundColor(Theme.muted) }
             ForEach(n?.corners ?? [], id: \.self) { c in
                 HStack(alignment: .top, spacing: 8) {
-                    Text(c.name.isEmpty ? t("corner_n", c.n) : c.name).font(.caption.bold()).foregroundColor(Theme.accent).frame(minWidth: 64, alignment: .leading)
-                    Text(c.note).font(.caption).fixedSize(horizontal: false, vertical: true)
+                    Text(c.name.isEmpty ? t("corner_n", c.n) : c.name).font(.ui(12, .bold)).foregroundColor(Theme.accent).frame(minWidth: 64, alignment: .leading)
+                    Text(c.note).font(.ui(12)).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }.padding(.top, 4)
             }
             Button(t(n?.general.isEmpty ?? true ? "write_note" : "edit_note")) { text = n?.general ?? ""; error = nil; editing = true }
-                .font(.caption.bold()).foregroundColor(Theme.accent).padding(.top, 6)
+                .font(.ui(12, .bold)).foregroundColor(Theme.accent).padding(.top, 6)
         }
         .onAppear { account.loadTrackNotes() }
         .sheet(isPresented: $editing) {
             NavigationStack {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(track).font(.headline)
+                    Text(track).font(.ui(17, .semibold))
                     TextEditor(text: $text).scrollContentBackground(.hidden).frame(minHeight: 180).padding(6).background(Theme.surface).cornerRadius(10)
-                    if let error { Text(error).font(.caption).foregroundColor(Theme.bad) }
+                    if let error { Text(error).font(.ui(12)).foregroundColor(Theme.bad) }
                     Spacer()
                 }
                 .padding()
@@ -5598,8 +5652,8 @@ struct TrackNotesList: View {
             ForEach(all) { n in
                 NavigationLink(value: Route.track(TrackRef(id: n.trackId, name: n.track))) {
                     Panel {
-                        Text(n.track.isEmpty ? "#\(n.trackId)" : n.track).font(.subheadline.bold()).foregroundColor(Theme.fg).lineLimit(1)
-                        Text(n.general.isEmpty ? t("corner_notes_n", n.corners.count) : n.general).font(.caption).foregroundColor(Theme.muted).lineLimit(2)
+                        Text(n.track.isEmpty ? "#\(n.trackId)" : n.track).font(.ui(15, .bold)).foregroundColor(Theme.fg).lineLimit(1)
+                        Text(n.general.isEmpty ? t("corner_notes_n", n.corners.count) : n.general).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(2)
                     }
                 }.buttonStyle(.plain)
             }

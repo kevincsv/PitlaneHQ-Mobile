@@ -64,7 +64,7 @@ struct LapPill: View {
         let n = Int(lapDiff.rounded())
         if abs(lapDiff) >= 0.5 && n != 0 {
             let col = n > 0 ? Theme.bad : Theme.blue
-            Text((n > 0 ? "+\(n)" : "−\(-n)") + "L").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(col)
+            Text((n > 0 ? "+\(n)" : "−\(-n)") + "L").font(.mono(9, .bold)).foregroundColor(col)
                 .padding(.horizontal, 4).padding(.vertical, 1).overlay(Capsule().stroke(col.opacity(0.6), lineWidth: 1))
         }
     }
@@ -77,11 +77,11 @@ struct LiveName: View {
     var body: some View {
         HStack(spacing: 4) {
             if !r.me, let d = r.d, let n = account.noteFor(d.key, d.name), !n.tag.isEmpty { TagIcon(tag: n.tag).frame(width: 12, height: 12) }
-            Text(r.d?.name ?? "#\(r.idx)").font(.system(size: 12, weight: r.me ? .black : .regular)).foregroundColor(r.me ? Theme.accent : Theme.fg).lineLimit(1)
+            Text(r.d?.name ?? "#\(r.idx)").font(.ui(12, r.me ? .black : .regular)).foregroundColor(r.me ? Theme.accent : Theme.fg).lineLimit(1)
             if r.pen { PenaltyClock(size: 12) }
-            if r.d?.ai ?? false { Text(t("ai_driver")).font(.system(size: 9, weight: .bold)).foregroundColor(Theme.blue) }
+            if r.d?.ai ?? false { Text(t("ai_driver")).font(.ui(9, .bold)).foregroundColor(Theme.blue) }
             if !r.me { LapPill(lapDiff: r.lapDiff) }
-            if r.pit { Text(t("lt_pit")).font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted) }
+            if r.pit { Text(t("lt_pit")).font(.ui(9, .bold)).foregroundColor(Theme.muted) }
         }
     }
 }
@@ -139,8 +139,8 @@ struct LiveTopView: View {
         let title: String = ses.map { $0.track.isEmpty ? t("tab_telemetry") : $0.track } ?? t("tab_telemetry")
         VStack(spacing: 10) {
             Panel {
-                Text(title).font(.headline.weight(.black)).lineLimit(1)
-                if !kind.isEmpty { Text(kind).font(.caption).foregroundColor(Theme.muted) }
+                Text(title).font(.ui(17, .black)).lineLimit(1)
+                if !kind.isEmpty { Text(kind).font(.ui(12)).foregroundColor(Theme.muted) }
                 HStack(spacing: 8) {
                     Metric(label: t("lt_position"), value: posText, sub: lapSub)
                     Metric(label: "Delta", value: dltText, color: dltColor, sub: bestSub)
@@ -182,7 +182,7 @@ struct LiveDeltaBarView: View {
                     }
                 }
                 .frame(height: 14)
-                Text(d.map { signedS($0, 2) } ?? "—").font(.system(size: 16, weight: .black, design: .monospaced))
+                Text(d.map { signedS($0, 2) } ?? "—").font(.mono(16, .black))
                     .foregroundColor(d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad).frame(minWidth: 64, alignment: .trailing)
             }
         }
@@ -196,17 +196,17 @@ struct LiveRelativeView: View {
         let rows = live.relative(3)
         Panel {
             SectionLabel(text: t("lt_relative").uppercased())
-            if rows.isEmpty { Text(t("lt_no_cars")).font(.caption).foregroundColor(Theme.muted) }
+            if rows.isEmpty { Text(t("lt_no_cars")).font(.ui(12)).foregroundColor(Theme.muted) }
             ForEach(rows) { r in
                 HStack(spacing: 4) {
                     Text(r.pos > 0 ? "P\(r.pos)" : "").foregroundColor(Theme.muted).frame(width: 34, alignment: .leading)
                     Text(r.d.map { "#" + $0.number } ?? "").foregroundColor(Theme.muted).frame(width: 36, alignment: .leading)
                     LiveName(r: r)
                     Spacer()
-                    if let lic = r.d?.lic, !lic.isEmpty { Text(String(lic.split(separator: " ").first ?? "")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted) }
+                    if let lic = r.d?.lic, !lic.isEmpty { Text(String(lic.split(separator: " ").first ?? "")).font(.mono(10)).foregroundColor(Theme.muted) }
                     Text(r.me ? "—" : r.gap.map { signedS($0) } ?? "—").bold().frame(minWidth: 48, alignment: .trailing)
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(.mono(11))
                 .padding(.vertical, 4).padding(.horizontal, 4)
                 .background(r.me ? Theme.accent.opacity(0.12) : Color.clear).clipShape(RoundedRectangle(cornerRadius: 4))
             }
@@ -237,7 +237,7 @@ struct LiveStandingsView: View {
                     }
                 }
             }
-            if rows.isEmpty { Text(t("lt_no_cars")).font(.caption).foregroundColor(Theme.muted) }
+            if rows.isEmpty { Text(t("lt_no_cars")).font(.ui(12)).foregroundColor(Theme.muted) }
             if !rows.isEmpty {
                 HStack(spacing: 4) {
                     Text("P").frame(width: 30, alignment: .leading)
@@ -248,7 +248,7 @@ struct LiveStandingsView: View {
                     Text(t("best")).frame(width: 62, alignment: .leading)
                     Text(interval ? t("lm_int") : t("lt_gap")).frame(width: 44, alignment: .trailing)
                 }
-                .font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted)
+                .font(.mono(10)).foregroundColor(Theme.muted)
             }
             ForEach(Array(rows.enumerated()), id: \.element.id) { k, r in
                 HStack(spacing: 4) {
@@ -261,7 +261,7 @@ struct LiveStandingsView: View {
                     let gp: Double? = k == 0 ? nil : interval ? rows[k - 1].gap.flatMap { p in r.gap.map { $0 - p } } : r.gap.map { $0 - lead }
                     Text(k == 0 ? "—" : gp.map { String(format: "+%.1f", $0) } ?? "—").frame(width: 44, alignment: .trailing)
                 }
-                .font(.system(size: 11, design: .monospaced))
+                .font(.mono(11))
                 .padding(.vertical, 4)
                 .background(r.me ? Theme.accent.opacity(0.12) : Color.clear).clipShape(RoundedRectangle(cornerRadius: 4))
             }
@@ -293,8 +293,8 @@ struct LiveIncidentsView: View {
         let inc = live.num("PlayerCarMyIncidentCount").map { Int($0) }
         Panel {
             SectionLabel(text: t("lt_incident_log").uppercased())
-            Text(inc.map { "\($0)x" } ?? "—").font(.system(size: 30, weight: .black)).foregroundColor((inc ?? 0) >= 8 ? Theme.bad : Theme.fg)
-            if inc == 0 { Text(t("lt_clean")).font(.caption).foregroundColor(Theme.good) }
+            Text(inc.map { "\($0)x" } ?? "—").font(.ui(30, .black)).foregroundColor((inc ?? 0) >= 8 ? Theme.bad : Theme.fg)
+            if inc == 0 { Text(t("lt_clean")).font(.ui(12)).foregroundColor(Theme.good) }
         }
     }
 }
@@ -314,7 +314,7 @@ struct LiveMapView: View {
             if let lay = layout, key == tid, lay.0.count > 20 {
                 Canvas { ctx, size in draw(ctx, size, lay.0, lay.1) }.frame(height: 240)
             } else {
-                Text(tid > 0 ? t("lt_map_none") : t("lt_no_cars")).font(.caption).foregroundColor(Theme.muted)
+                Text(tid > 0 ? t("lt_map_none") : t("lt_no_cars")).font(.ui(12)).foregroundColor(Theme.muted)
             }
         }
         // the layouts and turns are per game: the one your PC reads
@@ -365,7 +365,7 @@ struct LiveMapView: View {
             let tmx = q1.x - q0.x, tmy = q1.y - q0.y, tm = max(1e-3, hypot(tmx, tmy))
             var qx = -tmy / tm, qy = tmx / tm
             if (q.x - size.width / 2) * qx + (q.y - size.height / 2) * qy < 0 { qx = -qx; qy = -qy }
-            ctx.draw(Text("\(ti + 1)").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted), at: CGPoint(x: q.x + qx * (w / 2 + 9), y: q.y + qy * (w / 2 + 9)))
+            ctx.draw(Text("\(ti + 1)").font(.ui(9, .bold)).foregroundColor(Theme.muted), at: CGPoint(x: q.x + qx * (w / 2 + 9), y: q.y + qy * (w / 2 + 9)))
         }
         // the cars: you on top, the others dimmed in the pits, laps up red and down blue
         let pct = live.arrays["CarIdxLapDistPct"] ?? [], laps = live.arrays["CarIdxLap"] ?? [], pit = live.arrays["CarIdxOnPitRoad"] ?? []
@@ -395,9 +395,9 @@ struct LiveTyresView: View {
         let has = ["LF", "RF", "LR", "RR"].contains { live.num($0 + "tempCM") != nil }
         Panel {
             SectionLabel(text: t("tab_tyres").uppercased())
-            Text(t("lt_tyres_note")).font(.caption).foregroundColor(Theme.muted).padding(.bottom, 6)
+            Text(t("lt_tyres_note")).font(.ui(12)).foregroundColor(Theme.muted).padding(.bottom, 6)
             if !has {
-                Text(t("lt_tyres_none")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("lt_tyres_none")).font(.ui(12)).foregroundColor(Theme.muted)
             } else {
                 HStack(spacing: 8) { tyre("LF", t("lt_fl")); tyre("RF", t("lt_fr")) }
                 HStack(spacing: 8) { tyre("LR", t("lt_rl")); tyre("RR", t("lt_rr")) }
@@ -428,15 +428,15 @@ struct LiveTyresView: View {
         let avg: Double? = temps.allSatisfy { $0 != nil } ? temps.compactMap { $0 }.reduce(0, +) / 3 : nil
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("\(c) · \(name)").font(.system(size: 10, weight: .bold)).foregroundColor(Theme.muted).lineLimit(1)
+                Text("\(c) · \(name)").font(.ui(10, .bold)).foregroundColor(Theme.muted).lineLimit(1)
                 Spacer()
-                Text(avg.map { String(format: "%.0f°", $0) } ?? "—").font(.system(size: 12, design: .monospaced))
+                Text(avg.map { String(format: "%.0f°", $0) } ?? "—").font(.mono(12))
             }
             HStack(spacing: 3) {
                 ForEach(0..<3, id: \.self) { k in
                     VStack(spacing: 0) {
-                        Text(temps[k].map { String(format: "%.0f", $0) } ?? "–").font(.system(size: 12, weight: .black))
-                        Text(zones[k].1).font(.system(size: 9))
+                        Text(temps[k].map { String(format: "%.0f", $0) } ?? "–").font(.ui(12, .black))
+                        Text(zones[k].1).font(.ui(9))
                     }
                     .foregroundColor(Theme.ink).frame(maxWidth: .infinity).padding(.vertical, 6)
                     .background(heat(temps[k])).clipShape(RoundedRectangle(cornerRadius: 4))
@@ -444,7 +444,7 @@ struct LiveTyresView: View {
             }
             HStack {
                 ForEach(0..<3, id: \.self) { k in
-                    Text(wear[k].map { "\(Int(($0 * 100).rounded()))%" } ?? "–").font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted)
+                    Text(wear[k].map { "\(Int(($0 * 100).rounded()))%" } ?? "–").font(.mono(10)).foregroundColor(Theme.muted)
                     if k < 2 { Spacer() }
                 }
             }
@@ -457,7 +457,7 @@ struct LiveTyresView: View {
                 }
                 .frame(height: 5)
             }
-            if let p = live.num(c + "coldPressure") { Text(t("lt_cold", String(format: "%.0f kPa", p))).font(.system(size: 10)).foregroundColor(Theme.muted) }
+            if let p = live.num(c + "coldPressure") { Text(t("lt_cold", String(format: "%.0f kPa", p))).font(.ui(10)).foregroundColor(Theme.muted) }
         }
         .padding(8).frame(maxWidth: .infinity).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
     }
@@ -472,7 +472,7 @@ struct LiveChip: View {
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(label).font(.system(size: 11, weight: .bold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 5)
+            Text(label).font(.ui(11, .bold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 5)
                 .background(on ? Theme.accent : Theme.surface2).foregroundColor(on ? Theme.bg : Theme.muted).clipShape(Capsule())
         }
     }
@@ -525,7 +525,7 @@ struct LapRowsView: View {
             var cur = Path(); cur.move(to: CGPoint(x: x(max(0, aN - 1)), y: 0)); cur.addLine(to: CGPoint(x: x(max(0, aN - 1)), y: size.height))
             ctx.stroke(cur, with: .color(Theme.fg.opacity(0.5)), lineWidth: 1)
             for (k, s) in [t("lr_speed"), t("lr_pedals"), "Delta", t("lr_gear")].enumerated() {
-                ctx.draw(Text(s).font(.system(size: 9, weight: .bold)).foregroundColor(Theme.muted), at: CGPoint(x: 4, y: top[k] + 3), anchor: .topLeading)
+                ctx.draw(Text(s).font(.ui(9, .bold)).foregroundColor(Theme.muted), at: CGPoint(x: 4, y: top[k] + 3), anchor: .topLeading)
             }
         }
         .frame(height: 250)
@@ -546,10 +546,10 @@ struct LiveTracesView: View {
                     Text("● " + t("lm_now")).foregroundColor(Theme.accent)
                     if let b { Text("● " + t("lm_my_best") + " " + lapTime(b.time)).foregroundColor(Theme.purple) }
                 }
-                .font(.system(size: 11, weight: .bold))
+                .font(.ui(11, .bold))
                 LapRowsView(a: a, b: b, upto: a.size - 1, total: total)
             } else {
-                Text(t("lm_wait_lap")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("lm_wait_lap")).font(.ui(12)).foregroundColor(Theme.muted)
             }
         }
     }
@@ -601,8 +601,8 @@ struct LiveCompareView: View {
                                     let e0 = k == cuts.count - 1 ? min(n - 1, c + (n - c) / 2) : (c + cuts[k + 1]) / 2
                                     let d: Double? = (e0 < a.size && e0 < b.size && s0 < e0) ? (a.t[e0] - a.t[s0]) - (b.t[e0] - b.t[s0]) : nil
                                     VStack(spacing: 1) {
-                                        Text("T\(k + 1)").font(.system(size: 10, weight: .bold)).foregroundColor(Theme.muted)
-                                        Text(d.map { signedS($0, 2) } ?? "·").font(.system(size: 11, design: .monospaced)).foregroundColor(d == nil ? Theme.muted : (d! <= 0 ? Theme.good : Theme.bad))
+                                        Text("T\(k + 1)").font(.ui(10, .bold)).foregroundColor(Theme.muted)
+                                        Text(d.map { signedS($0, 2) } ?? "·").font(.mono(11)).foregroundColor(d == nil ? Theme.muted : (d! <= 0 ? Theme.good : Theme.bad))
                                     }
                                     .padding(.horizontal, 8).padding(.vertical, 5).background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
                                 }
@@ -611,7 +611,7 @@ struct LiveCompareView: View {
                     }
                 }
             } else {
-                Text(t("lm_wait_cmp")).font(.caption).foregroundColor(Theme.muted)
+                Text(t("lm_wait_cmp")).font(.ui(12)).foregroundColor(Theme.muted)
             }
         }
         .task(id: "\(live.session?.trackId ?? 0)-\(live.source)") {
@@ -647,7 +647,7 @@ struct PosHistoryView: View {
                     Spacer()
                     Text("P\(h.last!.pos)").foregroundColor(Theme.accent).bold()
                 }
-                .font(.system(size: 10))
+                .font(.ui(10))
             }
         }
     }
