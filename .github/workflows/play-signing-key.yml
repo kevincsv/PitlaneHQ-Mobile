@@ -1,0 +1,51 @@
+name: Play signing key (one time)
+
+# Exports the key the app is already signed with (the ANDROID_KEYSTORE_* secrets) for Google Play App Signing, so the
+# app from Play and the APK from pitlanehq.app stay the same app. Run it once, by hand: in the Play Console
+# (Test and release → Setup → App signing → "Export and upload a key from Java keystore") download the encryption
+# public key and paste its whole text as the input. The result is a zip encrypted for Google (only Google can open
+# it), kept 1 day as this run's artifact: download it and upload it on that same Play Console page.
+
+on:
+  workflow_dispatch:
+    inputs:
+      encryption_key:
+        description: The Play Console's encryption public key (the whole text of encryption_public_key.pem)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Export the key for Play
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ENC_KEY: ${{ inputs.encryption_key }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$ANDROID_KEY_ALIAS" ]; then echo "::error::The ANDROID_KEYSTORE_BASE64 / ANDROID_KEY_ALIAS secrets are not set: there is no release key to export."; exit 1; fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          printf '%s\n' "$ENC_KEY" > "$RUNNER_TEMP/encryption_public_key.pem"
+          curl -fsSL -o "$RUNNER_TEMP/pepk.jar" https://www.gstatic.com/play-apps-publisher-rapid/signing-tool/prod/pepk.jar
+          mkdir -p out
+          java -jar "$RUNNER_TEMP/pepk.jar" --keystore="$RUNNER_TEMP/release.jks" --alias="$ANDROID_KEY_ALIAS" \
+            --keystore-pass="env:ANDROID_KEYSTORE_PASSWORD" --key-pass="env:ANDROID_KEY_PASSWORD" \
+            --output=out/play-signing-key.zip --include-cert --rsa-aes-encryption --encryption-key-path="$RUNNER_TEMP/encryption_public_key.pem"
+          rm -f "$RUNNER_TEMP/release.jks"
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: play-signing-key
+          path: out/play-signing-key.zip
+          retention-days: 1
+          if-no-files-found: error
