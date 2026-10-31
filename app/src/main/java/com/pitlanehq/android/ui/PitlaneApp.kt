@@ -26,6 +26,9 @@ import androidx.compose.material3.*
 import com.pitlanehq.android.data.AppUpdate
 import com.pitlanehq.android.data.AccountState
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -83,21 +86,27 @@ import java.util.Date
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-// the pit wall look: one dark theme with the amber accent, never switched
+// the pit wall look of Track First (the owner's design 7): one dark theme with the amber accent, never switched
 internal val Ink = Color(0xFF0D1116)
-internal val Surface = Color(0xFF161C24)
+/** cards */
+internal val Surface = Color(0xFF151C25)
 internal val Bg = Color(0xFF0D1116)
 internal val Surface2 = Color(0xFF1E2631)
+/** the darker well of the switches, the search box and the sub-tabs */
+internal val Well = Color(0xFF11161D)
 internal val Line = Color(0xFF263140)
-internal val Fg = Color(0xFFE7EBF1)
-internal val Muted = Color(0xFF9AA6B8)
+internal val Fg = Color(0xFFEEF1F5)
+internal val Muted = Color(0xFF98A3B2)
+internal val Dim = Color(0xFF6C7787)
 internal val Accent = Color(0xFFFFB02E)
 internal val Good = Color(0xFF4FE09A)
-internal val Bad = Color(0xFFFF7A7A)
-internal val Purple = Color(0xFFC9A4FF)
-internal val Blue = Color(0xFF8CC4FF)
-/** the floating tab bar's chosen tab */
-internal val NavOn = Color(0xFF2E3846)
+internal val Bad = Color(0xFFFF5A5A)
+internal val Purple = Color(0xFFC79BFF)
+internal val Blue = Color(0xFF5AA9FF)
+/** the floating tab bar, its edge and its chosen tab */
+internal val NavBar = Color(0xFF1A212B)
+internal val NavEdge = Color(0xFF2C3746)
+internal val NavOn = Color(0xFF2A3442)
 
 private const val WEB_APP = "$SERVER/"
 
@@ -124,7 +133,7 @@ fun PitlaneApp(vm: PitlaneViewModel = viewModel()) {
         primary = Accent, onPrimary = Ink, background = Ink, onBackground = Fg, surface = Surface, onSurface = Fg,
         surfaceVariant = Surface2, onSurfaceVariant = Muted, outline = Line, error = Bad
     )
-    MaterialTheme(colorScheme = scheme) {
+    MaterialTheme(colorScheme = scheme, typography = PitlaneType) {
         key(I18n.lang) {
             if (!account.signedIn) LoginScreen(vm, account.error, account.busy) else MainApp(vm)
         }
@@ -162,7 +171,7 @@ private fun LoginScreen(vm: PitlaneViewModel, error: String?, busy: Boolean) {
     ) {
         item { Spacer(Modifier.height(32.dp)) }
         item { Text("PITLANE HQ", color = Fg, fontSize = 34.sp, fontWeight = FontWeight.Black) }
-        item { Text(t("companion"), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
+        item { Text(t("companion"), color = Accent, fontFamily = MonoFont, fontSize = 12.sp, fontWeight = FontWeight.Bold) }
         item {
             Panel {
                 Text(t("sign_in").uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Black)
@@ -282,7 +291,7 @@ private fun SupportFab(unread: Int, admin: Boolean, modifier: Modifier, onClick:
         if (unread > 0) Box(
             Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).heightIn(min = 18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Accent).padding(horizontal = 4.dp),
             contentAlignment = Alignment.Center
-        ) { Text(if (unread > 9) "9+" else "$unread", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace) }
+        ) { Text(if (unread > 9) "9+" else "$unread", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = MonoFont) }
         DropdownMenu(menu, { menu = false }, containerColor = Surface2) {
             DropdownMenuItem({ Text(t("fb_menu_send"), color = Fg) }, { menu = false; onFeedback() },
                 leadingIcon = { Icon(Icons.Outlined.StarOutline, null, tint = Accent) })
@@ -290,7 +299,7 @@ private fun SupportFab(unread: Int, admin: Boolean, modifier: Modifier, onClick:
                 leadingIcon = { Icon(Icons.Outlined.ChatBubbleOutline, null, tint = Accent) },
                 trailingIcon = if (unread > 0) ({
                     Box(Modifier.heightIn(min = 18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Accent).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-                        Text(if (unread > 9) "9+" else "$unread", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                        Text(if (unread > 9) "9+" else "$unread", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = MonoFont)
                     }
                 }) else null)
         }
@@ -383,7 +392,7 @@ private fun ColumnScope.SupportInbox(vm: PitlaneViewModel, open: (String, String
                         Text((if (c.fromSupport) "↩ " else "") + c.text, color = if (c.unread > 0) Fg else Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     if (c.unread > 0) Box(Modifier.padding(start = 8.dp).heightIn(min = 18.dp).widthIn(min = 18.dp).clip(CircleShape).background(Accent).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
-                        Text(if (c.unread > 9) "9+" else "${c.unread}", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                        Text(if (c.unread > 9) "9+" else "${c.unread}", color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = MonoFont)
                     }
                 }
             }
@@ -460,7 +469,7 @@ private fun ColumnScope.SupportThread(vm: PitlaneViewModel, accountId: String, n
         AlertDialog({ logText = null }, confirmButton = { TextButton({ logText = null }) { Text(t("close"), color = Accent) } },
             dismissButton = { TextButton({ clip.setText(androidx.compose.ui.text.AnnotatedString(txt)) }) { Text(t("copy"), color = Accent) } },
             title = { Text(t("sup_logs_title")) },
-            text = { androidx.compose.foundation.text.selection.SelectionContainer { Text(txt, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Fg, modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) } },
+            text = { androidx.compose.foundation.text.selection.SelectionContainer { Text(txt, fontSize = 10.sp, fontFamily = MonoFont, color = Fg, modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) } },
             containerColor = Surface2)
     }
 }
@@ -498,12 +507,12 @@ private fun rememberInfo(vm: PitlaneViewModel, nav: NavHostController): InfoStat
     if (open) ModalBottomSheet(onDismissRequest = { open = false; vm.inboxMark(alerts.map { "seen:" + it.id }) }, containerColor = Surface) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(t("alerts").uppercase(), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f))
+                Text(t("alerts").uppercase(), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont, modifier = Modifier.weight(1f))
                 if (alerts.any { !it.keep }) TextButton({ vm.inboxMark(alerts.filter { !it.keep }.map { it.id }) }) { Text(t("clear"), color = Muted, fontSize = 12.sp) }
             }
             if (alerts.isEmpty()) Text(t("nothing_new"), color = Muted, fontSize = 13.sp, modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp))
             alerts.forEach { InfoRow(it, { open = false }) { vm.inboxMark(listOf(it.id)) } }
-            Text("PITLANE HQ", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(top = 8.dp))
+            Text("PITLANE HQ", color = Muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont, modifier = Modifier.padding(top = 8.dp))
             always.forEach { InfoRow(it, { open = false }, null) }
         }
     }
@@ -560,7 +569,7 @@ private fun UpdateNotice(u: AppUpdate?) {
 @Composable
 private fun Banner(s: String, c: Color, onClick: (() -> Unit)? = null) {
     Text(
-        s, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+        s, color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont,
         modifier = Modifier.fillMaxWidth().background(c).let { if (onClick != null) it.clickable(onClick = onClick) else it }.padding(horizontal = 16.dp, vertical = 6.dp)
     )
 }
@@ -580,17 +589,17 @@ private fun BottomBar(nav: NavHostController) {
     // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
     Row(
         Modifier.fillMaxWidth().background(Ink).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)
-            .clip(RoundedCornerShape(22.dp)).background(Surface2).border(1.dp, Color(0xFF2E3A4A), RoundedCornerShape(22.dp)).padding(6.dp)
+            .clip(RoundedCornerShape(18.dp)).background(NavBar).border(1.dp, NavEdge, RoundedCornerShape(18.dp)).padding(5.dp)
     ) {
         dests.forEach { d ->
             val on = tab == d.route
             Column(
-                Modifier.weight(1f).heightIn(min = 52.dp).clip(RoundedCornerShape(16.dp)).background(if (on) NavOn else Color.Transparent)
+                Modifier.weight(1f).heightIn(min = 50.dp).clip(RoundedCornerShape(13.dp)).background(if (on) NavOn else Color.Transparent)
                     .clickable { nav.navigate(d.route) { popUpTo("home") { saveState = true }; launchSingleTop = true; restoreState = true } },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center
             ) {
-                Icon(d.icon, d.label, tint = if (on) Accent else Muted, modifier = Modifier.size(22.dp))
-                Text(d.label, fontSize = 10.sp, maxLines = 1, color = if (on) Accent else Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal)
+                Icon(d.icon, d.label, tint = if (on) Accent else Muted, modifier = Modifier.size(21.dp))
+                Text(d.label, fontSize = 10.sp, maxLines = 1, color = if (on) Fg else Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium)
             }
         }
     }
@@ -598,23 +607,30 @@ private fun BottomBar(nav: NavHostController) {
 
 @Composable
 internal fun Screen(title: String, sub: String = "", back: (() -> Unit)? = null, head: (@Composable () -> Unit)? = null, content: LazyListScope.() -> Unit) {
-    LazyColumn(
-        Modifier.fillMaxSize().background(Ink),
-        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, bottom = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item {
-            Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (back != null) IconButton(back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Fg) }
+    // Track First's frame: the header stays put (Back, the title in condensed capitals, Info, the game), the screen
+    // scrolls under it
+    Column(Modifier.fillMaxSize().background(Ink)) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (back != null) {
+                    Box(Modifier.size(width = 32.dp, height = 36.dp).clickable(onClick = back), contentAlignment = Alignment.CenterStart) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, t("back"), tint = Fg, modifier = Modifier.size(22.dp))
+                    }
+                    Spacer(Modifier.width(6.dp))
+                }
                 Column(Modifier.weight(1f)) {
-                    Text(title.uppercase(), color = Fg, fontSize = 26.sp, fontWeight = FontWeight.Black, letterSpacing = 1.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(title.uppercase(), color = Fg, fontFamily = DisplayFont, fontSize = 27.sp, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp, lineHeight = 30.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (sub.isNotBlank()) Text(sub, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 InfoButton()
             }
+            if (head != null) head()
         }
-        if (head != null) item { head() }
-        content()
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) { content() }
     }
 }
 
@@ -728,8 +744,9 @@ internal fun KindTag(kind: String) {
         "test" in x || "offline" in x -> t("kind_test") to Muted
         else -> t("kind_prac") to Blue
     }
-    Text(l, color = c, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-        modifier = Modifier.border(1.dp, c.copy(alpha = .5f), RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp))
+    // Track First's tag: small capitals in a thin capsule of its colour
+    Text(l.uppercase(), color = c, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.4.sp, maxLines = 1, softWrap = false,
+        modifier = Modifier.border(1.dp, c, RoundedCornerShape(50)).padding(horizontal = 7.dp, vertical = 1.dp))
 }
 
 /** Your last race: the place against the start, the position lap by lap, the iRating, incidents and best lap */
@@ -738,53 +755,67 @@ private fun HomeLastRace(x: Race, onSummary: () -> Unit, onLaps: () -> Unit) {
     val gain = if (x.start > 0 && x.finish > 0 && !x.dnf) x.start - x.finish else 0
     val pos = x.laps.map { it.pos }.filter { it > 0 }
     val ir = if (x.noIr || x.irChange == 0) null else x.irChange
-    Panel(Modifier.clickable(onClick = onSummary)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Section(t("hm_last_race"))
-            Spacer(Modifier.weight(1f))
-            Text(agoText(x.whenMs), color = Muted, fontSize = 11.sp)
+    // like the web's Home and Track First: a titled card (the amber mark, when), the place out of the field, the track
+    // and car with the position lap by lap, then iRating, incidents and best lap in a row, and two links
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Surface).border(1.dp, Line, RoundedCornerShape(16.dp))) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.size(width = 3.dp, height = 14.dp).clip(RoundedCornerShape(2.dp)).background(Accent))
+            Text(t("hm_last_race").uppercase(), color = Fg, fontFamily = DisplayFont, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.7.sp, maxLines = 1)
+            Text(agoText(x.whenMs), color = Muted, fontSize = 12.sp)
         }
-        Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.width(92.dp)) {
-                Row(verticalAlignment = Alignment.Bottom) {
-                    Text(if (x.dnf) t("dnf") else "P${x.finish}", fontSize = 30.sp, fontWeight = FontWeight.Black, color = if (x.dnf) Bad else Fg)
-                    Text("/${x.field}", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 6.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
+        Column(Modifier.fillMaxWidth().clickable(onClick = onSummary).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(Modifier.width(96.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.Bottom) {
+                        Text(if (x.dnf) t("dnf") else "P${x.finish}", fontFamily = MonoFont, fontSize = 40.sp, lineHeight = 42.sp, fontWeight = FontWeight.SemiBold, color = if (x.dnf) Bad else Fg, maxLines = 1)
+                        Text("/${x.field}", fontFamily = MonoFont, color = Fg, fontSize = 15.sp, modifier = Modifier.padding(bottom = 6.dp))
+                    }
+                    if (gain != 0) Text((if (gain > 0) "▲ " else "▼ ") + kotlin.math.abs(gain) + " " + t("hm_from") + " P${x.start}", color = if (gain > 0) Good else Bad, fontSize = 12.sp)
                 }
-                if (gain != 0) Text((if (gain > 0) "▲ " else "▼ ") + kotlin.math.abs(gain) + " " + t("hm_from") + " P${x.start}", color = if (gain > 0) Good else Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-            }
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(x.track, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    KindTag("race")
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { DrinksBadge(x); AiBadge(x) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(discColor(raceDisc(x.cat, x.car))))
-                    Text(" " + x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                if (pos.size > 1) {
-                    val lo = pos.min(); val hi = maxOf(pos.max(), lo + 1)
-                    Canvas(Modifier.fillMaxWidth().height(30.dp).padding(top = 4.dp)) {
-                        val p = Path()
-                        pos.forEachIndexed { k, v ->
-                            val px = k.toFloat() / (pos.size - 1) * size.width; val py = (v - lo).toFloat() / (hi - lo) * size.height
-                            if (k == 0) p.moveTo(px, py) else p.lineTo(px, py)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(x.track, fontSize = 15.sp, color = Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                        KindTag("race")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { DrinksBadge(x); AiBadge(x) }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(discColor(raceDisc(x.cat, x.car))))
+                        Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (pos.size > 1) {
+                        val lo = pos.min(); val hi = maxOf(pos.max(), lo + 1)
+                        Canvas(Modifier.fillMaxWidth().padding(top = 4.dp).height(34.dp)) {
+                            val p = Path()
+                            pos.forEachIndexed { k, v ->
+                                val px = k.toFloat() / (pos.size - 1) * size.width; val py = 2 * density + (v - lo).toFloat() / (hi - lo) * (size.height - 4 * density)
+                                if (k == 0) p.moveTo(px, py) else p.lineTo(px, py)
+                            }
+                            drawPath(p, Accent, style = Stroke(width = 1.6f * density, join = StrokeJoin.Round))
                         }
-                        drawPath(p, Accent, style = Stroke(width = 1.6f * density, join = StrokeJoin.Round))
                     }
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                // Le Mans Ultimate: no iRating, and contacts instead of incident points
+                if (!x.contacts) RaceStat(t("lr_ir"), ir?.let { signed(it) } ?: "–", if (ir == null) Fg else if (ir > 0) Good else Bad)
+                RaceStat(incLabel(x), incText(x), if (x.inc >= 8) Bad else Fg)
+                RaceStat(t("lr_best"), lapTime(x.best), Fg)
+            }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp).height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Le Mans Ultimate: no iRating, and contacts instead of incident points
-            if (!x.contacts) LastStat(t("lr_ir"), ir?.let { signed(it) } ?: "–", if (ir == null) Muted else if (ir > 0) Good else Bad, Modifier.weight(1f).fillMaxHeight())
-            LastStat(incLabel(x).uppercase(), incText(x), if (x.inc >= 8) Bad else Fg, Modifier.weight(1f).fillMaxHeight())
-            LastStat(t("lr_best"), lapTime(x.best), Purple, Modifier.weight(1f).fillMaxHeight())
+        Row(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 14.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Text(t("hm_race_summary"), color = Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onSummary))
+            Text(t("hm_analyse_laps"), color = Accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onLaps))
         }
-        Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onSummary) { Text(t("hm_race_summary"), color = Accent, fontSize = 13.sp) }
-            TextButton(onLaps) { Text(t("hm_analyse_laps"), color = Accent, fontSize = 13.sp) }
-        }
+    }
+}
+
+/** One number of the last race card: its name in grey over the value in mono. */
+@Composable
+private fun RaceStat(l: String, v: String, c: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(l, color = Muted, fontSize = 12.sp, maxLines = 1)
+        Text(v, color = c, fontFamily = MonoFont, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, maxLines = 1)
     }
 }
 
@@ -794,14 +825,15 @@ private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: 
     val rows: List<Pair<Long, Any>> = (races.map { it.whenMs to (it as Any) } + sessions.filter { !it.kind.contains("race", true) }.map { it.started to (it as Any) })
         .sortedByDescending { it.first }.take(6)
     if (rows.isEmpty()) return
-    Panel {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    // a section title with See all, then the rows on the page itself, a hairline between them
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
             Section(t("hm_recent"))
             Spacer(Modifier.weight(1f))
-            TextButton(onAll) { Text(t("see_all"), color = Accent, fontSize = 12.sp) }
+            Text(t("see_all"), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.clickable(onClick = onAll))
         }
         rows.forEachIndexed { k, (_, o) ->
-            if (k > 0) HorizontalDivider(color = Line)
+            if (k > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(Line))
             when (o) {
                 is Race -> HomeRow(if (o.dnf) t("dnf") else "P${o.finish}", if (o.dnf) Bad else Fg, o.track, "race", raceDisc(o.cat, o.car), o.car + " · " + agoText(o.whenMs), o.laps.size, o.best, { onRace(o) }) { DrinksBadge(o); AiBadge(o) }
                 is CloudSession -> HomeRow(o.place, if (o.pos != null) Fg else Muted, fixText(o.track), o.kind, o.cat ?: "", fixText(o.car) + " · " + agoText(o.started), o.laps, o.best, { onSession(o) }, if (o.inClass && o.pos != null) t("in_class") else "") {
@@ -814,27 +846,26 @@ private fun HomeRecent(races: List<Race>, sessions: List<CloudSession>, onRace: 
 
 @Composable
 private fun HomeRow(place: String, placeCol: Color, track: String, kind: String, disc: String, sub: String, laps: Int, best: Double?, onClick: () -> Unit, placeSub: String = "", badges: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Track First's row: the place in mono, the track with its tag over the car and when, then the laps and the time
+    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         // the place ("P3", a session's "P3/20"), with "class" under it when it counts within your class
-        Column(Modifier.width(54.dp)) {
-            Text(place, color = placeCol, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, fontSize = if (place.length > 4) 12.sp else 14.sp, maxLines = 1, softWrap = false)
+        Column(Modifier.width(44.dp)) {
+            Text(place, color = placeCol, fontWeight = FontWeight.SemiBold, fontFamily = MonoFont, fontSize = if (place.length > 4) 11.sp else 14.sp, maxLines = 1, softWrap = false)
             if (placeSub.isNotEmpty()) Text(placeSub, color = Muted, fontSize = 9.sp, maxLines = 1)
         }
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(track, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(track, color = Fg, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 KindTag(kind)
             }
             badges()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(6.dp).clip(RoundedCornerShape(50)).background(if (disc.isNotBlank()) discColor(disc) else Muted))
-                Text(" $sub", color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.size(7.dp).clip(RoundedCornerShape(50)).background(if (disc.isNotBlank()) discColor(disc) else Muted))
+                Text(sub, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
             }
         }
-        Column(horizontalAlignment = Alignment.End) {
-            Text(t("laps_n", laps), color = Muted, fontSize = 11.sp)
-            Text(lapTime(best), color = Fg, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
+        Text(t("laps_n", laps), color = Muted, fontFamily = MonoFont, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
+        Text(lapTime(best), color = Fg, fontFamily = MonoFont, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false, textAlign = TextAlign.End, modifier = Modifier.widthIn(min = 64.dp))
     }
 }
 
@@ -934,7 +965,7 @@ private fun LastRace(x: Race, onClick: () -> Unit) {
 private fun LastStat(l: String, v: String, c: Color, m: Modifier) {
     Column(m.clip(RoundedCornerShape(10.dp)).background(Ink).padding(horizontal = 10.dp, vertical = 8.dp)) {
         Text(l, color = Muted, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp, maxLines = 1)
-        Text(v, color = c, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+        Text(v, color = c, fontFamily = MonoFont, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
     }
 }
 
@@ -997,8 +1028,8 @@ private fun IrTrend(races: List<Race>, now: Map<String, Triple<Int, String, Long
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Section(t("ir_trend", discName(disc).uppercase()))
             Spacer(Modifier.weight(1f))
-            Text(vals[i].toString(), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text(" " + signed(x.irChange), color = if (x.irChange >= 0) Good else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Text(vals[i].toString(), fontFamily = MonoFont, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(" " + signed(x.irChange), color = if (x.irChange >= 0) Good else Bad, fontFamily = MonoFont, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
         if (sel == null) Text(t("spark_last", rs.size) + " · " + signed(rs.sumOf { it.irChange }), color = Muted, fontSize = 12.sp)
         else Text(x.track + " · " + (if (x.dnf) t("dnf") else "P${x.finish}") + " · " + day(x.whenMs) + "  ›", color = Accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -1022,10 +1053,10 @@ private fun RaceRow(x: Race, onClick: () -> Unit) {
                 )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(if (x.dnf) t("dnf") else "P${x.finish}/${x.field}", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, color = if (x.finish == 1) Purple else Fg)
+                Text(if (x.dnf) t("dnf") else "P${x.finish}/${x.field}", fontWeight = FontWeight.Black, fontFamily = MonoFont, color = if (x.finish == 1) Purple else Fg)
                 // a race against the AI has no iRating
-                if (!x.noIr) Text("iR " + signed(x.irChange), color = if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                Text(incText(x), color = if (x.inc >= 8) Bad else Muted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+                if (!x.noIr) Text("iR " + signed(x.irChange), color = if (x.irChange > 0) Good else if (x.irChange < 0) Bad else Muted, fontFamily = MonoFont, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(incText(x), color = if (x.inc >= 8) Bad else Muted, fontFamily = MonoFont, fontSize = 11.sp)
             }
         }
     }
@@ -1051,7 +1082,7 @@ private fun DrinksBadge(x: Race, names: Boolean = false) {
                 (x.drivers().ifEmpty { x.drinks.map { Triple(it, 0, null as Double?) } }).forEach { (n, laps, best) ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(n, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        if (laps > 0) Text(t("drinks_laps", laps, lapTime(best)), color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                        if (laps > 0) Text(t("drinks_laps", laps, lapTime(best)), color = Muted, fontSize = 12.sp, fontFamily = MonoFont)
                     }
                 }
             }
@@ -1110,13 +1141,13 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                     val drk = x.drivers().isNotEmpty()
                     x.laps.forEach { l ->
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Text("L${l.n}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(44.dp))
+                            Text("L${l.n}", color = Muted, fontFamily = MonoFont, fontSize = 12.sp, modifier = Modifier.width(44.dp))
                             // DRINKS mode: who drove each lap
                             if (drk) Text(x.driverOf(l), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(78.dp))
                             val strike = if (l.cut) TextDecoration.LineThrough else TextDecoration.None
-                            Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (l.cut) Muted else if (l.time == best) Purple else Fg, textDecoration = strike, modifier = Modifier.weight(1f).alpha(if (l.cut) .6f else 1f))
-                            Text("P${l.pos}", color = Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, textDecoration = strike, modifier = Modifier.width(44.dp).alpha(if (l.cut) .6f else 1f))
-                            Text(listOfNotNull(if (l.cut) t("invalid").lowercase() else null, if (l.pit) t("pit") else null, if (l.inc > 0) (if (x.contacts) "${l.inc}" else "${l.inc}x") else null).joinToString(" · "), color = if (l.pit && !l.cut) Blue else Bad, fontFamily = FontFamily.Monospace, fontSize = 11.sp, modifier = Modifier.widthIn(min = 40.dp))
+                            Text(lapTime(l.time), fontFamily = MonoFont, fontSize = 12.sp, color = if (l.cut) Muted else if (l.time == best) Purple else Fg, textDecoration = strike, modifier = Modifier.weight(1f).alpha(if (l.cut) .6f else 1f))
+                            Text("P${l.pos}", color = Muted, fontFamily = MonoFont, fontSize = 12.sp, textDecoration = strike, modifier = Modifier.width(44.dp).alpha(if (l.cut) .6f else 1f))
+                            Text(listOfNotNull(if (l.cut) t("invalid").lowercase() else null, if (l.pit) t("pit") else null, if (l.inc > 0) (if (x.contacts) "${l.inc}" else "${l.inc}x") else null).joinToString(" · "), color = if (l.pit && !l.cut) Blue else Bad, fontFamily = MonoFont, fontSize = 11.sp, modifier = Modifier.widthIn(min = 40.dp))
                         }
                     }
                 }
@@ -1132,7 +1163,7 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                         val note = if (me) null else noteFor(notes, p.k, p.name)
                         // your note on a driver: their tag before the name; tap a driver to mark them
                         Row(Modifier.fillMaxWidth().then(if (me || p.ai) Modifier else Modifier.clickable { editing = p }).padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(30.dp))
+                            Text("${p.pos}", color = if (me) Accent else Muted, fontFamily = MonoFont, fontSize = 12.sp, modifier = Modifier.width(30.dp))
                             if (note != null && note.tag.isNotEmpty()) { TagIcon(note.tag, 14.dp); Spacer(Modifier.width(5.dp)) }
                             // your car in a DRINKS race: who drove it
                             val nm = if (me && x.drivers().isNotEmpty()) x.drivers().joinToString(", ") { it.first } else p.name
@@ -1141,11 +1172,11 @@ private fun RaceDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             // laps more (red) or less (blue) than you, like the relative
                             val myLaps = x.results.firstOrNull { if (anyMe) it.me else it.pos == x.finish }?.laps ?: 0
                             val dl = if (!me && p.laps > 0 && myLaps > 0) p.laps - myLaps else 0
-                            if (dl != 0) Text((if (dl > 0) " +" else " −") + kotlin.math.abs(dl) + "L", color = if (dl > 0) Bad else Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                            if (dl != 0) Text((if (dl > 0) " +" else " −") + kotlin.math.abs(dl) + "L", color = if (dl > 0) Bad else Blue, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont)
                             Spacer(Modifier.weight(1f))
-                            Text(if (p.ir > 0 && !x.noIr) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
-                            Text(lapTime(p.best), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(66.dp))
-                            Text(if (x.contacts) "${p.inc}" else "${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
+                            Text(if (p.ir > 0 && !x.noIr) "${p.ir}" else "", color = Muted, fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(44.dp))
+                            Text(lapTime(p.best), fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(66.dp))
+                            Text(if (x.contacts) "${p.inc}" else "${p.inc}x", color = Muted, fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(30.dp))
                         }
                     }
                 }
@@ -1301,7 +1332,7 @@ private fun Analysis(vm: PitlaneViewModel, nav: NavHostController) {
                             Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(listOf(day(x.last), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
-                                Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                Text(lapTime(x.best), color = Purple, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -1381,7 +1412,7 @@ private fun SessionRow(x: CloudSession, on: Boolean, onClick: () -> Unit) {
                 Text(listOf(placeLine(x), kindText(x.kind), day(x.started), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 LicBadge(x.lic)
             }
-            Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            Text(lapTime(x.best), color = Purple, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -1441,15 +1472,15 @@ private fun LazyListScope.lapItems(vm: PitlaneViewModel, nav: NavHostController,
     items(laps, key = { "l" + it.id }) { lap ->
         Panel(Modifier.clickable { vm.analyse(x, lap, laps, RefKind.MY_BEST); nav.navigate("lap") }) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("L${lap.n}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+                Text("L${lap.n}", color = Muted, fontFamily = MonoFont, modifier = Modifier.width(44.dp))
                 Text(
-                    lapTime(lap.time), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
+                    lapTime(lap.time), fontFamily = MonoFont, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f),
                     color = when { !lap.valid -> Muted; lap.time == best -> Purple; else -> Fg },
                     textDecoration = if (!lap.valid) TextDecoration.LineThrough else TextDecoration.None
                 )
-                if (best != null && lap.valid && lap.time > best) Text("+%.3f".format(lap.time - best), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                if (lap.inc > 0) Text("  ${lap.inc}x", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                if (!lap.valid) Text(t("invalid"), color = Bad, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                if (best != null && lap.valid && lap.time > best) Text("+%.3f".format(lap.time - best), color = Muted, fontSize = 11.sp, fontFamily = MonoFont)
+                if (lap.inc > 0) Text("  ${lap.inc}x", color = Bad, fontSize = 11.sp, fontFamily = MonoFont)
+                if (!lap.valid) Text(t("invalid"), color = Bad, fontSize = 10.sp, fontFamily = MonoFont)
                 Icon(Icons.Default.ChevronRight, null, tint = Muted)
             }
             if (lap.drv.isNotEmpty()) Text(lap.drv, color = Accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1461,7 +1492,7 @@ private fun LazyListScope.lapItems(vm: PitlaneViewModel, nav: NavHostController,
                         val sv = ls.getOrNull(i)
                         val bl = bestLapSec.getOrNull(i)
                         Text(
-                            "S${i + 1} " + (sv?.let { "%.3f".format(it) } ?: "–"), fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(84.dp),
+                            "S${i + 1} " + (sv?.let { "%.3f".format(it) } ?: "–"), fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(84.dp),
                             color = when {
                                 sv == null -> Muted
                                 lap.valid && sv == bestSec.getOrNull(i) -> Purple
@@ -1484,7 +1515,7 @@ private fun CornerTip(k: Corner, an: LapAnalysis? = null, vm: PitlaneViewModel? 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(t("corner_n", k.n), fontWeight = FontWeight.Black, color = Accent)
         Text("  " + t("at_m", k.atM) + (k.phase?.let { " · " + t("phase_$it") } ?: ""), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
-        Text("+%.2f".format(k.lost), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        Text("+%.2f".format(k.lost), color = Bad, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
     }
     val tip = k.tip
     if (tip != null) {
@@ -1518,10 +1549,10 @@ private fun LazyListScope.sectorItems(an: LapAnalysis) {
             Panel {
                 js.forEachIndexed { i, (sv, r) ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        Text("S${i + 1}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(40.dp))
-                        Text("%.3f".format(sv), fontFamily = FontFamily.Monospace, color = Accent, modifier = Modifier.weight(1f))
-                        Text("%.3f".format(r), fontFamily = FontFamily.Monospace, color = Blue, modifier = Modifier.weight(1f))
-                        Text("%+.3f".format(sv - r), fontFamily = FontFamily.Monospace, color = if (sv <= r) Good else Bad)
+                        Text("S${i + 1}", color = Muted, fontFamily = MonoFont, modifier = Modifier.width(40.dp))
+                        Text("%.3f".format(sv), fontFamily = MonoFont, color = Accent, modifier = Modifier.weight(1f))
+                        Text("%.3f".format(r), fontFamily = MonoFont, color = Blue, modifier = Modifier.weight(1f))
+                        Text("%+.3f".format(sv - r), fontFamily = MonoFont, color = if (sv <= r) Good else Bad)
                     }
                 }
             }
@@ -1535,10 +1566,10 @@ private fun LazyListScope.sectorItems(an: LapAnalysis) {
             an.lap.sectors.forEachIndexed { i, sv ->
                 val r = an.refSectors.getOrNull(i)
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                    Text("S${i + 1}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(40.dp))
-                    Text("%.3f".format(sv), fontFamily = FontFamily.Monospace, color = Accent, modifier = Modifier.weight(1f))
-                    Text(r?.let { "%.3f".format(it) } ?: "—", fontFamily = FontFamily.Monospace, color = Blue, modifier = Modifier.weight(1f))
-                    Text(r?.let { "%+.3f".format(sv - it) } ?: "", fontFamily = FontFamily.Monospace, color = if (r != null && sv <= r) Good else Bad)
+                    Text("S${i + 1}", color = Muted, fontFamily = MonoFont, modifier = Modifier.width(40.dp))
+                    Text("%.3f".format(sv), fontFamily = MonoFont, color = Accent, modifier = Modifier.weight(1f))
+                    Text(r?.let { "%.3f".format(it) } ?: "—", fontFamily = MonoFont, color = Blue, modifier = Modifier.weight(1f))
+                    Text(r?.let { "%+.3f".format(sv - it) } ?: "", fontFamily = MonoFont, color = if (r != null && sv <= r) Good else Bad)
                 }
             }
         }
@@ -1557,12 +1588,12 @@ private fun CoachGap(an: LapAnalysis, refName: String, first: Corner?, vm: Pitla
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(t("coach_vs", refName).uppercase(), color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp, maxLines = 2)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(d?.let { "%+.3f".format(it) } ?: "—", fontSize = 30.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold,
+                Text(d?.let { "%+.3f".format(it) } ?: "—", fontSize = 30.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold,
                     color = if (d == null) Fg else if (d <= 0) Good else Bad, modifier = Modifier.weight(1f))
                 Column(horizontalAlignment = Alignment.End) {
-                    Text(t("you") + " · L${an.lap.n}  " + lapTime(an.lap.time), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    Text(t("you") + " · L${an.lap.n}  " + lapTime(an.lap.time), color = Accent, fontFamily = MonoFont, fontSize = 12.sp)
                     lapFlags(an.trace)?.let { Text(it, color = Muted, fontSize = 10.sp) }
-                    Text(lapTime(an.refTime), color = Blue, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                    Text(lapTime(an.refTime), color = Blue, fontFamily = MonoFont, fontSize = 12.sp)
                 }
             }
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Ink).padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1628,7 +1659,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
                         Column(Modifier.weight(1f)) {
                             Row {
                                 Text(p.t, fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                                if (p.gain > 0) Text((if (p.k == "cons") "±" else "+") + "%.2f s".format(p.gain), color = if (p.k == "cons") Accent else Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                if (p.gain > 0) Text((if (p.k == "cons") "±" else "+") + "%.2f s".format(p.gain), color = if (p.k == "cons") Accent else Bad, fontFamily = MonoFont, fontSize = 12.sp)
                             }
                             if (p.why.isNotEmpty()) Text(p.why, color = Muted, fontSize = 12.sp)
                             if (p.how.isNotEmpty()) Text("→ " + p.how, fontSize = 12.sp)
@@ -1650,7 +1681,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
                         Column(Modifier.weight(1f)) {
                             Row {
                                 Text(t("corner_n", k.n) + (k.phase?.let { " · " + t("phase_$it") } ?: ""), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                                Text("+%.2f s".format(k.lost), color = Bad, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                Text("+%.2f s".format(k.lost), color = Bad, fontFamily = MonoFont, fontSize = 12.sp)
                             }
                             k.tip?.let { Text(k.text ?: t(it, *k.args.toTypedArray()), color = Muted, fontSize = 12.sp) }
                         }
@@ -1671,7 +1702,7 @@ private fun LazyListScope.coachItems(an: LapAnalysis, pick: Int?, vm: PitlaneVie
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     PHASE_KEYS.forEach { p ->
                         val v = k.phases[p] ?: 0.0
-                        Text(t("phase_$p") + " " + (if (v > 0) "+" else "") + "%.2f".format(v), fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (v > .03) Bad else Muted)
+                        Text(t("phase_$p") + " " + (if (v > 0) "+" else "") + "%.2f".format(v), fontSize = 11.sp, fontFamily = MonoFont, color = if (v > .03) Bad else Muted)
                     }
                 }
                 if (k.coastA - k.coastB > 10) Text(t("coasting") + ": ${k.coastA.toInt()} m · " + t("ref") + " ${k.coastB.toInt()} m", color = Muted, fontSize = 11.sp)
@@ -1767,7 +1798,7 @@ private fun LapDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             Panel {
                                 Row {
                                     Text(t("at_m", lo.fromM), fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
-                                    Text(t("lost", "%.3f".format(lo.lost)), color = Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                    Text(t("lost", "%.3f".format(lo.lost)), color = Bad, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
                                 }
                                 Text(t("min_speed", "%.0f".format(lo.minA), "%.0f".format(lo.minB)), color = Muted, fontSize = 12.sp)
                             }
@@ -1852,8 +1883,8 @@ private fun ChartBody(
             // the values under the finger
             if (idx == null) Text(" ", fontSize = 11.sp)
             else {
-                Text("${(idx * step).roundToInt()} m", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                series.forEach { se -> se.values.getOrNull(idx)?.let { Text(se.label + " " + fmt(it), color = se.color, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) } }
+                Text("${(idx * step).roundToInt()} m", color = Muted, fontSize = 11.sp, fontFamily = MonoFont)
+                series.forEach { se -> se.values.getOrNull(idx)?.let { Text(se.label + " " + fmt(it), color = se.color, fontSize = 11.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold) } }
             }
         }
         val lo = if (fixedMax != null) 0.0 else if (zero) minOf(all.min(), 0.0) else all.min()
@@ -1945,8 +1976,9 @@ internal fun licColor(k: String) = when (k) { "R" -> Color(0xFFFF6363); "D" -> C
 internal fun LicBadge(k: String?, sr: String? = null) {
     if (k == null || k !in LICS) return
     val c = licColor(k)
-    Text((if (k == "P") "Pro" else k) + (sr?.let { " $it" } ?: ""), color = Fg, fontSize = 10.sp, fontWeight = FontWeight.Black,
-        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c.copy(alpha = 0.55f)).border(1.5.dp, c, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 1.dp))
+    // Track First's chip: the class and safety rating in mono, in the licence's colour on a faint wash of it
+    Text((if (k == "P") "Pro" else k) + (sr?.let { " $it" } ?: ""), color = c, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont, maxLines = 1, softWrap = false,
+        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(c.copy(alpha = 0.14f)).padding(horizontal = 5.dp, vertical = 1.dp))
 }
 
 /** Your badges, wherever your name shows: Admin, and Supporter unless you hid it. */
@@ -2128,13 +2160,13 @@ private fun TrackMap(c: Compared, tr: Trace, sel: Int?, turns: List<Double> = em
 
         if (sel != null && showInc) {
             val d = sel * c.step
-            incs.filter { kotlin.math.abs(it.d - d) < 60 }.forEach { e -> Text(incName(e.kind) + " (${e.pts}x)", color = Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace) }
+            incs.filter { kotlin.math.abs(it.d - d) < 60 }.forEach { e -> Text(incName(e.kind) + " (${e.pts}x)", color = Bad, fontSize = 11.sp, fontFamily = MonoFont) }
         }
         val d = c.delta
         Text(
             if (sel != null) "${(sel * c.step).roundToInt()} m · ${"%.0f".format(c.speedA.getOrElse(sel) { 0.0 })} km/h" + (c.speedB?.getOrNull(sel)?.let { " · " + t("ref") + " ${"%.0f".format(it)}" } ?: "") + (d?.getOrNull(sel)?.let { " · %+.3f s".format(it) } ?: "")
             else if (d != null) t("map_hint") else t("map_hint_a"),
-            color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace
+            color = Muted, fontSize = 11.sp, fontFamily = MonoFont
         )
     }
 }
@@ -2150,7 +2182,7 @@ private fun PointCard(c: Compared, i: Int, refName: String, sec: List<Double>, r
     val ns = sec.size.coerceAtMost(3).coerceAtLeast(1)
     val s = minOf(ns, i / maxOf(1, n / ns) + 1)
     val d = c.delta?.getOrNull(i)
-    val mono = FontFamily.Monospace
+    val mono = MonoFont
     Column(
         Modifier.fillMaxWidth().padding(bottom = 6.dp).heightIn(min = 108.dp).background(Surface2, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp)
@@ -2182,7 +2214,7 @@ private fun PointRow(name: String, color: Color, spd: Double?, thr: Double?, brk
     Row(Modifier.fillMaxWidth()) {
         Box(Modifier.weight(1.4f)) { Text(name, color = color, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         listOf(spd?.let { "%.0f".format(it) }, thr?.let { "%.0f%%".format(it * 100) }, brk?.let { "%.0f%%".format(it * 100) }, gear?.let { "%.0f".format(it) })
-            .forEach { v -> Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { Text(v ?: "–", fontSize = 12.sp, fontFamily = FontFamily.Monospace, maxLines = 1) } }
+            .forEach { v -> Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) { Text(v ?: "–", fontSize = 12.sp, fontFamily = MonoFont, maxLines = 1) } }
     }
 }
 
@@ -2260,7 +2292,7 @@ private fun WeekStrip(days: List<Int>) {
         (0..6).forEach { d ->
             val on = d in days
             Box(Modifier.size(22.dp, 20.dp).clip(RoundedCornerShape(5.dp)).background(if (on) Accent else Surface2), contentAlignment = Alignment.Center) {
-                Text(t("wd_$d").take(2), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = if (on) Ink else Muted, fontFamily = FontFamily.Monospace)
+                Text(t("wd_$d").take(2), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = if (on) Ink else Muted, fontFamily = MonoFont)
             }
         }
     }
@@ -2310,12 +2342,12 @@ private fun LeagueCard(x: League, onOpen: () -> Unit) {
             if (x.open) Status(t("league_open"), Good)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 WeekStrip(x.days)
-                Text(leagueTimeText(x) ?: t("league_no_schedule"), color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                Text(leagueTimeText(x) ?: t("league_no_schedule"), color = Muted, fontSize = 12.sp, fontFamily = MonoFont)
             }
-            leagueNextText(x)?.let { (s, soon) -> Text(s, color = if (soon) Good else Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) }
+            leagueNextText(x)?.let { (s, soon) -> Text(s, color = if (soon) Good else Muted, fontSize = 12.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold) }
             if (x.about.isNotBlank()) Text(x.about, fontSize = 13.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (x.cars.isNotBlank()) Text("🏁 " + x.cars, color = Muted, fontSize = 12.sp)
-            if (x.views >= 0) Text("👁 ${x.views} · ↗ ${x.clicks}", color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+            if (x.views >= 0) Text("👁 ${x.views} · ↗ ${x.clicks}", color = Muted, fontSize = 12.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
         }
     }
 }
@@ -2344,9 +2376,9 @@ private fun LeagueDetail(vm: PitlaneViewModel, x: League, acc: AccountState, onC
                 if (x.open) Status(t("league_open"), Good)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     WeekStrip(x.days)
-                    Text(leagueTimeText(x) ?: t("league_no_schedule"), color = Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+                    Text(leagueTimeText(x) ?: t("league_no_schedule"), color = Muted, fontSize = 12.sp, fontFamily = MonoFont)
                 }
-                leagueNextText(x)?.let { (s, soon) -> Text(s, color = if (soon) Good else Muted, fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold) }
+                leagueNextText(x)?.let { (s, soon) -> Text(s, color = if (soon) Good else Muted, fontSize = 12.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold) }
                 if (x.about.isNotBlank()) Text(x.about, fontSize = 13.sp)
                 if (x.cars.isNotBlank()) Text("🏁 " + x.cars, color = Muted, fontSize = 12.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -2356,7 +2388,7 @@ private fun LeagueDetail(vm: PitlaneViewModel, x: League, acc: AccountState, onC
                 TextButton({ clip.setText(AnnotatedString("https://pitlanehq.app/app?league=" + x.id)); copied = true }) { Text(if (copied) t("league_link_copied") else t("league_copy_link"), color = Accent) }
                 if (x.views >= 0) {
                     Section(t("league_your_numbers"))
-                    Text("👁 ${x.views} ${t("league_views")} · ↗ ${x.clicks} ${t("league_clicks")}", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("👁 ${x.views} ${t("league_views")} · ↗ ${x.clicks} ${t("league_clicks")}", fontWeight = FontWeight.Bold, fontFamily = MonoFont)
                     LeagueBars(days)
                     Text(t("league_last14"), color = Muted, fontSize = 11.sp)
                 }
@@ -2511,7 +2543,6 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
         val comboCat = { x: Combo -> catOf(gm, x.cat, x.cls, x.car) }
         val cats = catKeys(gm, (c.data ?: emptyList()).map(comboCat).toSet())
         val fc = (if (gm == "lmu") cat.takeIf { it in cats } else cat.takeIf { it in DISCS }) ?: ""
-        item { WebNote(t("community_web")) }
         item { RecentRecords(vm, nav, fc) }
         // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
         if (cats.isNotEmpty()) item {
@@ -2532,7 +2563,7 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
                         Text(x.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(listOf(catName(gm, comboCat(x)), t("laps_n", x.laps)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp)
-                            Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                            Text(lapTime(x.best), color = Purple, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -2550,8 +2581,8 @@ private fun Community(vm: PitlaneViewModel, nav: NavHostController) {
                                 Text((if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else "") + " · " + day(x.created), color = if (x.mine) Accent else Muted, fontSize = 11.sp)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text(if (x.finish > 0) "P${x.finish}/${x.field}" else "—", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-                                Text(lapTime(x.best), color = Purple, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+                                Text(if (x.finish > 0) "P${x.finish}/${x.field}" else "—", fontWeight = FontWeight.Black, fontFamily = MonoFont)
+                                Text(lapTime(x.best), color = Purple, fontFamily = MonoFont, fontSize = 12.sp)
                             }
                         }
                     }
@@ -2622,7 +2653,7 @@ private fun RecentRecords(vm: PitlaneViewModel, nav: NavHostController, cat: Str
                         Text(x.track, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(lapTime(x.time), color = Purple, fontFamily = MonoFont, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         WetBadges(x.wet)
                         Text(name(x.alias) + (if (x.mine) " · " + t("you_badge") else ""), color = if (x.mine) Accent else Fg, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 1)
                     }
@@ -2736,7 +2767,7 @@ private fun TrackPageScreen(vm: PitlaneViewModel, nav: NavHostController) {
                                 Text(listOf(catName(vm.game, catOf(vm.game, x.cat, x.cls, x.car)), (if (x.alias == "Anonymous") t("anonymous") else x.alias) + (if (x.mine) " · " + t("you_badge") else ""), t("drivers", x.n), day(x.created)).filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text(lapTime(x.time), color = Purple, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                Text(lapTime(x.time), color = Purple, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
                                 WetBadges(x.wet)
                             }
                         }
@@ -2800,8 +2831,15 @@ private fun Tracks(vm: PitlaneViewModel, nav: NavHostController) {
     val list = all.filter { q.isBlank() || it.name.contains(q, true) }
     Screen(t("tab_tracks"), head = { GameSeg(vm) }) {
         item {
-            OutlinedTextField(q, { q = it }, placeholder = { Text(t("find_track")) }, singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null, tint = Muted) },
-                shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth())
+            // the search box in the dark well
+            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Well).border(1.dp, Line, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Icon(Icons.Default.Search, null, tint = Muted, modifier = Modifier.size(20.dp))
+                Box(Modifier.weight(1f)) {
+                    if (q.isEmpty()) Text(t("find_track"), color = Dim, fontSize = 15.sp)
+                    BasicTextField(q, { q = it }, singleLine = true, textStyle = TextStyle(color = Fg, fontSize = 15.sp, fontFamily = UiFont), cursorBrush = SolidColor(Accent), modifier = Modifier.fillMaxWidth())
+                }
+            }
         }
         item { ShortNote("an_short") }
         state(sl) { vm.loadSessions() }
@@ -2828,8 +2866,8 @@ private fun TrackHero(x: MyTrack, layout: Pair<List<Double>, List<Double>>?, onC
         Column(Modifier.background(Brush.radialGradient(listOf(Color(0xFF24303F), Surface), radius = 900f)).padding(10.dp)) {
             if (layout != null) TrackLayoutMap(layout, emptyList(), 170.dp, Accent)
             Column(Modifier.padding(start = 6.dp, end = 6.dp, bottom = 6.dp, top = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(t("most_driven"), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                Text(x.name.uppercase(), color = Fg, fontSize = 22.sp, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(t("most_driven"), color = Accent, fontFamily = MonoFont, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                Text(x.name.uppercase(), color = Fg, fontFamily = DisplayFont, fontSize = 22.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(t("trk_counts", x.count, x.laps) + (x.best?.let { " · " + t("trk_best", lapTime(it)) } ?: ""), color = Muted, fontSize = 12.sp)
             }
         }
@@ -2845,13 +2883,13 @@ private fun TrackTile(x: MyTrack, m: Modifier, onClick: () -> Unit) {
         border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(16.dp)
     ) {
         Column(Modifier.fillMaxHeight().padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Box(Modifier.padding(bottom = 6.dp).size(40.dp).clip(RoundedCornerShape(12.dp)).background(Surface2).border(1.dp, Line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                Text(mono, color = Accent, fontSize = 17.sp, fontWeight = FontWeight.Black)
+            Box(Modifier.padding(bottom = 6.dp).size(40.dp).clip(RoundedCornerShape(12.dp)).background(Well).border(1.dp, Line, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+                Text(mono, color = Accent, fontFamily = DisplayFont, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
             }
-            Text(x.name, color = Fg, fontSize = 14.sp, fontWeight = FontWeight.Bold, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(x.name, color = Fg, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(t("trk_counts", x.count, x.laps), color = Muted, fontSize = 11.sp, maxLines = 1)
             Spacer(Modifier.weight(1f))
-            Text(lapTime(x.best), color = Fg, fontFamily = FontFamily.Monospace, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
+            Text(lapTime(x.best), color = Fg, fontFamily = MonoFont, fontSize = 13.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
@@ -2950,7 +2988,7 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
             val me = i == mineAll
             Panel(if (lap.prof) Modifier.clickable { vm.loadProfile(lap.id); nav.navigate("profile") } else Modifier) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${i + 1}", color = if (i == 0) Purple else if (me) Accent else Muted, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
+                    Text("${i + 1}", color = if (i == 0) Purple else if (me) Accent else Muted, fontFamily = MonoFont, fontWeight = FontWeight.Bold, modifier = Modifier.width(32.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(if (lap.alias == "Anonymous") t("anonymous") else lap.alias, fontWeight = FontWeight.Bold, color = if (me) Accent else Fg, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
@@ -2959,13 +2997,13 @@ private fun ComboDetail(vm: PitlaneViewModel, nav: NavHostController) {
                             if (lap.mine) Text(t("you_badge"), color = Accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                         }
                         if (whole && !lap.car.isNullOrBlank()) Text(lap.car, color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                        if (lap.sectors.isNotEmpty()) Text(lap.sectors.joinToString("  ") { "%.3f".format(it) }, color = Muted, fontSize = 10.sp, fontFamily = MonoFont)
                         if (!lap.hasTrace) Text(t("trace_not_shared"), color = Muted, fontSize = 10.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(lapTime(lap.time), color = if (i == 0) Purple else Fg, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                        Text(lapTime(lap.time), color = if (i == 0) Purple else Fg, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
                         WetBadges(lap.wet)
-                        if (top != null && i > 0) Text("+%.3f".format(lap.time - top), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        if (top != null && i > 0) Text("+%.3f".format(lap.time - top), color = Muted, fontSize = 11.sp, fontFamily = MonoFont)
                     }
                 }
             }
@@ -3030,7 +3068,7 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
                         Text(r.track, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(r.car, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
-                    Text(if (r.dnf) "DNF" else if (r.finish > 0) "P${r.finish}/${r.field}" else "—", fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                    Text(if (r.dnf) "DNF" else if (r.finish > 0) "P${r.finish}/${r.field}" else "—", fontWeight = FontWeight.Black, fontFamily = MonoFont)
                 }
                 val dif = if (r.start > 0 && r.finish > 0) r.start - r.finish else 0
                 Text(listOf(if (dif != 0) (if (dif > 0) "+" else "") + dif + " " + t("places") else "", "${r.inc}x", if (r.irChange != 0) "iR " + (if (r.irChange > 0) "+" else "") + r.irChange else "", if (r.best != null) t("best_short") + " " + lapTime(r.best) else "").filter { it.isNotBlank() }.joinToString(" · "), color = Muted, fontSize = 11.sp)
@@ -3048,8 +3086,8 @@ private fun ProfileScreen(vm: PitlaneViewModel, nav: NavHostController) {
                         Text(listOf(l.car, discName(l.cat)).filter { it.isNotBlank() }.joinToString(" · ") + if (l.anon) " · 🔒 " + t(if (p.mine) "anon_lap_mine" else "anon_lap_admins") else "", color = Muted, fontSize = 11.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(lapTime(l.time), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                        if (l.pos > 0) Text("P${l.pos}" + if (l.of > 0) "/${l.of}" else "", color = if (l.pos == 1) Purple else Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        Text(lapTime(l.time), fontFamily = MonoFont, fontWeight = FontWeight.Bold)
+                        if (l.pos > 0) Text("P${l.pos}" + if (l.of > 0) "/${l.of}" else "", color = if (l.pos == 1) Purple else Muted, fontSize = 11.sp, fontFamily = MonoFont)
                     }
                 }
             }
@@ -3164,7 +3202,7 @@ private fun Live(vm: PitlaneViewModel) {
                             HorizontalDivider(Modifier.padding(vertical = 10.dp), color = Line)
                             Text(t("your_code"), fontWeight = FontWeight.Bold)
                             if (s.myCode.isNotBlank()) {
-                                Text(s.myCode, color = Accent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black, fontSize = 22.sp, letterSpacing = 2.sp, modifier = Modifier.padding(vertical = 4.dp))
+                                Text(s.myCode, color = Accent, fontFamily = MonoFont, fontWeight = FontWeight.Black, fontSize = 22.sp, letterSpacing = 2.sp, modifier = Modifier.padding(vertical = 4.dp))
                                 Text(t("your_code_sub"), color = Muted, fontSize = 12.sp)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     TextButton({ vm.liveShare(true, true) }) { Text(t("new_code"), color = Accent) }
@@ -3353,7 +3391,7 @@ private fun AdminSummary(vm: PitlaneViewModel, st: PitlaneViewModel.AdminState) 
 @Composable
 private fun UseRow(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, fontSize = 12.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, fontSize = 12.sp, fontFamily = MonoFont, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(value, color = Muted, fontSize = 12.sp)
     }
 }
@@ -3392,14 +3430,14 @@ private fun AdminUserRow(vm: PitlaneViewModel, nav: NavHostController, u: org.js
     val use = u.optJSONObject("_use")
     Panel {
         Text(u.optString("display", "–") + if (u.optBoolean("admin")) " · Admin" else "", fontWeight = FontWeight.Bold)
-        Text(id, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+        Text(id, color = Muted, fontSize = 11.sp, fontFamily = MonoFont)
         Text(t("admin_since", day(ms)) + if (u.optLong("memberSince") > 0) " ✎" else "", color = Muted, fontSize = 12.sp)
         Text(t("admin_user_line", u.optInt("sessions"), u.optInt("laps"), u.optInt("guests")), color = Muted, fontSize = 12.sp)
         if (use != null) {
             val devs = use.optJSONArray("devices")?.let { d -> (0 until d.length()).joinToString(", ") { d.optString(it) } }.orEmpty()
             Text(t("admin_last_seen", dayTime(use.optLong("lastSeen"))) + (if (devs.isNotBlank()) " · $devs" else "") + " · " + t("admin_uses", use.optInt("n")), color = Accent, fontSize = 12.sp)
             val top = jsonRows(use.optJSONArray("top")).take(5).joinToString(" · ") { it.optString("key") + " " + it.optInt("n") }
-            if (top.isNotBlank()) Text(top, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+            if (top.isNotBlank()) Text(top, color = Muted, fontSize = 11.sp, fontFamily = MonoFont)
         }
         // help with an account: confirm its email, turn off its two-step sign-in, sign it out, rename it, unblock it,
         // join a DRINKS driver to it (what was shared under the driver's name goes to the account, later laps too)
@@ -3991,13 +4029,15 @@ private fun incText(x: Race) = if (x.contacts) "${x.inc}" else "${x.inc}x"
 @Composable
 private fun GameSeg(vm: PitlaneViewModel) {
     val pc by vm.pcGame.collectAsState()
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Surface).border(1.dp, Line, RoundedCornerShape(10.dp)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    // the chosen game a raised card in the dark well, like the sub-tabs
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Well).border(1.dp, Line, RoundedCornerShape(10.dp)).padding(3.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         GAMES.forEach { g ->
             val on = vm.game == g
-            Row(Modifier.weight(1f).clip(RoundedCornerShape(8.dp)).background(if (on) Accent else Color.Transparent).clickable { vm.setGame(g) }.padding(vertical = 8.dp),
+            Row(Modifier.weight(1f).clip(RoundedCornerShape(7.dp)).background(if (on) Surface else Color.Transparent).border(1.dp, if (on) Line else Color.Transparent, RoundedCornerShape(7.dp))
+                .clickable { vm.setGame(g) }.padding(vertical = 7.dp),
                 horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Text(gameShort(g) + if (pc == g) " ●" else "", color = if (on) Ink else Muted, fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
-                if (g == "lmu") BetaPill(on)
+                Text(gameShort(g) + if (pc == g) " ●" else "", color = if (on) Fg else Muted, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, fontSize = 13.sp, maxLines = 1)
+                if (g == "lmu") BetaPill()
             }
         }
     }
@@ -4044,7 +4084,7 @@ private fun TwoFactorPanel(vm: PitlaneViewModel, a: AccountState) {
     Panel {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(t("two_factor"), fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text(if (a.twoFactor) t("two_factor_on").uppercase() else t("recommended").uppercase(), color = if (a.twoFactor) Good else Accent, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+            Text(if (a.twoFactor) t("two_factor_on").uppercase() else t("recommended").uppercase(), color = if (a.twoFactor) Good else Accent, fontSize = 10.sp, fontWeight = FontWeight.Black, fontFamily = MonoFont)
         }
         Text(if (a.twoFactor) t("two_factor_is_on", a.recoveryLeft) else t("two_factor_rec"), color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
         Spacer(Modifier.height(8.dp))
@@ -4073,7 +4113,7 @@ private fun TwoFactorPanel(vm: PitlaneViewModel, a: AccountState) {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(t("two_factor_scan"), color = Muted, fontSize = 12.sp)
                     Button({ uri.openUri(st.url) }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Accent, contentColor = Ink)) { Text(t("open_in_app").uppercase(), fontWeight = FontWeight.Black) }
-                    Text(t("key") + ": " + st.secret.chunked(4).joinToString(" "), fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.clickable { clip.setText(AnnotatedString(st.secret)) })
+                    Text(t("key") + ": " + st.secret.chunked(4).joinToString(" "), fontFamily = MonoFont, fontSize = 12.sp, modifier = Modifier.clickable { clip.setText(AnnotatedString(st.secret)) })
                     field(t("code"), false)
                     err?.let { Text(t(it), color = Bad, fontSize = 12.sp) }
                 }
@@ -4089,7 +4129,7 @@ private fun TwoFactorPanel(vm: PitlaneViewModel, a: AccountState) {
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(t("two_factor_codes"), color = Muted, fontSize = 12.sp)
-                    Text(cs.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().background(Surface2).padding(10.dp))
+                    Text(cs.joinToString("\n"), fontFamily = MonoFont, fontSize = 15.sp, modifier = Modifier.fillMaxWidth().background(Surface2).padding(10.dp))
                 }
             },
             confirmButton = { TextButton({ vm.recoveryCodes.value = null; step = "" }) { Text(t("saved_them"), color = Accent, fontWeight = FontWeight.Bold) } },
@@ -4134,11 +4174,12 @@ private fun Licences(vm: PitlaneViewModel) {
     // a licence you press opens its iRating line under the list; Sports Car is open to start
     var sel by rememberSaveable { mutableStateOf("sports_car") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Section(t("licences"))
-        DISCS.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(Modifier.padding(top = 6.dp)) { Section(t("licences")) }
+        // Track First's grid: three small cards a row
+        DISCS.chunked(3).forEach { row ->
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 row.forEach { k -> LicCard(k, all[k], races, sel == k, Modifier.weight(1f).fillMaxHeight()) { sel = k } }
-                repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
         LicDetail(sel, all[sel], races)
@@ -4160,10 +4201,10 @@ private fun LicDetail(k: String, r: Triple<Int, String, Long>?, races: List<Race
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(discName(k), color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                Text(r?.first?.toString() ?: "–", color = if (r == null) Muted else col, fontSize = 26.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
+                Text(r?.first?.toString() ?: "–", color = if (r == null) Muted else col, fontSize = 26.sp, fontWeight = FontWeight.Black, fontFamily = MonoFont)
                 if (r != null && cls != null) LicBadge(cls, lic.split(Regex("\\s+")).getOrNull(1))
-                if (line.isEmpty()) Text(t("no_races_yet").trimEnd('.'), color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                else Text(t("lic_gain", signed(chg), line.size), color = if (chg >= 0) Good else Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                if (line.isEmpty()) Text(t("no_races_yet").trimEnd('.'), color = Muted, fontSize = 11.sp, fontFamily = MonoFont)
+                else Text(t("lic_gain", signed(chg), line.size), color = if (chg >= 0) Good else Bad, fontSize = 11.sp, fontFamily = MonoFont)
             }
             Column(Modifier.weight(1f)) {
                 val x = pick?.let { line.getOrNull(it) }
@@ -4192,7 +4233,7 @@ private fun LmuRatings(vm: PitlaneViewModel) {
                 listOf("Safety Rating" to r.first, "Driver Rank" to r.second).forEach { (l, v) ->
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text(l, color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                        Text(v.ifEmpty { "–" }, color = Fg, fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, maxLines = 1)
+                        Text(v.ifEmpty { "–" }, color = Fg, fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = MonoFont, maxLines = 1)
                     }
                 }
             }
@@ -4204,28 +4245,19 @@ private fun LmuRatings(vm: PitlaneViewModel) {
  *  licence pill ("B 3.21" in the licence's colour); dim while the PC has seen nothing of it. */
 @Composable
 private fun LicCard(k: String, r: Triple<Int, String, Long>?, races: List<Race>, on: Boolean, m: Modifier, onClick: () -> Unit) {
-    val col = discColor(k)
-    val last = races.filter { raceDisc(it.cat, it.car) == k && !it.noIr && it.ir != 1 }.take(5) // races against the AI give no iRating
-    val chg = last.sumOf { it.irChange }
     val lic = r?.second?.trim()?.uppercase() ?: ""
     val cls = lic.takeIf { it.isNotEmpty() }?.let { if (it.startsWith("WC") || it.startsWith("PRO")) "P" else it.take(1) }
     val sr = lic.split(Regex("\\s+")).getOrNull(1)
-    Card(
-        m.alpha(if (r == null && !on) 0.55f else 1f).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick), colors = CardDefaults.cardColors(containerColor = if (on) Surface2 else Surface),
-        border = BorderStroke(if (on) 1.5.dp else 1.dp, if (on) Accent else col.copy(alpha = 0.4f)), shape = RoundedCornerShape(12.dp)
+    // Track First's licence card: the discipline small and grey, the iRating in mono, the licence chip; the chosen one
+    // has an amber edge
+    Column(
+        m.alpha(if (r == null && !on) 0.55f else 1f).clip(RoundedCornerShape(10.dp)).background(Surface)
+            .border(if (on) 2.dp else 1.dp, if (on) Accent else Line, RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(9.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
     ) {
-        Row(Modifier.fillMaxHeight().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            DiscIcon(k, 30.dp)
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(discName(k), color = if (on) Accent else Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, lineHeight = 14.sp)
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(r?.first?.toString() ?: "–", color = if (r == null) Muted else col, fontSize = 20.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, lineHeight = 22.sp)
-                    if (r != null && last.isNotEmpty() && chg != 0)
-                        Text(signed(chg), color = if (chg > 0) Good else Bad, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(bottom = 3.dp))
-                }
-                if (r != null && cls != null) LicBadge(cls, sr)
-            }
-        }
+        Text(discName(k), color = Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(r?.first?.toString() ?: "–", color = if (r == null) Muted else Fg, fontSize = 18.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont, maxLines = 1)
+        if (r != null && cls != null) LicBadge(cls, sr)
     }
 }
 
@@ -4262,8 +4294,8 @@ private fun CornerStrip(cs: List<Corner>, step: Double, sel: Int?, title: Boolea
                     Box(Modifier.height(40.dp), contentAlignment = Alignment.BottomCenter) {
                         Box(Modifier.width(14.dp).height((6 + 34 * kotlin.math.abs(k.lost) / mx).dp).clip(RoundedCornerShape(3.dp)).background(col))
                     }
-                    Text("T${k.n}", color = if (on) Accent else Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
-                    Text((if (k.lost >= 0) "+" else "−") + "%.2f".format(kotlin.math.abs(k.lost)), color = col, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    Text("T${k.n}", color = if (on) Accent else Muted, fontSize = 10.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
+                    Text((if (k.lost >= 0) "+" else "−") + "%.2f".format(kotlin.math.abs(k.lost)), color = col, fontSize = 9.sp, fontFamily = MonoFont)
                 }
             }
         }
@@ -4313,7 +4345,7 @@ private fun BrakeTable(cs: List<Corner>, step: Double, sel: Int?, onSel: (Int) -
                     )
                     Row(Modifier.clip(RoundedCornerShape(6.dp)).background(if (on) Surface2 else Color.Transparent).clickable { onSel(idx) }.padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                         cells.forEachIndexed { i, (v, col) ->
-                            Text(v, color = if (i == 0 && on) Accent else col, fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = if (i == 0) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
+                            Text(v, color = if (i == 0 && on) Accent else col, fontSize = 11.sp, fontFamily = MonoFont, fontWeight = if (i == 0) FontWeight.Bold else FontWeight.Normal, maxLines = 1,
                                 textAlign = if (i == 0) TextAlign.Start else TextAlign.End, modifier = Modifier.width(w[i].dp).padding(end = if (i == 0) 0.dp else 6.dp))
                         }
                         // the web's own "what to do" when the corner comes from pitwall-analysis.js (a copy without it, its tip in a few
@@ -4415,44 +4447,52 @@ private fun WebNote(text: String) {
 }
 @Composable
 internal fun Tabs(labels: List<String>, selected: Int, onSelect: (Int) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        // the sub-tabs: the chosen one amber, the others quiet blocks
+    // Track First's sub-tabs: one dark well, the chosen tab a raised card; up to four share the width, more scroll
+    val fit = labels.size <= 4
+    val well = Modifier.clip(RoundedCornerShape(12.dp)).background(Well).border(1.dp, Line, RoundedCornerShape(12.dp)).padding(3.dp)
+    Row(if (fit) Modifier.fillMaxWidth().then(well) else Modifier.horizontalScroll(rememberScrollState()).then(well), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         labels.forEachIndexed { i, l ->
             val on = selected == i
-            Text(
-                l, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (on) Ink else Muted, maxLines = 1,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) Accent else Surface).clickable { onSelect(i) }.padding(horizontal = 12.dp, vertical = 9.dp)
-            )
+            Box(
+                (if (fit) Modifier.weight(1f) else Modifier).clip(RoundedCornerShape(9.dp)).background(if (on) Surface else Color.Transparent)
+                    .border(1.dp, if (on) Line else Color.Transparent, RoundedCornerShape(9.dp)).clickable { onSelect(i) }.padding(horizontal = 10.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(l, fontSize = 13.sp, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Medium, color = if (on) Fg else Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
     }
 }
 
 @Composable
 internal fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    // Track First's card: 16 rounded corners, a hairline edge
     Card(
         modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Surface),
-        border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(12.dp)
-    ) { Column(Modifier.padding(12.dp), content = content) }
+        border = BorderStroke(1.dp, Line), shape = RoundedCornerShape(16.dp)
+    ) { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp), content = content) }
 }
 
 @Composable
 internal fun Section(s: String) {
-    Text(s, color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.3.sp)
+    // the section titles: condensed capitals, spaced out
+    Text(s.uppercase(), color = Muted, fontFamily = DisplayFont, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp, maxLines = 1)
 }
 
 @Composable
 internal fun Status(s: String, c: Color) {
     Surface(color = Color.Transparent, border = BorderStroke(1.dp, c), shape = MaterialTheme.shapes.extraLarge) {
-        Text(s, color = c, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+        Text(s, color = c, fontFamily = MonoFont, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
     }
 }
 
 @Composable
 internal fun Metric(l: String, v: String, m: Modifier, color: Color = Fg, sub: String? = null) {
-    Panel(m) {
-        Text(l.uppercase(), color = Muted, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(v, color = color, fontWeight = FontWeight.Black, fontSize = 18.sp, fontFamily = FontFamily.Monospace, maxLines = 1)
-        sub?.let { Text(it, color = Muted, fontSize = 10.sp, maxLines = 1) }
+    // a tile: the label in small mono capitals, the number big in mono, a grey line under it
+    Column(m.clip(RoundedCornerShape(16.dp)).background(Surface).border(1.dp, Line, RoundedCornerShape(16.dp)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(l.uppercase(), color = Muted, fontFamily = MonoFont, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(v, color = color, fontWeight = FontWeight.Bold, fontSize = 24.sp, fontFamily = MonoFont, maxLines = 1)
+        sub?.let { Text(it, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 
@@ -4460,14 +4500,14 @@ internal fun Metric(l: String, v: String, m: Modifier, color: Color = Fg, sub: S
 internal fun InfoRow(l: String, v: String, color: Color = Fg) {
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
         Text(l, color = Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
-        Text(v, color = color, fontSize = 13.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+        Text(v, color = color, fontSize = 13.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold)
     }
 }
 
 @Composable
 private fun Bar(label: String, v: Double?, c: Color) {
     Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(90.dp))
+        Text(label, color = Muted, fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(90.dp))
         LinearProgressIndicator(
             progress = { (v ?: 0.0).toFloat().coerceIn(0f, 1f) }, color = c, trackColor = Surface2,
             modifier = Modifier.weight(1f).height(10.dp)
@@ -4509,7 +4549,7 @@ private fun LapPill(lapDiff: Double) {
     val n = kotlin.math.round(lapDiff).toInt()
     if (kotlin.math.abs(lapDiff) < 0.5 || n == 0) return
     val col = if (n > 0) Bad else Blue
-    Text((if (n > 0) "+$n" else "−${-n}") + "L", color = col, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace,
+    Text((if (n > 0) "+$n" else "−${-n}") + "L", color = col, fontSize = 9.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont,
         modifier = Modifier.padding(start = 4.dp).border(1.dp, col.copy(alpha = .6f), RoundedCornerShape(50)).padding(horizontal = 4.dp, vertical = 1.dp))
 }
 
@@ -4591,7 +4631,7 @@ private fun LiveDeltaBar(s: LiveState) {
                 }
                 drawLine(Fg, Offset(size.width / 2, 0f), Offset(size.width / 2, size.height), strokeWidth = 2f)
             }
-            Text(d?.let { signedS(it, 2) } ?: "—", color = if (d == null) Fg else if (d <= 0) Good else Bad, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Black,
+            Text(d?.let { signedS(it, 2) } ?: "—", color = if (d == null) Fg else if (d <= 0) Good else Bad, fontFamily = MonoFont, fontWeight = FontWeight.Black,
                 modifier = Modifier.padding(start = 10.dp).widthIn(min = 64.dp))
         }
     }
@@ -4620,12 +4660,12 @@ private fun LiveRelative(s: LiveState, notes: Map<String, DriverNote>) {
         if (rows.isEmpty()) { Text(t("lt_no_cars"), color = Muted, fontSize = 12.sp); return@Panel }
         rows.forEach { r ->
             Row(Modifier.fillMaxWidth().background(if (r.me) Accent.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(4.dp)).padding(vertical = 4.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(if (r.pos > 0) "P${r.pos}" else "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(34.dp))
-                Text(r.d?.number?.let { "#$it" } ?: "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(36.dp))
+                Text(if (r.pos > 0) "P${r.pos}" else "", color = Muted, fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(34.dp))
+                Text(r.d?.number?.let { "#$it" } ?: "", color = Muted, fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(36.dp))
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { LiveName(r, notes) }
                 val lic = r.d?.lic.orEmpty()
-                if (lic.isNotBlank()) Text(lic.split(" ").first(), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = 4.dp))
-                Text(if (r.me) "—" else r.gap?.let { signedS(it) } ?: "—", fontSize = 12.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 48.dp))
+                if (lic.isNotBlank()) Text(lic.split(" ").first(), color = Muted, fontSize = 10.sp, fontFamily = MonoFont, modifier = Modifier.padding(horizontal = 4.dp))
+                Text(if (r.me) "—" else r.gap?.let { signedS(it) } ?: "—", fontSize = 12.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 48.dp))
             }
         }
     }
@@ -4654,21 +4694,21 @@ private fun LiveStandings(s: LiveState, notes: Map<String, DriverNote>) {
         if (rows.isEmpty()) { Text(t("lt_no_cars"), color = Muted, fontSize = 12.sp); return@Panel }
         val lead = rows.first().gap ?: 0.0
         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-            listOf("P" to 30, "#" to 34).forEach { (h, w) -> Text(h, color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(w.dp)) }
+            listOf("P" to 30, "#" to 34).forEach { (h, w) -> Text(h, color = Muted, fontSize = 10.sp, fontFamily = MonoFont, modifier = Modifier.width(w.dp)) }
             Text(t("lt_driver"), color = Muted, fontSize = 10.sp, modifier = Modifier.weight(1f))
-            Text(t("last"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
-            Text(t("best"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
-            Text(if (interval) t("lm_int") else t("lt_gap"), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+            Text(t("last"), color = Muted, fontSize = 10.sp, fontFamily = MonoFont, modifier = Modifier.width(62.dp))
+            Text(t("best"), color = Muted, fontSize = 10.sp, fontFamily = MonoFont, modifier = Modifier.width(62.dp))
+            Text(if (interval) t("lm_int") else t("lt_gap"), color = Muted, fontSize = 10.sp, fontFamily = MonoFont, modifier = Modifier.width(44.dp))
         }
         rows.forEachIndexed { k, r ->
             Row(Modifier.fillMaxWidth().background(if (r.me) Accent.copy(alpha = .12f) else Color.Transparent, RoundedCornerShape(4.dp)).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${r.pos}", color = if (r.me) Accent else Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(30.dp))
-                Text(r.d?.number ?: "", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(34.dp))
+                Text("${r.pos}", color = if (r.me) Accent else Muted, fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(30.dp))
+                Text(r.d?.number ?: "", color = Muted, fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(34.dp))
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { LiveName(r, notes) }
-                Text(r.last?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(62.dp))
-                Text(r.best?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = if (r.best != null && r.best == bestAll) Purple else Fg, modifier = Modifier.width(62.dp))
+                Text(r.last?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(62.dp))
+                Text(r.best?.let { lapTime(it) } ?: "—", fontSize = 11.sp, fontFamily = MonoFont, color = if (r.best != null && r.best == bestAll) Purple else Fg, modifier = Modifier.width(62.dp))
                 val g = if (k == 0) null else if (interval) rows[k - 1].gap?.let { p -> r.gap?.let { it - p } } else r.gap?.let { it - lead }
-                Text(if (k == 0) "—" else g?.let { "+%.1f".format(it) } ?: "—", fontSize = 11.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(44.dp))
+                Text(if (k == 0) "—" else g?.let { "+%.1f".format(it) } ?: "—", fontSize = 11.sp, fontFamily = MonoFont, modifier = Modifier.width(44.dp))
             }
         }
     }
@@ -4800,7 +4840,7 @@ private fun TyreCard(s: LiveState, c: String, name: String, m: Modifier) {
     val temps = zones.map { s.num(c + it.first) }
     val avg = if (temps.all { it != null }) temps.sumOf { it!! } / 3 else null
     Column(m.background(Surface2, RoundedCornerShape(8.dp)).padding(8.dp)) {
-        Row { Text("$c · $name", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis); Text(avg?.let { "%.0f°".format(it) } ?: "—", fontSize = 12.sp, fontFamily = FontFamily.Monospace) }
+        Row { Text("$c · $name", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis); Text(avg?.let { "%.0f°".format(it) } ?: "—", fontSize = 12.sp, fontFamily = MonoFont) }
         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(3.dp)) {
             zones.forEachIndexed { k, (_, lab) ->
                 Column(Modifier.weight(1f).background(heatColor(temps[k]), RoundedCornerShape(4.dp)).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -4809,7 +4849,7 @@ private fun TyreCard(s: LiveState, c: String, name: String, m: Modifier) {
                 }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { wear.forEach { w -> Text(w?.let { "${(it * 100).roundToInt()}%" } ?: "–", fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = Muted) } }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { wear.forEach { w -> Text(w?.let { "${(it * 100).roundToInt()}%" } ?: "–", fontSize = 10.sp, fontFamily = MonoFont, color = Muted) } }
         val wl = wear.filterNotNull().minOrNull()
         if (wl != null) Box(Modifier.fillMaxWidth().padding(top = 4.dp).height(5.dp).clip(RoundedCornerShape(3.dp)).background(Line)) {
             Box(Modifier.fillMaxWidth(wl.toFloat().coerceIn(0f, 1f)).fillMaxHeight().background(if (wl > .7) Good else if (wl > .4) Accent else Bad))
@@ -4938,7 +4978,7 @@ private fun LiveCompare(vm: PitlaneViewModel, s: LiveState) {
                 chips.forEach { (no, d, _) ->
                     Column(Modifier.clip(RoundedCornerShape(8.dp)).background(Surface2).padding(horizontal = 8.dp, vertical = 5.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("T$no", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Text(d?.let { signedS(it, 2) } ?: "·", color = if (d == null) Muted else if (d <= 0) Good else Bad, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        Text(d?.let { signedS(it, 2) } ?: "·", color = if (d == null) Muted else if (d <= 0) Good else Bad, fontSize = 11.sp, fontFamily = MonoFont)
                     }
                 }
             }
@@ -4975,7 +5015,7 @@ private fun PosHistory(s: LiveState) {
 private fun StatTile(value: String, label: String, modifier: Modifier = Modifier, tint: Color = Fg) {
     Panel(modifier) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(value, color = tint, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace, fontSize = 20.sp)
+            Text(value, color = tint, fontWeight = FontWeight.Black, fontFamily = MonoFont, fontSize = 20.sp)
             Text(label, color = Muted, fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 2)
         }
     }

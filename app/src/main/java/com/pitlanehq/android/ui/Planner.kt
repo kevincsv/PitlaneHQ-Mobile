@@ -97,7 +97,7 @@ fun PlannerCard(vm: PitlaneViewModel, nav: NavHostController) {
         Column(Modifier.background(Brush.linearGradient(listOf(Color(0xFF2A1F0A), Surface))).padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(t("planner").uppercase(), color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Black, letterSpacing = 1.5.sp, modifier = Modifier.weight(1f))
-                Text(t("in_development"), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Text(t("in_development"), color = Accent, fontFamily = MonoFont, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 Text("  ›", color = Muted, fontSize = 18.sp)
             }
             if (p != null) {
@@ -152,7 +152,7 @@ private fun TimeChip(vm: PitlaneViewModel, s: SSeries, t: Long, label: String) {
     val plan by vm.plannerPlan.collectAsState()
     val on = plan.any { it.sid == s.sid && it.t == t }
     Text(
-        label, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace, color = if (on) Ink else Fg, maxLines = 1,
+        label, fontSize = 12.sp, fontWeight = FontWeight.Bold, fontFamily = MonoFont, color = if (on) Ink else Fg, maxLines = 1,
         modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(if (on) Accent else Surface2).border(1.dp, if (on) Accent else Line, RoundedCornerShape(8.dp))
             .clickable { vm.togglePlan(s, t) }.padding(horizontal = 9.dp, vertical = 6.dp)
     )
@@ -174,7 +174,7 @@ private fun YouHere(vm: PitlaneViewModel, track: String) {
                     Text(x.car, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(plDay(x.started) + if (x.pos != null) " · " + x.place else " · " + t("laps_n", x.laps), color = Muted, fontSize = 12.sp, maxLines = 1)
                 }
-                Text(com.pitlanehq.android.model.lapTime(x.best), fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+                Text(com.pitlanehq.android.model.lapTime(x.best), fontFamily = MonoFont, fontSize = 13.sp)
             }
         }
     }
@@ -214,7 +214,7 @@ fun PlannerScreen(vm: PitlaneViewModel, nav: NavHostController) {
     val now = System.currentTimeMillis()
     Screen(t("planner"), back = { nav.popBackStack() }, head = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(t("in_development"), color = Accent, fontFamily = FontFamily.Monospace, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(t("in_development"), color = Accent, fontFamily = MonoFont, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Tabs(listOf(t("pl_weeks"), t("pl_my_season")), tab) { tab = it }
         }
     }) {
@@ -238,9 +238,9 @@ fun PlannerScreen(vm: PitlaneViewModel, nav: NavHostController) {
                                 .clickable { wk = i }.padding(vertical = 7.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(t("pl_week").uppercase(), fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = if (on) Ink else Muted)
+                            Text(t("pl_week").uppercase(), fontSize = 9.sp, fontFamily = MonoFont, color = if (on) Ink else Muted)
                             Text("${i + 1}", fontSize = 18.sp, fontWeight = FontWeight.Black, color = if (on) Ink else Fg)
-                            Text(plDay(w.start), fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = if (on) Ink else Muted, maxLines = 1)
+                            Text(plDay(w.start), fontSize = 9.sp, fontFamily = MonoFont, color = if (on) Ink else Muted, maxLines = 1)
                         }
                     }
                 }
@@ -315,7 +315,7 @@ fun PlannerScreen(vm: PitlaneViewModel, nav: NavHostController) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(t("pl_this_week", cw?.let { shortTrack(it.track) } ?: "–"), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                             n?.let { (tm, _) ->
-                                Text(plHm(tm), color = Accent, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text(plHm(tm), color = Accent, fontFamily = MonoFont, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 AddRound(vm, s, tm)
                             }
                         }
@@ -338,7 +338,7 @@ fun PlannerScreen(vm: PitlaneViewModel, nav: NavHostController) {
                                     Text(e.key, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     Text(e.value.second.joinToString(", "), color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                                Text("${e.value.first}", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold)
+                                Text("${e.value.first}", fontFamily = MonoFont, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -356,7 +356,7 @@ private fun WeekSheet(vm: PitlaneViewModel, d: SeasonData?, s: SSeries, w: SWeek
     val now = System.currentTimeMillis()
     ModalBottomSheet(onDismissRequest = close, containerColor = Surface, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text((s.name + " · " + t("pl_week") + " " + (w.k + 1)).uppercase(), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text((s.name + " · " + t("pl_week") + " " + (w.k + 1)).uppercase(), color = Muted, fontSize = 10.sp, fontFamily = MonoFont, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(w.track.uppercase(), fontSize = 22.sp, fontWeight = FontWeight.Black)
             Text((if (w.cfg.isNotBlank()) w.cfg + " · " else "") + plDay(w.start) + " – " + plDay(w.end - 1), color = Muted, fontSize = 12.sp)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -397,7 +397,7 @@ fun PlannerSeriesScreen(vm: PitlaneViewModel, nav: NavHostController) {
         if (s.desc.isNotBlank()) item { Text(s.desc, color = Muted, fontSize = 12.sp) }
         item {
             Panel {
-                Text(t("pl_this_week_n", wi + 1, s.weeks.size).uppercase(), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace)
+                Text(t("pl_this_week_n", wi + 1, s.weeks.size).uppercase(), color = Muted, fontSize = 10.sp, fontFamily = MonoFont)
                 Row(verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
                         Text(w.track.uppercase(), fontSize = 20.sp, fontWeight = FontWeight.Black)
@@ -418,9 +418,9 @@ fun PlannerSeriesScreen(vm: PitlaneViewModel, nav: NavHostController) {
                 var day = ""
                 next.forEachIndexed { i, tm ->
                     val dd = plLongDay(tm)
-                    if (dd != day) { day = dd; Text(dd.uppercase(), color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = if (i > 0) 8.dp else 0.dp, bottom = 4.dp)) }
+                    if (dd != day) { day = dd; Text(dd.uppercase(), color = Muted, fontSize = 10.sp, fontFamily = MonoFont, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = if (i > 0) 8.dp else 0.dp, bottom = 4.dp)) }
                     Row(Modifier.padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(plHm(tm), fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, modifier = Modifier.width(64.dp))
+                        Text(plHm(tm), fontFamily = MonoFont, fontWeight = FontWeight.Bold, modifier = Modifier.width(64.dp))
                         Text(plUntil(tm, now), color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
                         AddButton(vm, s, tm)
                     }
@@ -456,7 +456,7 @@ fun PlannerSeriesScreen(vm: PitlaneViewModel, nav: NavHostController) {
                             .clickable { sheet = x }.padding(vertical = 6.dp, horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("${i + 1}", color = Muted, fontFamily = FontFamily.Monospace, modifier = Modifier.width(24.dp))
+                        Text("${i + 1}", color = Muted, fontFamily = MonoFont, modifier = Modifier.width(24.dp))
                         Column(Modifier.weight(1f)) {
                             Text(x.track, fontSize = 13.sp, fontWeight = if (x === w) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(plDay(x.start) + " · " + lenText(x), color = Muted, fontSize = 12.sp)

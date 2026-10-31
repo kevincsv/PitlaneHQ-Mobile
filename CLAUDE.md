@@ -45,10 +45,13 @@ changing first, and update it in the same commit when the behaviour changes.
   default, a DEMO banner on every screen, only on the phone, never uploaded).
 - Admin mode is off by default on every phone: an admin sees the app exactly as everyone does until they turn it on
   (`docs/spec/admin-and-support.md`).
-- The look (the owner's choice, "Muro de boxes"): one dark theme, never switched, with the amber accent (#FFB02E):
-  background #0D1116, cards #161C24 with a #263140 edge and 12 rounded corners, a floating tab bar (#1E2631, the
-  chosen tab a #2E3846 pill with the amber icon; `BottomBar` on Android, `MainView.bar` on iOS) and the sub-tabs as
-  blocks (the chosen one amber, `Tabs`). Every chart follows the finger and says the values under it.
+- The look (the owner's choice, design 7 "Track First" of the redesign): one dark theme, never switched, with the
+  amber accent (#FFB02E): background #0D1116, cards #151C25 with a #263140 edge and 16 rounded corners, IBM Plex Sans
+  for text, JetBrains Mono for numbers and Barlow Condensed capitals for titles and section labels (`Fonts.kt`,
+  `Fonts.swift`), a fixed header (Back, title, Info, the game switch), the game switch and the sub-tabs as a dark
+  well (#11161D) with the chosen one a raised card (`GameSeg`, `Tabs`), and a floating tab bar (#1A212B, the chosen
+  tab a #2A3442 pill with the amber icon; `BottomBar` on Android, `MainView.bar` on iOS). Every chart follows the
+  finger and says the values under it.
 - Strings: Android `ui/I18n.kt` is the source; `ios/PitlaneHQ/I18n.swift` follows it with the same keys and texts.
   English, Spanish and Portuguese (Brazil) only.
 - The owner's name never appears in the code, the documents or the tests.

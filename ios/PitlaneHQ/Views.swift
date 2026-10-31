@@ -986,13 +986,13 @@ struct DeleteAccountPanel: View {
     @State private var sure = false
     var body: some View {
         Panel {
-            Text(t("delete_account")).font(.subheadline.bold()).foregroundColor(Theme.bad)
-            Text(t("delete_account_txt")).font(.caption).foregroundColor(Theme.muted)
+            Text(t("delete_account")).font(.ui(15, .bold)).foregroundColor(Theme.bad)
+            Text(t("delete_account_txt")).font(.ui(12)).foregroundColor(Theme.muted)
             SecureField(t("password"), text: $pw).textContentType(.password).padding(10)
                 .background(Theme.surface2).clipShape(RoundedRectangle(cornerRadius: 8))
-            if let err { Text(t(err)).font(.caption).foregroundColor(Theme.bad) }
+            if let err { Text(t(err)).font(.ui(12)).foregroundColor(Theme.bad) }
             Button { sure = true } label: {
-                Text(t("delete").uppercased()).font(.subheadline.bold()).frame(maxWidth: .infinity).padding(10)
+                Text(t("delete").uppercased()).font(.ui(15, .bold)).frame(maxWidth: .infinity).padding(10)
                     .background(Theme.surface2).foregroundColor(Theme.bad).clipShape(RoundedRectangle(cornerRadius: 8))
             }
             .disabled(busy || pw.isEmpty)
@@ -4119,7 +4119,6 @@ struct CommunityView: View {
             let gm = account.game
             let cats = catKeys(gm, Set((combos.data ?? []).map { catOf(gm, $0.cat, $0.cls, $0.car) }))
             let fc = gm == "lmu" ? (cats.contains(cat) ? cat : "") : cat
-            WebNote(text: t("community_web"))
             RecentRecords(cat: fc)
             // setups and shared race analyses are switched off for now: only the leaderboards, by lap time, per discipline
             if !cats.isEmpty {
