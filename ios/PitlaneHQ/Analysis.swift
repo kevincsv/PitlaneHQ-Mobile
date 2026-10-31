@@ -150,7 +150,7 @@ struct SectorTable: View {
                         Spacer()
                         Text(r.map { String(format: "%+.3f", s - $0) } ?? "").foregroundColor(r != nil && s <= r! ? Theme.good : Theme.bad)
                     }
-                    .font(.mono(13))
+                    .font(.system(size: 13, design: .monospaced))
                 }
             }
         }
@@ -167,21 +167,21 @@ struct CornerTipView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(t("corner_n", k.n)).font(.ui(15, .black)).foregroundColor(Theme.accent)
-                Text(t("at_m", k.atM) + (k.phase.map { " · " + t("phase_" + $0) } ?? "")).font(.ui(12)).foregroundColor(Theme.muted)
+                Text(t("corner_n", k.n)).font(.subheadline.weight(.black)).foregroundColor(Theme.accent)
+                Text(t("at_m", k.atM) + (k.phase.map { " · " + t("phase_" + $0) } ?? "")).font(.caption).foregroundColor(Theme.muted)
                 Spacer()
-                Text(String(format: "+%.2f", k.lost)).font(.mono(15, .bold)).foregroundColor(Theme.bad)
+                Text(String(format: "+%.2f", k.lost)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.bad)
             }
             if let tip = k.tip {
                 HStack(alignment: .top, spacing: 6) {
-                    Text(k.text ?? fillArgs(t(tip), k.args)).font(.ui(15))
+                    Text(k.text ?? fillArgs(t(tip), k.args)).font(.subheadline)
                     Spacer(minLength: 0)
                     if let s = an?.session {
                         let key = s.id + ":" + String(k.apexM)
                         let mine = account.tipRatings[key] ?? 0
                         ForEach([(1, "👍"), (-1, "👎")], id: \.0) { up, g in
                             Button { rate(s, key: key, up: up, mine: mine) } label: {
-                                Text(g).font(.ui(12)).padding(.horizontal, 5).padding(.vertical, 3)
+                                Text(g).font(.caption).padding(.horizontal, 5).padding(.vertical, 3)
                                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(mine == up ? Theme.accent : Theme.line, lineWidth: 1))
                                     .opacity(mine == up ? 1 : 0.55)
                             }
@@ -190,13 +190,13 @@ struct CornerTipView: View {
                     }
                 }
             }
-            if let lt = k.lineTip { Text(fillArgs(t(lt), k.lineArgs)).font(.ui(13)).foregroundColor(Theme.accent) }
+            if let lt = k.lineTip { Text(fillArgs(t(lt), k.lineArgs)).font(.footnote).foregroundColor(Theme.accent) }
             // how many drivers this tip helped on corners like this, when the admin lets the tips say it
             if let ci = an?.coach, ci.confidence, let tp = k.tip, let b = ci.conf[String(tp.dropFirst(4)) + "|" + k.cls], b.1 >= ci.min {
-                Text(t("tip_helped", b.0, b.1)).font(.ui(11)).foregroundColor(Theme.muted)
+                Text(t("tip_helped", b.0, b.1)).font(.caption2).foregroundColor(Theme.muted)
             }
             if let an, let c = CornerCard.of(an.corners, apexM: k.apexM) {
-                Text(t("corner_fast", Int(c.b0), Int(c.b1), Int(c.v0 * 3.6), Int(c.v1 * 3.6), c.n)).font(.ui(11)).foregroundColor(Theme.muted)
+                Text(t("corner_fast", Int(c.b0), Int(c.b1), Int(c.v0 * 3.6), Int(c.v1 * 3.6), c.n)).font(.caption2).foregroundColor(Theme.muted)
             }
         }
     }
@@ -226,9 +226,9 @@ private struct PlanToOverlay: View {
                 catch { msg = (error as? AppError).map { t($0.key) } ?? error.localizedDescription }
                 busy = false
             }
-        } label: { Text(t("plan_to_overlay")).font(.ui(15)).foregroundColor(Theme.accent) }
+        } label: { Text(t("plan_to_overlay")).font(.subheadline).foregroundColor(Theme.accent) }
         .disabled(busy).padding(.top, 4)
-        if let msg { Text(msg).font(.ui(12)).foregroundColor(Theme.muted) }
+        if let msg { Text(msg).font(.caption).foregroundColor(Theme.muted) }
     }
 }
 
@@ -238,14 +238,14 @@ private struct PlanRow: View {
     let k: Corner
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            Text("\(i + 1).").font(.ui(15, .black)).foregroundColor(Theme.accent).frame(width: 22, alignment: .leading)
+            Text("\(i + 1).").font(.subheadline.weight(.black)).foregroundColor(Theme.accent).frame(width: 22, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(t("corner_n", k.n) + (k.phase.map { " · " + t("phase_" + $0) } ?? "")).font(.ui(15, .bold))
+                    Text(t("corner_n", k.n) + (k.phase.map { " · " + t("phase_" + $0) } ?? "")).font(.subheadline.bold())
                     Spacer()
-                    Text(String(format: "+%.2f s", k.lost)).font(.mono(12)).foregroundColor(Theme.bad)
+                    Text(String(format: "+%.2f s", k.lost)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.bad)
                 }
-                if let tip = k.tip { Text(k.text ?? fillArgs(t(tip), k.args)).font(.ui(12)).foregroundColor(Theme.muted) }
+                if let tip = k.tip { Text(k.text ?? fillArgs(t(tip), k.args)).font(.caption).foregroundColor(Theme.muted) }
             }
         }
         .padding(.top, 4)
@@ -258,17 +258,17 @@ private struct PlanItemRow: View {
     let p: PlanItem
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            Text("\(i + 1).").font(.ui(15, .black)).foregroundColor(Theme.accent).frame(width: 22, alignment: .leading)
+            Text("\(i + 1).").font(.subheadline.weight(.black)).foregroundColor(Theme.accent).frame(width: 22, alignment: .leading)
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
-                    Text(p.t).font(.ui(15, .bold))
+                    Text(p.t).font(.subheadline.bold())
                     Spacer()
                     if p.gain > 0 {
-                        Text((p.k == "cons" ? "±" : "+") + String(format: "%.2f s", p.gain)).font(.mono(12)).foregroundColor(p.k == "cons" ? Theme.accent : Theme.bad)
+                        Text((p.k == "cons" ? "±" : "+") + String(format: "%.2f s", p.gain)).font(.system(size: 12, design: .monospaced)).foregroundColor(p.k == "cons" ? Theme.accent : Theme.bad)
                     }
                 }
-                if !p.why.isEmpty { Text(p.why).font(.ui(12)).foregroundColor(Theme.muted) }
-                if !p.how.isEmpty { Text("→ " + p.how).font(.ui(12)) }
+                if !p.why.isEmpty { Text(p.why).font(.caption).foregroundColor(Theme.muted) }
+                if !p.how.isEmpty { Text("→ " + p.how).font(.caption) }
             }
         }
         .padding(.top, 4)
@@ -283,20 +283,20 @@ struct CoachGap: View {
     var body: some View {
         let d = an.refTime.map { an.lap.time - $0 }
         VStack(alignment: .leading, spacing: 8) {
-            Text(t("coach_vs", refName).uppercased()).font(.ui(11, .semibold)).tracking(1.3).foregroundColor(Theme.muted).lineLimit(2)
+            Text(t("coach_vs", refName).uppercased()).font(.system(size: 11, weight: .semibold)).tracking(1.3).foregroundColor(Theme.muted).lineLimit(2)
             HStack {
-                Text(d.map { String(format: "%+.3f", $0) } ?? "—").font(.mono(30, .bold))
+                Text(d.map { String(format: "%+.3f", $0) } ?? "—").font(.system(size: 30, weight: .bold, design: .monospaced))
                     .foregroundColor(d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(t("you") + " · L\(an.lap.n)  " + lapTime(an.lap.time)).font(.mono(12)).foregroundColor(Theme.accent)
-                    if let fl = lapFlags(an.trace) { Text(fl).font(.ui(10)).foregroundColor(Theme.muted) }
-                    Text(lapTime(an.refTime)).font(.mono(12)).foregroundColor(Theme.blue)
+                    Text(t("you") + " · L\(an.lap.n)  " + lapTime(an.lap.time)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.accent)
+                    if let fl = lapFlags(an.trace) { Text(fl).font(.system(size: 10)).foregroundColor(Theme.muted) }
+                    Text(lapTime(an.refTime)).font(.system(size: 12, design: .monospaced)).foregroundColor(Theme.blue)
                 }
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(t("coach_first").uppercased()).font(.ui(10, .bold)).tracking(1).foregroundColor(Theme.accent)
-                if let f = first { CornerTipView(k: f, an: an) } else { Text(t("all_clean")).font(.ui(15)).foregroundColor(Theme.good) }
+                Text(t("coach_first").uppercased()).font(.system(size: 10, weight: .bold)).tracking(1).foregroundColor(Theme.accent)
+                if let f = first { CornerTipView(k: f, an: an) } else { Text(t("all_clean")).font(.subheadline).foregroundColor(Theme.good) }
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -318,7 +318,7 @@ private struct PhaseRow: View {
                 ForEach(phaseKeys, id: \.self) { p in
                     let v = k.phases[p] ?? 0
                     Text(t("phase_" + p) + " " + (v > 0 ? "+" : "") + String(format: "%.2f", v))
-                        .font(.mono(11)).foregroundColor(v > 0.03 ? Theme.bad : Theme.muted)
+                        .font(.system(size: 11, design: .monospaced)).foregroundColor(v > 0.03 ? Theme.bad : Theme.muted)
                 }
             }
         }
@@ -341,14 +341,14 @@ struct CoachBody: View {
             if !cs0.isEmpty { CoachGap(an: an, refName: refName, first: lose0.first) }
             // the driver's habit first: a kind of tip that repeats on several of their tracks
             // (the web's plan already starts with it)
-            if an.jsNow?.plan.contains(where: { $0.k == "habit" }) != true, let h = an.habits.first, h.tracks >= 3 { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions)).font(.ui(15)) } }
+            if an.jsNow?.plan.contains(where: { $0.k == "habit" }) != true, let h = an.habits.first, h.tracks >= 3 { Panel { Text(t("habit_line", t("kind_" + h.kind), h.tracks, h.sessions)).font(.subheadline) } }
             if cs0.isEmpty { HStack(spacing: 8) {
                 Metric(label: t("you") + " · L\(an.lap.n)", value: lapTime(an.lap.time), color: Theme.accent, sub: lapFlags(an.trace))
                 Metric(label: refName, value: lapTime(an.refTime), color: Theme.blue)
                 Metric(label: t("delta"), value: d.map { String(format: "%+.3f", $0) } ?? "—", color: d == nil ? Theme.fg : d! <= 0 ? Theme.good : Theme.bad)
             }
             .fixedSize(horizontal: false, vertical: true) }
-            if an.fastest { Text(t("coach_fastest")).font(.ui(12)).foregroundColor(Theme.good) }
+            if an.fastest { Text(t("coach_fastest")).font(.caption).foregroundColor(Theme.good) }
             if let tr = an.trace { details(tr) } else { EmptyNote(text: t("no_trace")) }
         }
     }
@@ -364,17 +364,17 @@ struct CoachBody: View {
         let lost = cs.reduce(0.0) { $0 + max(0, $1.lost) }
         let gained = cs.reduce(0.0) { $0 + min(0, $1.lost) }
         let lapLen = Double(c.speedA.count) * c.step
-        Text(t("coach_sum", String(format: "%.2f", lost), cs.count, String(format: "%.2f", -gained))).font(.ui(12)).foregroundColor(Theme.muted)
+        Text(t("coach_sum", String(format: "%.2f", lost), cs.count, String(format: "%.2f", -gained))).font(.caption).foregroundColor(Theme.muted)
         // every corner's cost: touch one to read its tip (and see it on the map)
         SectionLabel(text: t("corners_cost"))
         CornerStrip(cs: cs, lapLen: lapLen, pick: $pick, title: false)
         let k: Corner? = picked(cs, lapLen)
-        Panel { if let k { CornerTipView(k: k, an: an) } else { Text(t("corner_pick")).font(.ui(12)).foregroundColor(Theme.muted) } }
+        Panel { if let k { CornerTipView(k: k, an: an) } else { Text(t("corner_pick")).font(.caption).foregroundColor(Theme.muted) } }
         // the web's plan: what to work on first, what it is worth, why and how
         if let plan = an.jsNow?.plan, !plan.isEmpty {
             Panel {
                 SectionLabel(text: t("coach_plan").uppercased())
-                Text(t("coach_plan_note")).font(.ui(11)).foregroundColor(Theme.muted)
+                Text(t("coach_plan_note")).font(.caption2).foregroundColor(Theme.muted)
                 ForEach(Array(plan.prefix(4).enumerated()), id: \.offset) { i, p in PlanItemRow(i: i, p: p) }
                 // the turns of the plan's first four steps, like the web's planTurns
                 let turns = plan.prefix(4).flatMap { $0.turns }.reduce(into: [Int]()) { if !$0.contains($1) { $0.append($1) } }.map { "T\($0)" }
@@ -383,7 +383,7 @@ struct CoachBody: View {
         } else if !lose.isEmpty {
             Panel {
                 SectionLabel(text: t("coach_plan").uppercased())
-                Text(t("coach_plan_note")).font(.ui(11)).foregroundColor(Theme.muted)
+                Text(t("coach_plan_note")).font(.caption2).foregroundColor(Theme.muted)
                 ForEach(Array(lose.prefix(4).enumerated()), id: \.offset) { i, k in PlanRow(i: i, k: k) }
                 let turns = lose.prefix(4).map { "T\($0.n)" }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
                 if !turns.isEmpty { PlanToOverlay(turns: turns, trackId: an.trackId) }
@@ -408,7 +408,7 @@ struct CoachBody: View {
         let c = compare(tr, an.ref)
         let cs: [Corner] = an.jsNow?.coach ?? (an.ref != nil ? corners(c, turns: an.turns, off: an.coach?.off ?? []) : [])
         let lose = cs.filter { $0.tip != nil && $0.lost > 0.03 }.sorted { $0.lost > $1.lost }
-        if an.ref == nil { Text(t("no_reference")).font(.ui(12)).foregroundColor(Theme.muted) }
+        if an.ref == nil { Text(t("no_reference")).font(.caption).foregroundColor(Theme.muted) }
         else if !cs.isEmpty { summary(cs, lose, c) }
         if tr.hasShape || an.layout != nil { TrackMapView(c: c, trace: tr, pick: $pick, turns: an.turns, road: an.layout, cs: an.jsNow?.corners) }
         // the web's sectors (the game's when both laps have them, else thirds of the lap from the traces), else the game's
@@ -420,7 +420,7 @@ struct CoachBody: View {
                 Panel {
                     CornerTipView(k: k, an: an)
                     PhaseRow(k: k)
-                    if k.coastA - k.coastB > 10 { Text(t("coasting") + ": \(Int(k.coastA)) m · " + t("ref") + " \(Int(k.coastB)) m").font(.ui(11)).foregroundColor(Theme.muted) }
+                    if k.coastA - k.coastB > 10 { Text(t("coasting") + ": \(Int(k.coastA)) m · " + t("ref") + " \(Int(k.coastB)) m").font(.caption2).foregroundColor(Theme.muted) }
                 }
             }
         }
@@ -437,11 +437,11 @@ struct SessionBadges: View {
             HStack(spacing: 6) {
                 if x.game == "lmu" { LmuPill() }
                 if !x.drvs.isEmpty {
-                    Text("DRINKS · " + (x.drvs.count > 1 ? t("drinks_multiple") : x.drvs[0])).font(.ui(10, .bold)).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659)).lineLimit(1)
+                    Text("DRINKS · " + (x.drvs.count > 1 ? t("drinks_multiple") : x.drvs[0])).font(.system(size: 10, weight: .bold)).foregroundColor(Color(red: 1, green: 0.886, blue: 0.659)).lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 2).background(Theme.accent.opacity(0.22)).overlay(Capsule().stroke(Theme.accent.opacity(0.6), lineWidth: 1)).clipShape(Capsule())
                 }
                 if x.ai {
-                    Text(t("vs_ai")).font(.ui(10, .bold)).foregroundColor(Theme.blue).lineLimit(1)
+                    Text(t("vs_ai")).font(.system(size: 10, weight: .bold)).foregroundColor(Theme.blue).lineLimit(1)
                         .padding(.horizontal, 8).padding(.vertical, 2).overlay(Capsule().stroke(Theme.blue.opacity(0.55), lineWidth: 1))
                 }
             }
@@ -455,14 +455,14 @@ struct SessionRow: View {
     var on = false
     var body: some View {
         Panel {
-            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.ui(17, .black)).foregroundColor(Theme.fg).lineLimit(1)
-            Text(fixText(x.car)).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
             SessionBadges(x: x)
             HStack {
-                Text([placeLine(x), kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                Text([placeLine(x), kindText(x.kind), day(x.started), t("laps_n", x.laps)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                 LicBadge(k: x.lic)
                 Spacer()
-                Text(lapTime(x.best)).font(.mono(15, .bold)).foregroundColor(Theme.purple)
+                Text(lapTime(x.best)).font(.system(.subheadline, design: .monospaced).bold()).foregroundColor(Theme.purple)
             }
             .padding(.top, 4)
         }
@@ -476,14 +476,14 @@ struct SessionHead: View {
     let choose: () -> Void
     var body: some View {
         Panel {
-            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.ui(17, .black)).foregroundColor(Theme.fg).lineLimit(1)
-            Text(fixText(x.car)).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+            Text(fixText(x.track) + (x.trackConfig.isEmpty ? "" : " · " + fixText(x.trackConfig))).font(.headline.weight(.black)).foregroundColor(Theme.fg).lineLimit(1)
+            Text(fixText(x.car)).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
             SessionBadges(x: x)
             HStack(spacing: 6) {
-                Text([placeLine(x), kindText(x.kind), day(x.started), sessCat(x)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                Text([placeLine(x), kindText(x.kind), day(x.started), sessCat(x)].filter { !$0.isEmpty }.joined(separator: " · ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                 LicBadge(k: x.lic)
                 Spacer()
-                Button(t("choose_session") + " ▾", action: choose).font(.ui(12, .bold)).foregroundColor(Theme.accent).lineLimit(1)
+                Button(t("choose_session") + " ▾", action: choose).font(.caption.bold()).foregroundColor(Theme.accent).lineLimit(1)
             }
         }
     }
@@ -523,7 +523,7 @@ struct SessionLaps: View {
                 HStack {
                     SectionLabel(text: t("laps").uppercased())
                     Spacer()
-                    Text(t("tap_lap")).font(.ui(11)).foregroundColor(Theme.muted)
+                    Text(t("tap_lap")).font(.caption2).foregroundColor(Theme.muted)
                 }
                 ForEach(laps) { lap in
                     NavigationLink(value: Route.lap(session, lap, laps)) { LapRow(lap: lap, best: best, bestSec: bestSec, bestLapSec: bestLapSec, nSec: nSec) }.buttonStyle(.plain)
@@ -542,23 +542,23 @@ private struct LapRow: View {
     var body: some View {
         Panel {
             HStack {
-                Text("L\(lap.n)").font(.mono(15)).foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
-                Text(lapTime(lap.time)).font(.mono(15, .bold))
+                Text("L\(lap.n)").font(.system(.subheadline, design: .monospaced)).foregroundColor(Theme.muted).frame(width: 44, alignment: .leading)
+                Text(lapTime(lap.time)).font(.system(.subheadline, design: .monospaced).bold())
                     .foregroundColor(!lap.valid ? Theme.muted : lap.time == best ? Theme.purple : Theme.fg).strikethrough(!lap.valid)
                 Spacer()
-                if let best, lap.valid, lap.time > best { Text(String(format: "+%.3f", lap.time - best)).font(.mono(11)).foregroundColor(Theme.muted) }
-                if lap.inc > 0 { Text("\(lap.inc)x").font(.mono(11)).foregroundColor(Theme.bad) }
-                if !lap.valid { Text(t("invalid")).font(.mono(10)).foregroundColor(Theme.bad) }
+                if let best, lap.valid, lap.time > best { Text(String(format: "+%.3f", lap.time - best)).font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.muted) }
+                if lap.inc > 0 { Text("\(lap.inc)x").font(.system(size: 11, design: .monospaced)).foregroundColor(Theme.bad) }
+                if !lap.valid { Text(t("invalid")).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.bad) }
                 Image(systemName: "chevron.right").foregroundColor(Theme.muted)
             }
-            if !lap.drv.isEmpty { Text(lap.drv).font(.ui(11)).foregroundColor(Theme.accent).lineLimit(1) }
+            if !lap.drv.isEmpty { Text(lap.drv).font(.caption2).foregroundColor(Theme.accent).lineLimit(1) }
             // one column per sector (S1, S2, S3…), the same place on every lap: purple the session's best, green better than your best lap's
             if nSec > 0 {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 0) {
                         ForEach(0..<nSec, id: \.self) { i in
                             let s: Double? = lapSecs(lap)[safe: i]
-                            Text("S\(i + 1) " + (s.map { String(format: "%.3f", $0) } ?? "–")).font(.mono(11))
+                            Text("S\(i + 1) " + (s.map { String(format: "%.3f", $0) } ?? "–")).font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(secColor(i, s)).frame(width: 84, alignment: .leading)
                         }
                     }

@@ -76,18 +76,18 @@ struct PlannerCard: View {
         NavigationLink(value: Route.planner) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(t("planner").uppercased()).font(.ui(12, .black)).tracking(1.5).foregroundColor(Theme.accent)
+                    Text(t("planner").uppercased()).font(.system(size: 12, weight: .black)).tracking(1.5).foregroundColor(Theme.accent)
                     Spacer()
-                    Text(t("in_development")).font(.mono(10, .bold)).foregroundColor(Theme.accent)
-                    Text("›").font(.ui(20)).foregroundColor(Theme.muted)
+                    Text(t("in_development")).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(Theme.accent)
+                    Text("›").font(.title3).foregroundColor(Theme.muted)
                 }
                 if let p {
-                    Text(p.name).font(.ui(15, .bold)).foregroundColor(Theme.fg).lineLimit(1)
+                    Text(p.name).font(.subheadline.bold()).foregroundColor(Theme.fg).lineLimit(1)
                     HStack(spacing: 0) {
                         Text("\(p.track) · \(plWeekday(p.t)) \(plHm(p.t)) · ").foregroundColor(Theme.muted).lineLimit(1)
                         Text(plUntil(p.t, now)).foregroundColor(Theme.accent).fontWeight(.semibold).lineLimit(1)
-                    }.font(.ui(12))
-                } else { Text(t("pl_no_plan")).font(.ui(12)).foregroundColor(Theme.muted) }
+                    }.font(.caption)
+                } else { Text(t("pl_no_plan")).font(.caption).foregroundColor(Theme.muted) }
             }
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
             .background(LinearGradient(colors: [amberBg, Theme.surface], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -98,12 +98,12 @@ struct PlannerCard: View {
 
 private struct Own: View {
     let ok: Bool, label: String
-    var body: some View { if ok { Text("✓ " + label).font(.ui(11, .semibold)).foregroundColor(Theme.good).lineLimit(1) } }
+    var body: some View { if ok { Text("✓ " + label).font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.good).lineLimit(1) } }
 }
 private struct Pill: View {
     let s: String
     var body: some View {
-        Text(s).font(.ui(11)).foregroundColor(Theme.muted).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 1)
+        Text(s).font(.system(size: 11)).foregroundColor(Theme.muted).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 1)
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Theme.line, lineWidth: 1))
     }
 }
@@ -111,7 +111,7 @@ private struct PChip: View {
     let label: String, on: Bool, tap: () -> Void
     var body: some View {
         Button(action: tap) {
-            Text(label).font(.ui(11, .bold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 5)
+            Text(label).font(.system(size: 11, weight: .bold)).lineLimit(1).padding(.horizontal, 10).padding(.vertical, 5)
                 .background(on ? Theme.accent : Theme.surface2).foregroundColor(on ? Theme.ink : Theme.muted).clipShape(Capsule())
         }.buttonStyle(.plain)
     }
@@ -133,7 +133,7 @@ private struct AddRound: View {
     var body: some View {
         let on = account.inPlan(s.sid, at)
         Button { account.togglePlan(s, at) } label: {
-            Text(on ? "✓" : "+").font(.ui(16, .black)).foregroundColor(on ? Theme.ink : Theme.fg).frame(width: 32, height: 32)
+            Text(on ? "✓" : "+").font(.system(size: 16, weight: .black)).foregroundColor(on ? Theme.ink : Theme.fg).frame(width: 32, height: 32)
                 .background(on ? Theme.accent : Theme.surface2).overlay(Circle().stroke(on ? Theme.accent : btnEdge, lineWidth: 1)).clipShape(Circle())
         }.buttonStyle(.plain)
     }
@@ -144,7 +144,7 @@ private struct AddButton: View {
     var body: some View {
         let on = account.inPlan(s.sid, at)
         Button { account.togglePlan(s, at) } label: {
-            Text(on ? "✓ " + t("pl_in_plan") : "+ " + t("pl_plan")).font(.ui(12, .bold)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.fg)
+            Text(on ? "✓ " + t("pl_in_plan") : "+ " + t("pl_plan")).font(.system(size: 12, weight: .bold)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.fg)
                 .padding(.horizontal, 10).padding(.vertical, 6).background(on ? Theme.accent : Theme.surface2)
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(on ? Theme.accent : btnEdge, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain)
@@ -156,7 +156,7 @@ private struct TimeChip: View {
     var body: some View {
         let on = account.inPlan(s.sid, at)
         Button { account.togglePlan(s, at) } label: {
-            Text(label).font(.mono(12, .bold)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.fg)
+            Text(label).font(.system(size: 12, weight: .bold, design: .monospaced)).lineLimit(1).foregroundColor(on ? Theme.ink : Theme.fg)
                 .padding(.horizontal, 9).padding(.vertical, 6).background(on ? Theme.accent : Theme.surface2)
                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(on ? Theme.accent : Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain)
@@ -171,7 +171,7 @@ private struct YouHere: View {
     var body: some View {
         Group {
             let here = (sessions ?? []).filter { $0.game == "iracing" && sameTrack($0.track, track) }.prefix(5)
-            if here.isEmpty { Text(t("pl_no_sessions_here")).font(.ui(15)).foregroundColor(Theme.muted) }
+            if here.isEmpty { Text(t("pl_no_sessions_here")).font(.subheadline).foregroundColor(Theme.muted) }
             else {
                 Panel {
                     ForEach(Array(here.enumerated()), id: \.offset) { i, x in
@@ -179,11 +179,11 @@ private struct YouHere: View {
                         HStack(spacing: 8) {
                             KindTag(kind: x.kind)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(x.car).font(.ui(13, .semibold)).foregroundColor(Theme.fg).lineLimit(1)
-                                Text(plDay(x.started) + " · " + (x.pos != nil ? x.place : t("laps_n", x.laps))).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                                Text(x.car).font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.fg).lineLimit(1)
+                                Text(plDay(x.started) + " · " + (x.pos != nil ? x.place : t("laps_n", x.laps))).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                             }
                             Spacer()
-                            Text(lapTime(x.best)).font(.mono(13)).foregroundColor(Theme.fg)
+                            Text(lapTime(x.best)).font(.system(size: 13, design: .monospaced)).foregroundColor(Theme.fg)
                         }
                     }
                 }
@@ -232,7 +232,7 @@ struct PlannerView: View {
     var body: some View {
         let now = plNow()
         Screen(title: t("planner")) {
-            Text(t("in_development")).font(.mono(10, .bold)).foregroundColor(Theme.accent)
+            Text(t("in_development")).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(Theme.accent)
             Tabs(labels: [t("pl_weeks"), t("pl_my_season")], selected: $tab)
             if let d = store.data {
                 let all = allS ?? account.plannerFav.isEmpty
@@ -243,7 +243,7 @@ struct PlannerView: View {
                 if tab == 0 { weeksTab(d, pool, allB, empty, now) } else { seasonTab(d, pool, allB, empty, now) }
             } else if store.loading { ProgressView().tint(Theme.accent).frame(maxWidth: .infinity).padding(.top, 30) }
             else if let e = store.error {
-                Text(t(e)).font(.ui(12)).foregroundColor(Theme.bad)
+                Text(t(e)).font(.caption).foregroundColor(Theme.bad)
                 Button(t("retry")) { Task { await PlannerStore.shared.load(account) } }.foregroundColor(Theme.accent)
             }
         }
@@ -265,9 +265,9 @@ struct PlannerView: View {
                         let on = i == k
                         Button { wk = i } label: {
                             VStack(spacing: 1) {
-                                Text(t("pl_week").uppercased()).font(.mono(9)).foregroundColor(on ? Theme.ink : Theme.muted)
-                                Text("\(i + 1)").font(.ui(18, .black)).foregroundColor(on ? Theme.ink : Theme.fg)
-                                Text(plDay(w.start)).font(.mono(9)).foregroundColor(on ? Theme.ink : Theme.muted).lineLimit(1)
+                                Text(t("pl_week").uppercased()).font(.system(size: 9, design: .monospaced)).foregroundColor(on ? Theme.ink : Theme.muted)
+                                Text("\(i + 1)").font(.system(size: 18, weight: .black)).foregroundColor(on ? Theme.ink : Theme.fg)
+                                Text(plDay(w.start)).font(.system(size: 9, design: .monospaced)).foregroundColor(on ? Theme.ink : Theme.muted).lineLimit(1)
                             }
                             .frame(width: 58).padding(.vertical, 7).background(on ? Theme.accent : Theme.surface)
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(on || i == cw ? Theme.accent : Theme.line, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 12))
@@ -285,19 +285,19 @@ struct PlannerView: View {
             Metric(label: t("pl_on_raced"), value: "\(rows.filter { Season.ownTrack(d, $0.1) }.count)", color: Theme.good)
         }
         Filters(allS: allB, cat: $cat, lic: $lic)
-        if let ref { Text(plDay(ref.start) + " – " + plDay(ref.end - 1)).font(.ui(12)).foregroundColor(Theme.muted) }
+        if let ref { Text(plDay(ref.start) + " – " + plDay(ref.end - 1)).font(.caption).foregroundColor(Theme.muted) }
         if rows.isEmpty { EmptyNote(text: empty) }
         ForEach(rows, id: \.0.id) { s, w in
             NavigationLink(value: Route.plannerSeries(s)) {
                 Panel {
                     HStack(spacing: 6) {
                         LicBadge(k: licLetter(s.lic))
-                        Text(s.name).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                        Text(s.name).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                         Spacer()
                         StarButton(s: s)
                     }
-                    Text(shortTrack(w.track).uppercased()).font(.ui(19, .black)).foregroundColor(Theme.fg).lineLimit(1)
-                    Text(w.cfg.isEmpty ? w.track : w.cfg).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                    Text(shortTrack(w.track).uppercased()).font(.system(size: 19, weight: .black)).foregroundColor(Theme.fg).lineLimit(1)
+                    Text(w.cfg.isEmpty ? w.track : w.cfg).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                     HStack(spacing: 5) {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 5) {
@@ -308,7 +308,7 @@ struct PlannerView: View {
                             }
                         }
                         Button { pick = WeekPick(s: s, w: w) } label: {
-                            Text(t(w.end < now ? "pl_done" : "pl_times")).font(.ui(12, .bold)).foregroundColor(Theme.fg).lineLimit(1)
+                            Text(t(w.end < now ? "pl_done" : "pl_times")).font(.system(size: 12, weight: .bold)).foregroundColor(Theme.fg).lineLimit(1)
                                 .padding(.horizontal, 10).padding(.vertical, 6).background(Theme.surface2)
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(btnEdge, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 10))
                         }.buttonStyle(.plain)
@@ -329,12 +329,12 @@ struct PlannerView: View {
                 NavigationLink(value: Route.plannerSeries(s)) {
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(s.name).font(.ui(15, .bold)).foregroundColor(Theme.fg).lineLimit(1)
-                            Text(t("pl_can_race", can, rem.count)).font(.ui(12)).foregroundColor(Theme.muted)
+                            Text(s.name).font(.subheadline.bold()).foregroundColor(Theme.fg).lineLimit(1)
+                            Text(t("pl_can_race", can, rem.count)).font(.caption).foregroundColor(Theme.muted)
                         }
                         Spacer()
-                        Text("\(can)").font(.ui(26, .black)).foregroundColor(can > 0 ? Theme.good : Theme.muted)
-                        Text("/\(rem.count)").font(.ui(16, .black)).foregroundColor(Theme.muted)
+                        Text("\(can)").font(.system(size: 26, weight: .black)).foregroundColor(can > 0 ? Theme.good : Theme.muted)
+                        Text("/\(rem.count)").font(.system(size: 16, weight: .black)).foregroundColor(Theme.muted)
                     }
                 }.buttonStyle(.plain)
                 HStack(spacing: 3) {
@@ -347,10 +347,10 @@ struct PlannerView: View {
                     }
                 }.padding(.vertical, 6)
                 HStack(spacing: 8) {
-                    Text(t("pl_this_week", cw.map { shortTrack($0.track) } ?? "–")).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                    Text(t("pl_this_week", cw.map { shortTrack($0.track) } ?? "–")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                     Spacer()
                     if let n = Season.nextRace(s, now) {
-                        Text(plHm(n.0)).font(.mono(13, .bold)).foregroundColor(Theme.accent)
+                        Text(plHm(n.0)).font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(Theme.accent)
                         AddRound(s: s, at: n.0)
                     }
                 }
@@ -359,17 +359,17 @@ struct PlannerView: View {
         // the tracks the account has not raced, by how many of the remaining weeks they bring
         let top = missing(d, pool, now)
         if !top.isEmpty {
-            HStack { SectionLabel(text: t("pl_not_raced").uppercased()); Spacer(); Text(t("pl_weeks_they_bring")).font(.ui(11)).foregroundColor(Theme.muted) }
+            HStack { SectionLabel(text: t("pl_not_raced").uppercased()); Spacer(); Text(t("pl_weeks_they_bring")).font(.system(size: 11)).foregroundColor(Theme.muted) }
             Panel {
                 ForEach(Array(top.enumerated()), id: \.offset) { i, e in
                     if i > 0 { Divider().overlay(Theme.line).padding(.vertical, 4) }
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(e.0).font(.ui(13, .semibold)).foregroundColor(Theme.fg).lineLimit(1)
-                            Text(e.2.joined(separator: ", ")).font(.ui(12)).foregroundColor(Theme.muted).lineLimit(1)
+                            Text(e.0).font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.fg).lineLimit(1)
+                            Text(e.2.joined(separator: ", ")).font(.caption).foregroundColor(Theme.muted).lineLimit(1)
                         }
                         Spacer()
-                        Text("\(e.1)").font(.mono(17, .bold)).foregroundColor(Theme.fg)
+                        Text("\(e.1)").font(.system(.body, design: .monospaced).bold()).foregroundColor(Theme.fg)
                     }
                 }
             }
@@ -394,9 +394,9 @@ private struct WeekSheet: View {
         let now = plNow()
         ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text((s.name + " · " + t("pl_week") + " \(w.k + 1)").uppercased()).font(.mono(10)).foregroundColor(Theme.muted).lineLimit(1)
-                    Text(w.track.uppercased()).font(.ui(22, .black)).foregroundColor(Theme.fg)
-                    Text((w.cfg.isEmpty ? "" : w.cfg + " · ") + plDay(w.start) + " – " + plDay(w.end - 1)).font(.ui(12)).foregroundColor(Theme.muted)
+                    Text((s.name + " · " + t("pl_week") + " \(w.k + 1)").uppercased()).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted).lineLimit(1)
+                    Text(w.track.uppercased()).font(.system(size: 22, weight: .black)).foregroundColor(Theme.fg)
+                    Text((w.cfg.isEmpty ? "" : w.cfg + " · ") + plDay(w.start) + " – " + plDay(w.end - 1)).font(.caption).foregroundColor(Theme.muted)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             if let d { Own(ok: Season.ownTrack(d, w), label: t("pl_track")); Own(ok: Season.ownCar(d, s, w), label: t("pl_car")) }
@@ -405,11 +405,11 @@ private struct WeekSheet: View {
                             Pill(s: t("pl_rain", w.rain))
                         }
                     }
-                    if w.end < now { Text(t("pl_week_over")).font(.ui(15)).foregroundColor(Theme.muted) }
+                    if w.end < now { Text(t("pl_week_over")).font(.subheadline).foregroundColor(Theme.muted) }
                     else {
                         let ts = Array(Season.starts(w, max(now, w.start), w.end).prefix(24))
                         SectionLabel(text: t("pl_races").uppercased())
-                        if ts.isEmpty { Text(t("pl_no_more")).font(.ui(15)).foregroundColor(Theme.muted) }
+                        if ts.isEmpty { Text(t("pl_no_more")).font(.subheadline).foregroundColor(Theme.muted) }
                         else {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 6) {
@@ -422,7 +422,7 @@ private struct WeekSheet: View {
                     YouHere(track: w.track)
                     if let onOpen {
                         Button(action: onOpen) {
-                            Text(t("pl_open_series", s.name)).font(.ui(15)).foregroundColor(Theme.fg).lineLimit(1).frame(maxWidth: .infinity).padding(.vertical, 10)
+                            Text(t("pl_open_series", s.name)).font(.subheadline).foregroundColor(Theme.fg).lineLimit(1).frame(maxWidth: .infinity).padding(.vertical, 10)
                                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.line, lineWidth: 1))
                         }.buttonStyle(.plain)
                     }
@@ -454,13 +454,13 @@ struct PlannerSeriesView: View {
                 Pill(s: t(s.fixed ? "pl_fixed" : "pl_open"))
                 if s.multi { Pill(s: t("pl_multiclass")) }
             }
-            if !s.desc.isEmpty { Text(s.desc).font(.ui(12)).foregroundColor(Theme.muted) }
+            if !s.desc.isEmpty { Text(s.desc).font(.caption).foregroundColor(Theme.muted) }
             Panel {
-                Text(t("pl_this_week_n", wi + 1, s.weeks.count).uppercased()).font(.mono(10)).foregroundColor(Theme.muted)
+                Text(t("pl_this_week_n", wi + 1, s.weeks.count).uppercased()).font(.system(size: 10, design: .monospaced)).foregroundColor(Theme.muted)
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(w.track.uppercased()).font(.ui(20, .black)).foregroundColor(Theme.fg)
-                        if !w.cfg.isEmpty { Text(w.cfg).font(.ui(12)).foregroundColor(Theme.muted) }
+                        Text(w.track.uppercased()).font(.system(size: 20, weight: .black)).foregroundColor(Theme.fg)
+                        if !w.cfg.isEmpty { Text(w.cfg).font(.caption).foregroundColor(Theme.muted) }
                     }
                     Spacer()
                     if let d { VStack(alignment: .trailing) { Own(ok: Season.ownTrack(d, w), label: t("pl_track")); Own(ok: Season.ownCar(d, s, w), label: t("pl_car")) } }
@@ -471,16 +471,16 @@ struct PlannerSeriesView: View {
                 InfoRow(label: t("pl_inc_limit"), value: s.inc > 0 ? "\(s.inc)" : "–")
                 InfoRow(label: t("pl_drops"), value: "\(s.drops)")
             }
-            HStack { SectionLabel(text: t("pl_next_3").uppercased()); Spacer(); Text(t("pl_your_time")).font(.ui(11)).foregroundColor(Theme.muted) }
+            HStack { SectionLabel(text: t("pl_next_3").uppercased()); Spacer(); Text(t("pl_your_time")).font(.system(size: 11)).foregroundColor(Theme.muted) }
             Panel {
-                if next.isEmpty { Text(t("pl_none_3")).font(.ui(15)).foregroundColor(Theme.muted) }
+                if next.isEmpty { Text(t("pl_none_3")).font(.subheadline).foregroundColor(Theme.muted) }
                 ForEach(Array(next.enumerated()), id: \.offset) { i, tm in
                     if i == 0 || plLongDay(next[i - 1]) != plLongDay(tm) {
-                        Text(plLongDay(tm).uppercased()).font(.mono(10, .bold)).foregroundColor(Theme.muted).padding(.top, i > 0 ? 8 : 0)
+                        Text(plLongDay(tm).uppercased()).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(Theme.muted).padding(.top, i > 0 ? 8 : 0)
                     }
                     HStack {
-                        Text(plHm(tm)).font(.mono(17, .bold)).foregroundColor(Theme.fg).frame(width: 64, alignment: .leading)
-                        Text(plUntil(tm, now)).font(.ui(12)).foregroundColor(Theme.muted)
+                        Text(plHm(tm)).font(.system(.body, design: .monospaced).bold()).foregroundColor(Theme.fg).frame(width: 64, alignment: .leading)
+                        Text(plUntil(tm, now)).font(.caption).foregroundColor(Theme.muted)
                         Spacer()
                         AddButton(s: s, at: tm)
                     }.padding(.vertical, 2)
@@ -493,12 +493,12 @@ struct PlannerSeriesView: View {
                     Panel {
                         ForEach(Array(cars.prefix(10)), id: \.self) { c in
                             HStack {
-                                Text(d.cars[c] ?? "–").font(.ui(13)).foregroundColor(Theme.fg).lineLimit(1)
+                                Text(d.cars[c] ?? "–").font(.system(size: 13)).foregroundColor(Theme.fg).lineLimit(1)
                                 Spacer()
                                 Own(ok: d.racedCars.contains(c), label: t("pl_raced"))
                             }.padding(.vertical, 2)
                         }
-                        if cars.count > 10 { Text(t("pl_more", cars.count - 10)).font(.ui(12)).foregroundColor(Theme.muted) }
+                        if cars.count > 10 { Text(t("pl_more", cars.count - 10)).font(.caption).foregroundColor(Theme.muted) }
                     }
                 }
             }
@@ -506,16 +506,16 @@ struct PlannerSeriesView: View {
             YouHere(track: w.track)
             HStack {
                 SectionLabel(text: t("pl_schedule").uppercased()); Spacer()
-                if let d { Text(t("pl_can_race", rem.filter { Season.ownTrack(d, $0) }.count, rem.count)).font(.ui(11)).foregroundColor(Theme.muted) }
+                if let d { Text(t("pl_can_race", rem.filter { Season.ownTrack(d, $0) }.count, rem.count)).font(.system(size: 11)).foregroundColor(Theme.muted) }
             }
             Panel {
                 ForEach(Array(s.weeks.enumerated()), id: \.offset) { i, x in
                     Button { pick = WeekPick(s: s, w: x) } label: {
                         HStack {
-                            Text("\(i + 1)").font(.mono(17)).foregroundColor(Theme.muted).frame(width: 24, alignment: .leading)
+                            Text("\(i + 1)").font(.system(.body, design: .monospaced)).foregroundColor(Theme.muted).frame(width: 24, alignment: .leading)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(x.track).font(.ui(13, x === w ? .bold : .regular)).foregroundColor(Theme.fg).lineLimit(1)
-                                Text(plDay(x.start) + " · " + lenText(x)).font(.ui(12)).foregroundColor(Theme.muted)
+                                Text(x.track).font(.system(size: 13, weight: x === w ? .bold : .regular)).foregroundColor(Theme.fg).lineLimit(1)
+                                Text(plDay(x.start) + " · " + lenText(x)).font(.caption).foregroundColor(Theme.muted)
                             }
                             Spacer()
                             if let d { Own(ok: Season.ownTrack(d, x), label: "") }
