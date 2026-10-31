@@ -585,7 +585,7 @@ private fun BottomBar(nav: NavHostController) {
     )
     val current = nav.currentBackStackEntryAsState().value?.destination?.route
     // the laps, the coach and a track's hub belong to Tracks: they open from a track
-    val tab = when (current) { "race" -> if (nav.previousBackStackEntry?.destination?.route in listOf("analysis", "track")) "tracks" else "home"; "analysis", "session", "lap", "track" -> "tracks"; "combo", "profile" -> "community"; "drinks", "admin", "notes" -> "settings"; "planner", "pseries" -> "home"; else -> current }
+    val tab = when (current) { "race" -> if (nav.previousBackStackEntry?.destination?.route in listOf("analysis", "track")) "tracks" else "home"; "analysis", "session", "lap", "track" -> "tracks"; "combo" -> "community"; "profile" -> if (nav.previousBackStackEntry?.destination?.route == "settings") "settings" else "community"; "drinks", "admin", "notes" -> "settings"; "planner", "pseries" -> "home"; else -> current }
     // a floating bar over the screen: the chosen tab is a lighter pill with the amber icon
     Row(
         Modifier.fillMaxWidth().background(Ink).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 12.dp)

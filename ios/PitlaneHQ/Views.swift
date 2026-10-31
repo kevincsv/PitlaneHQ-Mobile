@@ -1189,7 +1189,7 @@ struct MainView: View {
             NavigationStack { TracksView().routes() }.tag(1).toolbar(.hidden, for: .tabBar)
             NavigationStack { LiveView() }.tag(3).toolbar(.hidden, for: .tabBar)
             NavigationStack { CommunityView().routes() }.tag(2).toolbar(.hidden, for: .tabBar)
-            NavigationStack { SettingsView() }.tag(4).toolbar(.hidden, for: .tabBar)
+            NavigationStack { SettingsView().routes() }.tag(4).toolbar(.hidden, for: .tabBar)
         }
         // the feedback button: bottom right, just above the floating tab bar, on every screen (never in demo data), with
         // the count of Support's messages not read (an admin's: the drivers' not read). It opens a small menu (Send
